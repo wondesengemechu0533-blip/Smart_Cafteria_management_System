@@ -163,7 +163,7 @@ const OrderSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED", "CANCELLED"],
+      enum: ["PENDING", "PAID", "FAILED", "CANCELLED", "REFUNDED"],
       default: "PENDING",
     },
     orderStatus: {
@@ -258,6 +258,7 @@ const OrderSchema = new mongoose.Schema(
     },
     refundAmount: { type: Number, default: 0, min: 0 },
     refundReference: { type: String, default: null },
+    refundedAt: { type: Date, default: null },
     notes: {
       type: String,
       default: "",
@@ -309,6 +310,9 @@ OrderSchema.methods.getSummary = function () {
     status: this.status,
     paymentMethod: this.paymentMethod,
     paymentStatus: this.paymentStatus,
+    refundStatus: this.refundStatus,
+    refundReference: this.refundReference,
+    refundedAt: this.refundedAt,
     orderDate: this.orderDate,
     orderTime: this.orderTime,
   };

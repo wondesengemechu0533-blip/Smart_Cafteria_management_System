@@ -143,9 +143,7 @@
       html += "<td><strong>" + window.esc(order.customerName) + "</strong><br><small>"
         + window.esc((order.deliveryInfo && order.deliveryInfo.phone) || order.customerPhone || "—")
         + "</small></td>";
-      html += "<td>" + window.esc(addressLine(order))
-        + (order.deliveryInfo && order.deliveryInfo.note ? "<br><small style=\"color:#94a3b8;\">" + window.esc(order.deliveryInfo.note) + "</small>" : "")
-        + "</td>";
+      html += "<td>" + window.esc(addressLine(order)) + "</td>";
       html += "<td><small>" + window.esc(itemSummary(order)) + "</small></td>";
       html += "<td><strong>" + formatMoney(order.totalAmount) + "</strong></td>";
       html += "<td>" + statusBadge(s) + "</td>";

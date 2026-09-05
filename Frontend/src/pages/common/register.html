@@ -985,18 +985,21 @@
                     return;
                 }
 
-                showRegSuccess("Registration successful! Logging you in...");
+                showRegSuccess("Registration successful. Please login to continue.");
 
-                localStorage.setItem("auth_token", data.token);
-                localStorage.setItem("current_user", JSON.stringify(data.user));
-                localStorage.setItem("isLoggedIn", "true");
-                localStorage.setItem("userName", data.user.name || data.user.email);
-                localStorage.setItem("name", data.user.name || data.user.email);
-                localStorage.setItem("userRole", "CUSTOMER");
-                localStorage.setItem("customerLoggedIn", "true");
+                // Do NOT auto-login or jump straight to the dashboard after
+                // registration. Clear any stale session keys and send the new
+                // customer to the Login page so they sign in manually.
+                localStorage.removeItem("auth_token");
+                localStorage.removeItem("current_user");
+                localStorage.removeItem("isLoggedIn");
+                localStorage.removeItem("userName");
+                localStorage.removeItem("name");
+                localStorage.removeItem("userRole");
+                localStorage.removeItem("customerLoggedIn");
 
                 setTimeout(function () {
-                    window.location.href = "../customer/menu.html";
+                    window.location.href = "login.html";
                 }, 1500);
 
             } catch (err) {

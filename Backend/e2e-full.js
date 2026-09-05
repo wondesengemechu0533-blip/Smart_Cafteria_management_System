@@ -64,7 +64,7 @@ async function main() {
   console.log('  Result:', r.success, r.message || r.error);
 
   console.log('\n=== STEP 5: Admin assigns rider ===');
-  r = await api('POST', '/api/v1/admin/orders/' + orderId + '/assign-delivery', AT, { deliveryStaffId: String(delivery._id) });
+  r = await api('PATCH', '/api/v1/deliveries/' + orderId + '/assign', AT, { deliveryStaffId: String(delivery._id) });
   console.log('  Result:', r.success, r.message || r.error);
 
   console.log('\n=== STEP 6: Rider marks Out for Delivery ===');
@@ -79,7 +79,7 @@ async function main() {
   r = await api('GET', '/api/v1/orders/' + orderId, CT);
   const o = r.data;
   const statuses = ['pending','preparing','ready','picked_up','out_for_delivery','delivered','completed'];
-  const idx = statuses.indexOf(o?.status);
+  const idx = statuses.indexOf(String(o?.status || '').toLowerCase());
   statuses.forEach((s, i) => console.log((i <= idx ? 'GREEN' : 'grey '), i + 1 + '.', s));
   console.log('\n  Final status:', o?.status);
   console.log('  completedTime:', o?.completedTime ? 'SET' : 'NO');

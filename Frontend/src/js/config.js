@@ -45,6 +45,7 @@ window.PAYMENT_STATUS = {
     PAID:       'PAID',
     FAILED:     'FAILED',
     CANCELLED:  'CANCELLED',
+    REFUNDED:   'REFUNDED',
     SIMULATED:  'SIMULATED'
 };
 

@@ -407,6 +407,35 @@
     color: var(--color-primary, #a5f3fc);
 }
 
+/* Delivery management tables (admin deliveries page) */
+[data-theme="dark"] .table-card {
+    background: #0f172a;
+    border-color: #334155;
+}
+[data-theme="dark"] .table-card-header {
+    background: #0f172a;
+    border-color: #334155;
+}
+[data-theme="dark"] .table-card-header h3 {
+    color: #f8fafc;
+}
+[data-theme="dark"] .table-custom th {
+    background: #0f172a;
+    color: #94a3b8;
+}
+[data-theme="dark"] .table-custom td {
+    color: #e2e8f0;
+    border-color: #334155;
+}
+[data-theme="dark"] .table-custom tbody tr:hover {
+    background: #1e293b;
+}
+[data-theme="dark"] .delivery-staff-select {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+}
+
 /* Toolbar / search / filter */
 [data-theme="dark"] .search-wrap,
 [data-theme="dark"] .filter-bar,
@@ -619,6 +648,36 @@
 [data-theme="dark"] .badge-pending-order {
     background: #1e293b;
     color: #cbd5e1;
+}
+
+[data-theme="dark"] .badge-picked-up {
+    background: #2e1065;
+    color: #c4b5fd;
+}
+[data-theme="dark"] .badge-out-for-delivery {
+    background: #172554;
+    color: #93c5fd;
+}
+[data-theme="dark"] .badge-delivered,
+[data-theme="dark"] .badge-completed {
+    background: #052e1f;
+    color: #6ee7b7;
+}
+[data-theme="dark"] .btn-outline-warning {
+    color: #fcd34d;
+    border-color: #f59e0b;
+}
+[data-theme="dark"] .btn-outline-warning:hover:not(:disabled) {
+    background: #422006;
+    color: #fcd34d;
+}
+[data-theme="dark"] .btn-outline-success {
+    color: #6ee7b7;
+    border-color: #10b981;
+}
+[data-theme="dark"] .btn-outline-success:hover:not(:disabled) {
+    background: #052e1f;
+    color: #6ee7b7;
 }
 
 [data-theme="dark"] .order-status.pending {

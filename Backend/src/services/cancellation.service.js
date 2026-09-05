@@ -182,25 +182,52 @@ async function confirmRefund({ cancellation, order, providerReference, actorId }
     throw Object.assign(new Error('Refund already marked as refunded'), { statusCode: 409 });
   }
 
-  cancellation.refundStatus = REFUND_STATUS.REFUNDED;
-  cancellation.refundReference = providerReference || cancellation.refundReference;
+  // Refund eligibility guard: the order must be cancelled AND its payment must
+  // have succeeded. Orders that are still active, unpaid, or non-refundable are
+  // rejected so a refund can never be issued for them.
   if (order) {
+    const orderIsPaid = ['PAID', 'REFUNDED'].includes(String(order.paymentStatus || '').toUpperCase());
+    const orderIsCancelled = String(order.orderStatus || '').toUpperCase() === 'CANCELLED' || String(order.status || '').toLowerCase() === 'cancelled';
+    if (!orderIsPaid || !orderIsCancelled) {
+      throw Object.assign(new Error('Order is not eligible for a refund (order must be cancelled and paid)'), { statusCode: 400 });
+    }
+  }
+
+  cancellation.refundStatus = REFUND_STATUS.REFUNDED;
+  cancellation.refundReference = providerReference || cancellation.refundReference || `RF-${Date.now()}`;
+  if (order) {
+    order.paymentStatus = 'REFUNDED';
     order.refundStatus = REFUND_STATUS.REFUNDED;
     order.refundReference = cancellation.refundReference;
+    order.refundAmount = Number(cancellation.refundAmount) || order.totalAmount || 0;
+    order.refundedAt = new Date();
     await order.save();
   }
   await cancellation.save();
 
+  let createdNotification = null;
   if (order) {
-    await Notification.create({
+    createdNotification = await Notification.create({
       userId: order.userId,
-      title: 'Refund Completed',
-      message: `Your refund for order #${order.orderId} (${cancellation.refundAmount} ETB) has been processed.`,
+      title: 'Order Cancelled & Refunded',
+      message: `Your order #${order.orderId} has been cancelled and your payment of ${cancellation.refundAmount} ETB has been refunded. Refund reference: ${cancellation.refundReference}.`,
       type: 'order',
       orderId: order.orderId,
       isRead: false,
     });
   }
+
+  try {
+    const { emitSocketEvent } = require('../utils/socket');
+    if (order) {
+      if (createdNotification) emitSocketEvent(`user:${order.userId}`, 'notification:new', createdNotification);
+      const payload = { orderId: order.orderId, status: order.status || 'cancelled', orderType: order.orderType, paymentStatus: 'REFUNDED' };
+      emitSocketEvent(`order:${order.orderId}`, 'order:status', payload);
+      emitSocketEvent('kitchen', 'order:status', payload);
+      emitSocketEvent('admin', 'order:status', payload);
+      emitSocketEvent(`user:${order.userId}`, 'order:status', payload);
+    }
+  } catch (_) { /* realtime is best effort */ }
 
   return cancellation;
 }

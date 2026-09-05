@@ -130,6 +130,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (status === "Completed") statusClass = "status-tag-completed";
             if (status === "Cancelled") statusClass = "status-tag-cancelled";
 
+            const refunded = String(order.paymentStatus || "").toUpperCase() === "REFUNDED";
+            const refundTag = refunded
+                ? `<span class="status-tag" style="margin-left: 6px; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; background: #e0e7ff; color: #4338ca;"><i class="fa-solid fa-rotate-left"></i> Refunded</span>`
+                : "";
+            const refundInfoLine = refunded
+                ? `<div class="refund-line" style="margin-top: 6px; font-size: 0.85rem; color: #4338ca;"><i class="fa-solid fa-rotate-left"></i> Refunded${order.refundReference ? " · Ref " + order.refundReference : ""}${order.refundedAt ? " · " + new Date(order.refundedAt).toLocaleString() : ""}</div>`
+                : "";
+
             const items = order.items || [];
             const itemPills = items.map(item => `
                 <span class="history-item-pill" style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-size: 0.85rem; margin-right: 6px; display: inline-block; margin-bottom: 4px;">
@@ -152,7 +160,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <strong class="order-number" style="font-size: 1.1rem;">#${id}</strong>
                             <small class="order-date" style="margin-left: 10px; color: #6b7280;"><i class="fa-solid fa-calendar-day"></i> ${order.orderDate || "Today"}</small>
                         </div>
-                        <span class="status-tag ${statusClass}" style="padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; ${status === 'Cancelled' ? 'background: #fde8e8; color: #f05252;' : ''}">${status}</span>
+                        <span class="status-tag ${statusClass}" style="padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; ${status === 'Cancelled' ? 'background: #fde8e8; color: #f05252;' : ''}">${status}</span>${refundTag}
                     </div>
 
                     <div class="card-middle-row" style="margin: 12px 0;">
@@ -163,6 +171,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <small style="color: #6b7280;">Total:</small>
                             <strong>${order.totalAmount || 0} ETB</strong>
                         </div>
+                        ${refundInfoLine}
                     </div>
 
                     <div class="card-bottom-row" style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f3f4f6; padding-top: 12px;">

@@ -744,11 +744,100 @@ button, input, select, textarea {
 .order-badge.del { background: var(--color-success-light); color: var(--color-success-text); }
 .order-badge.cmp { background: var(--color-success-light); color: var(--color-success-text); }
 .order-badge.cxl { background: var(--color-danger-light); color: var(--color-danger-text); }
+.order-badge.rfnd { background: #ede9fe; color: #5b21b6; }
 .order-badge.info { background: var(--color-info-light); color: var(--color-info-text); }
 .order-badge.muted { background: var(--color-neutral-light); color: var(--color-neutral); }
 .order-badge.avail-on { background: var(--color-success-light); color: var(--color-success-text); }
 .order-badge.avail-off { background: var(--color-danger-light); color: var(--color-danger-text); }
 .order-badge.suspended-badge { background: var(--color-warning-light); color: var(--color-warning-text); }
+
+/* --- Delivery-specific status badges (admin deliveries page) --- */
+.badge-pending { background: var(--color-warning-light); color: var(--color-warning-text); }
+.badge-preparing { background: #ffedd5; color: #9a3412; }
+.badge-ready { background: var(--status-ready-bg, #cffafe); color: var(--status-ready-text, #155e75); }
+.badge-picked-up { background: #ede9fe; color: #5b21b6; }
+.badge-out-for-delivery { background: var(--color-info-light); color: var(--color-info-text); }
+.badge-delivered { background: var(--color-success-light); color: var(--color-success-text); }
+.badge-completed { background: var(--color-success-light); color: var(--color-success-text); }
+.badge-cancelled { background: var(--color-danger-light); color: var(--color-danger-text); }
+
+/* --- Outline action button variants (admin deliveries page) --- */
+.btn-outline-warning { background: transparent; border-color: var(--color-warning); color: var(--color-warning-text); }
+.btn-outline-warning:hover:not(:disabled) { background: var(--color-warning-light); color: var(--color-warning-text); }
+.btn-outline-success { background: transparent; border-color: var(--color-success); color: var(--color-success-text); }
+.btn-outline-success:hover:not(:disabled) { background: var(--color-success-light); color: var(--color-success-text); }
+
+/* --- Delivery management table card (admin deliveries page) --- */
+.table-card {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+.table-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-3); flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border-color);
+  background: #f9fafb;
+}
+.table-card-header h3 { margin: 0; font-size: var(--text-lg); font-weight: 600; color: #111827; display: flex; align-items: center; gap: var(--space-2); }
+.table-card-header h3 i { color: var(--color-primary); }
+.table-card-header .badge { font-size: var(--text-xs); }
+
+.table-custom { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.table-custom th, .table-custom td { padding: var(--space-3) var(--space-4); text-align: left; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.table-custom th { background: #f9fafb; color: var(--color-neutral); font-weight: 600; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.table-custom td { color: #1f2937; }
+.table-custom tbody tr { transition: background var(--transition-fast); }
+.table-custom tbody tr:hover { background: #f9fafb; }
+.table-custom tbody tr:last-child td { border-bottom: none; }
+
+/* --- Delivery management tables: formalised, fixed layout so all columns fit --- */
+#deliveriesTable, #deliveredTable {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 0;
+  font-size: var(--text-xs);
+}
+#deliveriesTable th, #deliveriesTable td,
+#deliveredTable th, #deliveredTable td {
+  padding: var(--space-2) var(--space-3);
+  overflow-wrap: break-word;
+  word-break: break-word;
+  vertical-align: middle;
+}
+#deliveriesTable tbody td, #deliveredTable tbody td { white-space: normal; }
+#deliveriesTable th:nth-child(1) { width: 14%; }  /* Order */
+#deliveriesTable th:nth-child(2) { width: 14%; }  /* Customer */
+#deliveriesTable th:nth-child(3) { width: 20%; }  /* Delivery Address */
+#deliveriesTable th:nth-child(4) { width: 20%; }  /* Items */
+#deliveriesTable th:nth-child(5) { width: 10%; }  /* Total */
+#deliveriesTable th:nth-child(6) { width: 12%; }  /* Status */
+#deliveriesTable th:nth-child(7) { width: 10%; }  /* Delivery Staff */
+#deliveriesTable td:nth-child(1),
+#deliveriesTable td:nth-child(5) { white-space: nowrap; }
+#deliveredTable th:nth-child(1) { width: 18%; }  /* Order */
+#deliveredTable th:nth-child(2) { width: 18%; }  /* Customer */
+#deliveredTable th:nth-child(3) { width: 34%; }  /* Address */
+#deliveredTable th:nth-child(4) { width: 10%; }  /* Total */
+#deliveredTable th:nth-child(5) { width: 12%; }  /* Status */
+#deliveredTable th:nth-child(6) { width: 8%; }   /* Delivery Staff */
+#deliveredTable td:nth-child(4) { white-space: nowrap; }
+#deliveredTable td:nth-child(5) { white-space: nowrap; }
+
+.delivery-staff-select {
+  display: inline-block;
+  width: 100%;
+  max-width: 190px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--text-xs);
+  color: #1f2937;
+  background: #fff;
+}
 
 /* Action Badges for Activity Log */
 .action-badge {

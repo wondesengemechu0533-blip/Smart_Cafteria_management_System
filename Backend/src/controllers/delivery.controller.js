@@ -185,7 +185,7 @@ exports.assignDeliveryStaff = async (req, res) => {
         { _id: require('mongoose').Types.ObjectId.isValid(req.params.id) ? require('mongoose').Types.ObjectId(req.params.id) : null },
         { orderId: req.params.id }
       ].filter(Boolean)
-    });
+    }).populate('deliveryStaffAssigned', 'name phone role');
 
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
@@ -195,7 +195,7 @@ exports.assignDeliveryStaff = async (req, res) => {
     }
 
     const current = effectiveStatus(order);
-    if (current === 'CANCELLED' || current === 'DELIVERED') {
+    if (current === 'CANCELLED' || current === 'DELIVERED' || current === 'COMPLETED') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Cannot assign delivery staff to a ${current} order` });
     }
 
@@ -203,6 +203,7 @@ exports.assignDeliveryStaff = async (req, res) => {
     order.deliveryStaffAssigned = staff._id;
     if (!order.deliveryAssignedAt) order.deliveryAssignedAt = new Date();
     await order.save();
+    await order.populate('deliveryStaffAssigned', 'name phone role');
 
     await OrderStatusHistory.create({
       orderId: order._id,
@@ -262,7 +263,7 @@ exports.markOutForDelivery = async (req, res) => {
         { _id: require('mongoose').Types.ObjectId.isValid(req.params.id) ? require('mongoose').Types.ObjectId(req.params.id) : null },
         { orderId: req.params.id }
       ].filter(Boolean)
-    });
+    }).populate('deliveryStaffAssigned', 'name phone role');
 
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
@@ -343,7 +344,7 @@ exports.pickUpOrder = async (req, res) => {
         { _id: require('mongoose').Types.ObjectId.isValid(req.params.id) ? require('mongoose').Types.ObjectId(req.params.id) : null },
         { orderId: req.params.id }
       ].filter(Boolean)
-    });
+    }).populate('deliveryStaffAssigned', 'name phone role');
 
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
@@ -431,7 +432,7 @@ exports.markDelivered = async (req, res) => {
         { _id: require('mongoose').Types.ObjectId.isValid(req.params.id) ? require('mongoose').Types.ObjectId(req.params.id) : null },
         { orderId: req.params.id }
       ].filter(Boolean)
-    });
+    }).populate('deliveryStaffAssigned', 'name phone role');
 
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
@@ -455,13 +456,13 @@ exports.markDelivered = async (req, res) => {
       });
     }
 
-    order.orderStatus = 'DELIVERED';
-    order.status = 'delivered';
+    order.orderStatus = 'COMPLETED';
+    order.status = 'Completed';
     order.deliveredAt = new Date();
     order.completedTime = new Date();
 
     await order.save();
-    await OrderStatusHistory.create({ orderId: order._id, previousStatus: current, newStatus: 'DELIVERED', changedBy: req.user.id, reason: 'Order delivered to customer' });
+    await OrderStatusHistory.create({ orderId: order._id, previousStatus: current, newStatus: 'COMPLETED', changedBy: req.user.id, reason: 'Order delivered to customer' });
 
     const { emitSocketEvent } = require('../utils/socket');
     const orderSummary = serializeDelivery(order);

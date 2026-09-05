@@ -110,7 +110,8 @@ function serializeOrder(order) {
     inventoryRestored: order.inventoryRestored,
     refundStatus: order.refundStatus,
     refundAmount: order.refundAmount,
-    refundReference: order.refundReference
+    refundReference: order.refundReference,
+    refundedAt: order.refundedAt || null
   };
 }
 
@@ -204,7 +205,11 @@ exports.getAllOrders = async (req, res) => {
     const limitNum = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
     const skip = (pageNum - 1) * limitNum;
 
-    const orders = await Order.find(filter).sort(sortOption).skip(skip).limit(limitNum);
+    const orders = await Order.find(filter)
+      .populate('deliveryStaffAssigned', 'name phone role')
+      .sort(sortOption)
+      .skip(skip)
+      .limit(limitNum);
     const total = await Order.countDocuments(filter);
 
     // Batch-load customer info
@@ -243,8 +248,8 @@ exports.getOrderById = async (req, res) => {
   try {
     const { id } = req.params;
     let order = null;
-    if (isValidObjectId(id)) order = await Order.findById(id);
-    if (!order) order = await Order.findOne({ orderId: id });
+    if (isValidObjectId(id)) order = await Order.findById(id).populate('deliveryStaffAssigned', 'name phone role');
+    if (!order) order = await Order.findOne({ orderId: id }).populate('deliveryStaffAssigned', 'name phone role');
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
     }
@@ -351,8 +356,8 @@ exports.updateOrderStatus = async (req, res) => {
 
     const { id } = req.params;
     let order = null;
-    if (isValidObjectId(id)) order = await Order.findById(id);
-    if (!order) order = await Order.findOne({ orderId: id });
+    if (isValidObjectId(id)) order = await Order.findById(id).populate('deliveryStaffAssigned', 'name phone role');
+    if (!order) order = await Order.findOne({ orderId: id }).populate('deliveryStaffAssigned', 'name phone role');
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
     }
@@ -430,8 +435,8 @@ exports.cancelOrder = async (req, res) => {
     const { id } = req.params;
 
     let order = null;
-    if (isValidObjectId(id)) order = await Order.findById(id);
-    if (!order) order = await Order.findOne({ orderId: id });
+    if (isValidObjectId(id)) order = await Order.findById(id).populate('deliveryStaffAssigned', 'name phone role');
+    if (!order) order = await Order.findOne({ orderId: id }).populate('deliveryStaffAssigned', 'name phone role');
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
     }
@@ -587,6 +592,93 @@ exports.getOrderStats = async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Admin Get Order Stats Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
+  }
+};
+
+/**
+ * @desc    Refund a cancelled order (Admin)
+ * @route   POST /api/v1/admin/orders/:id/refund
+ * @access  Private/Admin
+ * Reviews + processes a refund for a cancelled order: marks the order payment
+ * status REFUNDED, saves the refund reference/date-time, sends a customer
+ * notification, and keeps the Cancellation/Payment records in sync.
+ */
+exports.refundOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    let order = null;
+    if (isValidObjectId(id)) order = await Order.findById(id).populate('deliveryStaffAssigned', 'name phone role');
+    if (!order) order = await Order.findOne({ orderId: id }).populate('deliveryStaffAssigned', 'name phone role');
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
+    }
+
+    const current = effectiveStatus(order);
+    const isCancelled = current === 'CANCELLED' || String(order.status || '').toLowerCase() === 'cancelled';
+    if (!isCancelled) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Only cancelled orders can be refunded (current: ${current})` });
+    }
+    if (String(order.paymentStatus || '').toUpperCase() !== 'PAID') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Order is not eligible for a refund (payment was not completed)' });
+    }
+    if (String(order.refundStatus || '').toUpperCase() === 'REFUNDED') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Refund already processed for this order' });
+    }
+
+    // Process the refund through the shared cancellation service (single source of truth):
+    // request -> mark processing -> confirm (simulated provider confirmation).
+    let cancellation = await svc.findActiveCancellation(order);
+    if (!cancellation) {
+      const created = await svc.createCancellation(order, req.user, {
+        reason: 'ADMIN_REFUND',
+        description: 'Cancellation refunded by admin',
+        adminNote: 'Refunded by admin',
+      });
+      cancellation = created.cancellation;
+      order = created.order;
+      cancellation.status = 'CANCELLED';
+      cancellation.approvedAt = new Date();
+      cancellation.processedBy = req.user.id;
+      cancellation.isActive = true;
+      await cancellation.save();
+      order.orderStatus = 'CANCELLED';
+      order.status = STATUS_TO_LOWERCASE.CANCELLED;
+      order.cancellationStatus = 'approved';
+      order.cancellationProcessedAt = new Date();
+      order.cancellationProcessedBy = req.user.id;
+      await order.save();
+    }
+
+    await svc.requestRefund({ order, cancellation, amount: order.totalAmount, actorId: req.user.id });
+    await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
+    await svc.confirmRefund({ cancellation, order, providerReference: cancellation.refundReference, actorId: req.user.id });
+
+    // Keep the standalone Payment record in sync (best effort).
+    try {
+      await Payment.findOneAndUpdate(
+        { orderId: order._id },
+        { status: 'REFUNDED', refundStatus: 'REFUNDED', refundedAt: new Date(), refundAmount: cancellation.refundAmount, refundReference: cancellation.refundReference }
+      );
+    } catch (_) { /* best effort */ }
+
+    await logAction({
+      req,
+      action: 'ORDER_REFUNDED',
+      entityType: 'Order',
+      entityId: String(order.orderId || order._id),
+      description: `Admin refunded cancelled order #${order.orderId} (${cancellation.refundAmount} ETB)`
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: `Refund processed for order #${order.orderId}`,
+      order: serializeOrder(order),
+    });
+  } catch (error) {
+    if (error.statusCode) return res.status(error.statusCode).json({ success: false, error: error.message });
+    console.error('❌ Admin Refund Order Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
   }
 };

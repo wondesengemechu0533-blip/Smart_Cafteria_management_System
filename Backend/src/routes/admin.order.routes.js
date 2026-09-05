@@ -7,7 +7,8 @@ const {
   getOrderById,
   updateOrderStatus,
   cancelOrder,
-  getOrderStats
+  getOrderStats,
+  refundOrder
 } = require('../controllers/admin.order.controller');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
 
@@ -47,6 +48,12 @@ router.patch('/:id/status', updateOrderStatus);
  * Body: { reason, adminNote }
  */
 router.patch('/:id/cancel', cancelOrder);
+
+/**
+ * @route   POST /api/v1/admin/orders/:id/refund
+ * @desc    Refund a cancelled order (marks payment REFUNDED + saves reference/date-time + notifies customer)
+ */
+router.post('/:id/refund', refundOrder);
 router.get('/:id/history', async (req, res) => {
   const Order = require('../models/Order');
   const lookup = [{ orderId: req.params.id }];

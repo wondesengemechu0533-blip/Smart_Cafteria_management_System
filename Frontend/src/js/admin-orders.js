@@ -83,6 +83,7 @@
       case "PAID": cls += " cmp"; break;
       case "FAILED": cls += " cxl"; break;
       case "CANCELLED": cls += " cxl"; break;
+      case "REFUNDED": cls += " rfnd"; break;
       default: cls += " pend"; break;
     }
     return '<span class="' + cls + '">' + String(paymentStatus || "PENDING") + "</span>";
@@ -95,10 +96,21 @@
     return null;
   }
 
-  function canCancel(current, order) {
+function canCancel(current, order) {
     var flow = getFlow(order);
     var idx = flow.indexOf(String(current || "").toUpperCase());
-    return idx === 0 || idx === 1; // PENDING or PREPARING
+    if (idx >= 0 && idx < flow.length - 1) return true;
+    return false;
+  }
+
+  // A cancelled + paid order that has not been refunded yet is eligible for a
+  // refund (PENDING -> CANCELLED -> REFUNDED workflow).
+  function refundEligible(order) {
+    if (!order) return false;
+    if (String(order.status || "").toUpperCase() !== "CANCELLED") return false;
+    if (String(order.paymentStatus || "").toUpperCase() !== "PAID") return false;
+    if (String(order.refundStatus || "").toUpperCase() === "REFUNDED") return false;
+    return Number(order.totalAmount || 0) > 0;
   }
 
   /* ============================================================
@@ -207,6 +219,10 @@
       var cancelBtn = showCancel
         ? '<button class="action-btn danger" data-action="cancel" data-id="' + order.id + '" title="Cancel order"><i class="fa-solid fa-ban"></i></button>'
         : "";
+      var showRefund = refundEligible(order);
+      var refundBtn = showRefund
+        ? '<button class="action-btn" data-action="refund" data-id="' + order.id + '" title="Process refund"><i class="fa-solid fa-money-bill-transfer"></i></button>'
+        : "";
 
       var customerLines =
         "<strong>" + escapeHtml(order.customerName) + "</strong>" +
@@ -237,6 +253,7 @@
         "<td>" +
           '<div class="table-actions">' +
             '<button class="action-btn" data-action="view" data-id="' + order.id + '" title="View order details"><i class="fa-solid fa-eye"></i></button>' +
+            refundBtn +
             cancelBtn +
           "</div>" +
         "</td>" +
@@ -364,6 +381,18 @@
     }
     document.getElementById("modalCancellationInfo").textContent = cancelInfo;
 
+    var refundInfoEl = document.getElementById("modalRefundInfo");
+    if (refundInfoEl) {
+      var rfndUp = String(order.refundStatus || "").toUpperCase();
+      refundInfoEl.innerHTML = order.paymentStatus === "REFUNDED" || rfndUp === "REFUNDED"
+        ? "Refunded" +
+          (order.refundReference ? ' <small>(' + window.esc(order.refundReference) + ")</small>" : "") +
+          (order.refundedAt ? " · " + window.AdminAPI.formatDateTime(order.refundedAt) : "")
+        : "—";
+    }
+    var modalRefundBtn = document.getElementById("refundOrderBtn");
+    if (modalRefundBtn) modalRefundBtn.style.display = refundEligible(order) ? "inline-flex" : "none";
+
     document.getElementById("modalStatusHistory").textContent = "Loading history...";
     window.AdminAPI.get("/admin/orders/" + order.id + "/history").then(function(data) {
       var history = data.history || [];
@@ -391,6 +420,22 @@
       loadStats();
     } catch (error) {
       if (window.AdminToast) window.AdminToast.error(error.message || "Failed to update order status");
+    }
+  }
+
+  async function processOrderRefund() {
+    var order = window.__activeOrder;
+    if (!order) return;
+    if (!window.confirm("Process refund for order #" + (order.orderId || "") + "? The payment status will become REFUNDED and the customer will be notified.")) return;
+
+    try {
+      await window.AdminAPI.post("/admin/orders/" + order.id + "/refund", {});
+      closeModal("orderDetailsModal");
+      if (window.AdminToast) window.AdminToast.success("Refund processed for " + (order.orderId || "order"));
+      loadOrders();
+      loadStats();
+    } catch (error) {
+      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to process refund");
     }
   }
 
@@ -717,6 +762,9 @@
     var cancelBtn = document.getElementById("cancelOrderBtn");
     if (cancelBtn) cancelBtn.addEventListener("click", cancelCurrentOrder);
 
+    var refundOrderBtn = document.getElementById("refundOrderBtn");
+    if (refundOrderBtn) refundOrderBtn.addEventListener("click", processOrderRefund);
+
     var confirmCancelBtn = document.getElementById("confirmCancelOrderBtn");
     if (confirmCancelBtn) confirmCancelBtn.addEventListener("click", confirmCancelOrder);
 
@@ -743,6 +791,11 @@
           document.getElementById("cancelReasonSelect").value = "Cancelled by admin";
           document.getElementById("cancelReasonInput").value = "";
           openModal("cancelOrderModal");
+        } else if (action === "refund") {
+          var refundOrder = (window.__ordersCache || []).find(function (o) { return o.id === id; });
+          if (!refundOrder) return;
+          window.__activeOrder = refundOrder;
+          processOrderRefund();
         }
       });
     }

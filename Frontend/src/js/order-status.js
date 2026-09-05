@@ -130,6 +130,7 @@ function setStatusText(status) {
     if (!heading && !subtext) return;
 
     const map = {
+        received: ["Order Received", "We have sent your order directly to the kitchen counter."],
         pending: ["Order Received", "We have sent your order directly to the kitchen counter."],
         preparing: ["Preparing", "The kitchen is preparing your order. Please wait."],
         ready: ["Ready", "Your order is " + (currentOrderType === "delivery" ? "ready for delivery!" : "ready for pickup!")],
@@ -141,13 +142,16 @@ function setStatusText(status) {
         cancelled: ["Order Cancelled", "This order was cancelled and will not be prepared."]
     };
 
-    const entry = map[s] || ["Order Tracker", "We are processing your order."];
+    // Legacy "received" status is mapped to the first step (Order Received) so
+    // the tracker always starts at step 1 rather than showing a generic state.
+    const entry = map[s] || (s === "received" ? map.received : undefined) || ["Order Tracker", "We are processing your order."];
 
     if (heading) heading.textContent = entry[0];
     if (subtext) subtext.textContent = entry[1];
 
     if (icon) {
         const icons = {
+            received: 'fa-circle-check',
             pending: 'fa-circle-check',
             preparing: 'fa-fire-burner',
             ready: 'fa-bell-concierge',
@@ -159,6 +163,7 @@ function setStatusText(status) {
             cancelled: 'fa-circle-xmark'
         };
         const colors = {
+            received: '#16a34a',
             pending: '#16a34a',
             preparing: '#16a34a',
             ready: '#16a34a',
@@ -226,7 +231,16 @@ function statusLabel(s) {
 let currentOrderType = "dine-in";
 
 /**
- * Build the timeline steps. Pickup orders get 3 steps; delivery orders get 5.
+ * Tracks the highest step reached for the current delivery flow so that only
+ * genuinely forward (monotonic) status changes advance the timeline. Stale or
+ * older socket events can never move the tracker backwards.
+ */
+let latestActiveIndex = -1;
+
+/**
+ * Build the timeline steps. Pickup orders get 3 steps; delivery orders get all
+ * 7 steps (Received -> Preparing -> Ready -> Picked Up -> Out for Delivery ->
+ * Delivered -> Completed).
  * Returns an array of { stepId, lineId, key, strong, small, icon }.
  */
 function getTimelineConfig() {
@@ -256,7 +270,12 @@ function buildTimelineDOM(force) {
     const container = document.getElementById("status-timeline");
     if (!container) return;
     if (!force && timelineBuiltForType === currentOrderType) return;
+    const typeChanged = timelineBuiltForType !== currentOrderType;
     timelineBuiltForType = currentOrderType;
+    // Only reset the monotonic progress when the flow type actually changes
+    // (e.g. delivery vs pickup). Rebuilding the same type on a live update must
+    // NOT reset progress, or out-of-order events could regress the timeline.
+    if (typeChanged) latestActiveIndex = -1;
 
     const config = getTimelineConfig();
     let html = "";
@@ -279,9 +298,20 @@ function buildTimelineDOM(force) {
 
 /**
  * Mark the correct timeline steps/lines active based on the order status.
+ *
+ * Steps advance forward-only in a monotonic fashion. For live / realtime
+ * updates the tracker can only advance — stale or older events are ignored so
+ * the customer never sees the tracker regress.
+ *
+ * opts.regressible — when true (used by the initial page render after a
+ * backend fetch), the timeline may be repositioned freely to match the
+ * authoritative backend status.
  */
-function renderTimeline(status) {
-    const s = normalizeStatus(status);
+function renderTimeline(status, opts = {}) {
+    let s = normalizeStatus(status);
+    // Legacy / kitchen-mapped "received" status should land on the first step.
+    if (s === "received") s = "pending";
+
     buildTimelineDOM(false);
     const config = getTimelineConfig();
     const stepKeys = config.map(c => c.key);
@@ -299,38 +329,56 @@ function renderTimeline(status) {
         }
     });
 
+    let activeIndex;
     if (s === "cancelled") {
-        reset();
-        if (steps[0]) steps[0].classList.add("active");
-        return;
-    }
-    if (s === "served") {
-        const effective = currentOrderType === "delivery" ? "ready" : "ready";
-        stepsSomeActive(stepKeys, effective, steps, lines, reset);
-        return;
-    }
-    if (s === "completed") {
-        const effective = currentOrderType === "delivery" ? "completed" : "ready";
-        stepsSomeActive(stepKeys, effective, steps, lines, reset);
-        return;
+        // Keep only the first step visible; the order was stopped.
+        activeIndex = 0;
+    } else if (s === "served") {
+        // Served (pickup) is functionally the same as "ready".
+        activeIndex = stepKeys.indexOf("ready");
+    } else if (s === "completed") {
+        activeIndex = stepKeys.indexOf(currentOrderType === "delivery" ? "completed" : "ready");
+    } else {
+        activeIndex = stepKeys.indexOf(s);
     }
 
-    stepsSomeActive(stepKeys, s, steps, lines, reset);
+    if (activeIndex === -1) {
+        // Unknown status: keep all steps neutral.
+        reset();
+        return true;
+    }
+
+    // Allow cancellation events to always render (dims the timeline back to
+    // step 1) even if the tracker had already advanced further.  Every other
+    // realtime / poll update can only move forward.
+    if (opts.regressible !== true && s !== "cancelled" && activeIndex < latestActiveIndex) {
+        return false;
+    }
+    latestActiveIndex = Math.max(latestActiveIndex, activeIndex);
+
+    reset();
+    activateSteps(steps, lines, activeIndex);
+    return true;
 }
 
-function stepsSomeActive(stepKeys, s, steps, lines, reset) {
-    reset();
-    const activeIndex = stepKeys.indexOf(s);
-    if (activeIndex === -1) {
-        // Unknown status: keep first step neutral.
-        return;
-    }
+function activateSteps(steps, lines, activeIndex) {
     for (let i = 0; i <= activeIndex; i++) {
         if (steps[i]) steps[i].classList.add("active");
     }
     for (let i = 0; i < activeIndex; i++) {
         if (lines[i]) lines[i].classList.add("active");
     }
+}
+
+/**
+ * Apply a live status update (socket or poll).  Advances the timeline forward
+ * only; returns true when the tracker was updated, false if the event was stale.
+ */
+function applyLiveStatus(status) {
+    const applied = renderTimeline(status);
+    if (!applied) return false;
+    setStatusText(status);
+    return true;
 }
 
 function escapeHtml(str) {
@@ -422,7 +470,7 @@ function renderEmptyState() {
 function renderOrder(orderData) {
     populateReceipt(orderData);
     const status = orderData.status || "Pending";
-    renderTimeline(status);
+    renderTimeline(status, { regressible: true });
     setStatusText(status);
 }
 
@@ -495,8 +543,7 @@ function renderReceiptFromLive(order) {
 }
 
 function setupRealtime(orderId) {
-    const token = localStorage.getItem("auth_token");
-    if (!token || !orderId) return;
+    if (!orderId) return;
 
 socketClient.on("order:status", (order) => {
         const liveId = (order?.orderId || order?.id || "").replace(/^#/, "");
@@ -511,22 +558,25 @@ socketClient.on("order:status", (order) => {
             buildTimelineDOM(true);
         }
 
-        renderTimeline(newStatus);
-        setStatusText(newStatus);
+        // Only advance the timeline forward; ignore stale/older events.
+        if (applyLiveStatus(newStatus)) {
+            persistStatus(currentId, newStatus);
+        }
         renderReceiptFromLive(order);
-        persistStatus(currentId, newStatus);
     });
 
     // Fallback: poll the backend periodically so the timeline advances even if
     // the socket is unreachable/disconnected. Stop once the order is terminal.
     startStatusPolling(orderId);
 
-    // Join this order's room on the socket server (guarantees targeted events)
+    // Join this order's room on the socket server (guarantees targeted events).
+    // The socket connects even without an auth token so a tracking session always
+    // gets live step-by-step updates when the kitchen / delivery staff act.
     socketClient.on("connect", () => {
         socketClient.joinOrderRoom(orderId);
     });
-    // Try to connect / join immediately.
     try {
+        const token = localStorage.getItem("auth_token");
         socketClient.connect(token);
         socketClient.joinOrderRoom(orderId);
     } catch (e) {
@@ -538,30 +588,37 @@ let statusPollTimer = null;
 
 /**
  * Poll the backend for the live order status every few seconds and advance the
- * timeline (received -> preparing -> ready) as the kitchen updates it. This is
- * a reliability fallback for the socket: even if realtime fails, the tracker
- * still reflects the kitchen's actions. Polling stops once the order reaches a
- * terminal state (ready/served/completed/cancelled).
+ * timeline as the kitchen / delivery staff update it.  This is a reliability
+ * fallback for the socket: even if realtime fails, the tracker still reflects
+ * the actual backend status.  Polling continues through all active steps
+ * (including picked_up / out_for_delivery for delivery orders) and stops only
+ * at a truly terminal state (served / delivered / completed / cancelled).
  */
 function startStatusPolling(orderId) {
     if (!orderId) return;
+    // Polling hits the authenticated backend endpoint, so only poll when the
+    // customer has a token. Guests still get live updates through the socket.
+    if (!localStorage.getItem("auth_token")) return;
     try { clearInterval(statusPollTimer); } catch (e) {}
     statusPollTimer = setInterval(async () => {
         try {
             const live = await fetchLiveStatus(orderId);
             if (!live || !live.status) return;
             const s = normalizeStatus(live.status);
-            // Only update the timeline + heading; avoid re-rendering the whole
-            // receipt on every poll to not disrupt the page.
+
             if (live.orderType) {
                 currentOrderType = live.orderType;
                 buildTimelineDOM(true);
             }
+
+            // Only advance the timeline forward; ignore stale/older events.
+            if (applyLiveStatus(s)) {
+                persistStatus(orderId, live.status);
+            }
             renderReceiptFromLive(live);
-            renderTimeline(s);
-            setStatusText(s);
-            persistStatus(orderId, live.status);
-            if (s === "ready" || s === "served" || s === "completed" || s === "delivered" || s === "cancelled") {
+
+            const terminal = s === "served" || s === "delivered" || s === "completed" || s === "cancelled";
+            if (terminal) {
                 try { clearInterval(statusPollTimer); statusPollTimer = null; } catch (e) {}
             }
         } catch (err) {

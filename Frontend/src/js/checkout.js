@@ -567,15 +567,20 @@ document.addEventListener("DOMContentLoaded", () => {
                     const deliverySubCityElement =
                         document.getElementById("delivery-subcity");
 
+                    const deliveryHouseNumberElement =
+                        document.getElementById("delivery-house-number");
+
                     const deliveryLocationElement =
                         document.getElementById("delivery-location");
-
-                    const deliveryNoteElement =
-                        document.getElementById("delivery-note");
 
                     const deliverySubCity =
                         deliverySubCityElement
                             ? deliverySubCityElement.value.trim()
+                            : "";
+
+                    const deliveryHouseNumber =
+                        deliveryHouseNumberElement
+                            ? deliveryHouseNumberElement.value.trim()
                             : "";
 
                     const deliveryLocation =
@@ -583,27 +588,27 @@ document.addEventListener("DOMContentLoaded", () => {
                             ? deliveryLocationElement.value.trim()
                             : "";
 
-                    const deliveryNote =
-                        deliveryNoteElement
-                            ? deliveryNoteElement.value.trim()
-                            : "";
-
                     if (!deliverySubCity) {
-                        alert("Please select your sub-city for delivery.");
+                        alert("Please select your area / kebele for delivery.");
                         if (deliverySubCityElement) deliverySubCityElement.focus();
                         return;
                     }
 
+                    if (!deliveryHouseNumber) {
+                        alert("Please enter your house number.");
+                        if (deliveryHouseNumberElement) deliveryHouseNumberElement.focus();
+                        return;
+                    }
+
                     if (!deliveryLocation) {
-                        alert("Please enter your delivery location / house / landmark.");
+                        alert("Please enter your street / area name.");
                         if (deliveryLocationElement) deliveryLocationElement.focus();
                         return;
                     }
 
                     deliveryInfo = {
                         subCity: deliverySubCity,
-                        location: deliveryLocation,
-                        note: deliveryNote,
+                        location: "House Number: " + deliveryHouseNumber + ", " + deliveryLocation,
                         phone: customerPhone || ""
                     };
                 }

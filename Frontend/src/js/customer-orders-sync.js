@@ -90,6 +90,9 @@ function toLocalRecord(serverOrder) {
         status: toDisplayStatus(serverOrder.status),
         paymentMethod: serverOrder.paymentMethod,
         paymentStatus: serverOrder.paymentStatus,
+        refundStatus: serverOrder.refundStatus,
+        refundReference: serverOrder.refundReference,
+        refundedAt: serverOrder.refundedAt,
         orderDate: serverOrder.orderDate,
         orderTime: serverOrder.orderTime
     };
