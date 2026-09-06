@@ -492,30 +492,115 @@ error: 'You can only cancel your own orders'
 });
 }
 
-// ✅ Check if order can be cancelled
-if (order.status === 'served' || order.status === 'cancelled') {
+// ✅ Check if order can be cancelled (use both status fields)
+const currentStatus = String(order.orderStatus || order.status || '').toUpperCase();
+if (['CANCELLED', 'COMPLETED', 'DELIVERED', 'SERVED'].includes(currentStatus)) {
 return res.status(HTTP_STATUS.BAD_REQUEST).json({
 success: false,
-error: `Order cannot be cancelled (status: ${order.status})`
+error: `Order cannot be cancelled (status: ${currentStatus})`
 });
 }
 
-// ✅ Cancel order
+// ✅ Only PENDING orders can be cancelled by customer
+if (currentStatus !== 'PENDING') {
+return res.status(HTTP_STATUS.BAD_REQUEST).json({
+success: false,
+error: `Order can only be cancelled while pending (current status: ${currentStatus})`
+});
+}
+
+// ✅ For PAID orders, route through the cancellation service which handles
+//    refund requests and admin notification (PENDING → CANCELLED → Admin Refund → REFUNDED)
+const paid = String(order.paymentStatus || '').toUpperCase() === 'PAID';
+if (paid) {
+  const svc = require('../services/cancellation.service');
+  const { cancellation } = await svc.createCancellation(
+    order,
+    req.user,
+    { reason: reason || 'CUSTOMER_CHANGED_MIND', description: reason || 'Cancelled by customer', source: 'customer' }
+  );
+
+  // Approve immediately (PENDING order is always cancellable)
+  cancellation.status = 'APPROVED';
+  cancellation.approvedAt = new Date();
+  cancellation.processedBy = req.user.id;
+  cancellation.adminNote = 'Auto-cancelled by customer (pending order)';
+  cancellation.paymentStatus = order.paymentStatus || 'PENDING';
+  await cancellation.save();
+
+  await svc.cancelOrderForApproval({
+    order,
+    cancellation,
+    actorId: req.user.id,
+    adminNote: cancellation.adminNote,
+  });
+
+  // Mark refund as requested — admin will process it
+  cancellation.refundStatus = 'REFUND_REQUESTED';
+  cancellation.refundAmount = order.totalAmount;
+  await cancellation.save();
+
+  order.refundStatus = 'REFUND_REQUESTED';
+  order.refundAmount = order.totalAmount;
+  await order.save();
+
+  const Payment = require('../models/Payment');
+  try {
+    await Payment.findOneAndUpdate(
+      { orderId: order._id },
+      { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount },
+    );
+  } catch (_) { /* best effort */ }
+
+  const Notification = require('../models/Notification');
+  await Notification.create({
+    userId: order.userId,
+    title: 'Order Cancelled',
+    message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly.`,
+    type: 'order',
+    orderId: order.orderId,
+    isRead: false,
+  });
+
+  const { emitSocketEvent } = require('../utils/socket');
+  const orderSummary = order.getSummary();
+  emitSocketEvent('kitchen', 'order:status', orderSummary);
+  emitSocketEvent(`order:${order.orderId}`, 'order:status', orderSummary);
+
+  res.status(HTTP_STATUS.OK).json({
+    success: true,
+    message: `Order #${order.orderId} cancelled successfully. Your refund will be processed by an administrator.`
+  });
+  return;
+}
+
+// ✅ For unpaid orders, cancel directly (no refund needed)
 order.status = 'cancelled';
+order.orderStatus = 'CANCELLED';
 order.cancellationReason = reason || 'Cancelled by customer';
+order.cancellationStatus = 'approved';
+order.cancellationProcessedAt = new Date();
+order.cancellationProcessedBy = req.user.id;
 await order.save();
 
-// ✅ Emit socket event for order status update
 const { emitSocketEvent } = require('../utils/socket');
 const orderSummary = order.getSummary();
 emitSocketEvent('kitchen', 'order:status', orderSummary);
 emitSocketEvent(`order:${order.orderId}`, 'order:status', orderSummary);
 
-res.status(HTTP_STATUS.OK).json({
-success: true,
-message: `Order #${order.orderId} cancelled
+const Notification = require('../models/Notification');
+await Notification.create({
+  userId: order.userId,
+  title: 'Order Cancelled',
+  message: `Your order #${order.orderId} has been cancelled.`,
+  type: 'order',
+  orderId: order.orderId,
+  isRead: false,
+});
 
-successfully`
+res.status(HTTP_STATUS.OK).json({
+  success: true,
+  message: `Order #${order.orderId} cancelled successfully`
 });
 
 } catch (error) {

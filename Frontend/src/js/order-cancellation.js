@@ -9,7 +9,8 @@
  *
  * Policy: a customer may only cancel while the order is still PENDING /
  * RECEIVED (before the kitchen starts preparing). A pending cancellation is
- * applied immediately and a full refund is processed automatically.
+ * applied immediately; if the order was paid, the refund is queued for admin
+ * review and processing (PENDING → CANCELLED → Admin Refund → REFUNDED).
  */
 
 import api from "../js/api.js";
@@ -88,7 +89,7 @@ function initializeCancellation() {
 
             await requestCancellation(orderId, "CUSTOMER_CHANGED_MIND", "Cancelled by customer");
 
-            alert("Order cancelled successfully. Any payment has been fully refunded.");
+            alert("Order cancelled successfully. If you paid, your refund will be processed by an administrator and you will be notified.");
             window.location.reload();
         } catch (error) {
             alert(error.message || "Failed to submit cancellation request");

@@ -132,8 +132,20 @@ async function restoreStock(order, actorId) {
 async function requestRefund({ order, cancellation, amount, actorId }) {
   if (!cancellation) throw Object.assign(new Error('Cancellation record not found'), { statusCode: 404 });
 
-  // Duplicate refund protection: only allow requesting if never started.
-  if ([REFUND_STATUS.REFUND_REQUESTED, REFUND_STATUS.REFUND_PROCESSING, REFUND_STATUS.REFUND_APPROVED, REFUND_STATUS.REFUNDED].includes(cancellation.refundStatus)) {
+  // Refund eligibility guard: the order must be cancelled AND its payment must
+  // have succeeded. Orders that are still active, unpaid, or non-refundable are
+  // rejected so a refund can never be issued for them.
+  if (order) {
+    const orderIsPaid = ['PAID', 'REFUNDED'].includes(String(order.paymentStatus || '').toUpperCase());
+    const orderIsCancelled = String(order.orderStatus || '').toUpperCase() === 'CANCELLED' || String(order.status || '').toLowerCase() === 'cancelled';
+    if (!orderIsPaid || !orderIsCancelled) {
+      throw Object.assign(new Error('Order is not eligible for a refund (order must be cancelled and paid)'), { statusCode: 400 });
+    }
+  }
+
+  // Duplicate refund protection: only allow requesting if never started, or if
+  // already REFUND_REQUESTED (idempotent - allows continuing toward processing).
+  if ([REFUND_STATUS.REFUND_PROCESSING, REFUND_STATUS.REFUND_APPROVED, REFUND_STATUS.REFUNDED].includes(cancellation.refundStatus)) {
     throw Object.assign(new Error(`Refund already ${cancellation.refundStatus.toLowerCase()} for this cancellation`), { statusCode: 409 });
   }
 

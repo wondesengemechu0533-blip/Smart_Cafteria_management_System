@@ -620,7 +620,15 @@ exports.refundOrder = async (req, res) => {
     if (!isCancelled) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Only cancelled orders can be refunded (current: ${current})` });
     }
-    if (String(order.paymentStatus || '').toUpperCase() !== 'PAID') {
+
+    // Check payment eligibility: both the top-level paymentStatus and the
+    // embedded payment.status must indicate the payment was completed.
+    const topPaymentStatus = String(order.paymentStatus || '').toUpperCase();
+    const embeddedPaymentStatus = order.payment && order.payment.status
+      ? String(order.payment.status).toUpperCase()
+      : topPaymentStatus;
+    const isPaid = topPaymentStatus === 'PAID' || embeddedPaymentStatus === 'PAID';
+    if (!isPaid) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Order is not eligible for a refund (payment was not completed)' });
     }
     if (String(order.refundStatus || '').toUpperCase() === 'REFUNDED') {
@@ -661,6 +669,12 @@ exports.refundOrder = async (req, res) => {
         { orderId: order._id },
         { status: 'REFUNDED', refundStatus: 'REFUNDED', refundedAt: new Date(), refundAmount: cancellation.refundAmount, refundReference: cancellation.refundReference }
       );
+    } catch (_) { /* best effort */ }
+
+    // Also update the embedded payment.status on the order document.
+    try {
+      order.payment.status = 'REFUNDED';
+      await order.save();
     } catch (_) { /* best effort */ }
 
     await logAction({

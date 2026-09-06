@@ -346,6 +346,27 @@ exports.refundPayment = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Payment not found' });
     }
 
+    // Refund eligibility: only a payment tied to a cancelled order can be
+    // refunded (PENDING paid order → customer cancels → admin refund).
+    const linkedOrder = await Order.findById(payment.orderId).lean();
+    const orderCancelled = linkedOrder
+      ? (String(linkedOrder.orderStatus || '').toUpperCase() === 'CANCELLED' ||
+         String(linkedOrder.status || '').toLowerCase() === 'cancelled')
+      : false;
+    const paymentPaid = payment.status === 'PAID';
+    if (!orderCancelled) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Refund not allowed: the linked order is not cancelled.',
+      });
+    }
+    if (!paymentPaid || payment.status === 'REFUNDED') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Refund not allowed: payment was not completed (or already refunded).',
+      });
+    }
+
     // Validate refund amount
     const refundableAmount = payment.amount - (payment.refundAmount || 0);
     if (amount > refundableAmount) {

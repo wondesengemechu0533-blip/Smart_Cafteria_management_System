@@ -442,11 +442,60 @@ document.addEventListener("DOMContentLoaded", function () {
     async function loadActiveCategoryFilters() {
         try {
             const response = await api.get("/categories");
-            const active = new Set((response.categories || []).filter(category => category.isActive !== false).map(category => String(category.id).toLowerCase()));
-            document.querySelectorAll(".category-pill[data-category]").forEach(button => {
-                const category = String(button.dataset.category).toLowerCase();
-                if (category !== "all") button.hidden = active.size > 0 && !active.has(category);
+            const categories = response.categories || [];
+            const activeCategories = categories.filter(category => category.isActive !== false);
+
+            const lang = getLang();
+
+            // Expose category names so menu.js can show the real category name
+            // in the results label for admin-created categories.
+            const names = {};
+            activeCategories.forEach(category => {
+                const id = String(category.id).toLowerCase();
+                const raw = category.name;
+                names[id] = (raw && (raw[lang] || raw.en)) || category.id;
             });
+            window.__CUSTOMER_CATEGORY_NAMES = names;
+
+            const container = document.getElementById("category-tabs-container");
+            if (!container) return;
+
+            const activeButton = container.querySelector(".category-pill.active");
+            const currentActiveId = (activeButton && activeButton.dataset.category) || "all";
+
+            // Remove every pre-rendered pill except the permanent "All" tab,
+            // then rebuild all category pills directly from the backend so any
+            // category added by an admin automatically shows up here.
+            [].slice.call(container.querySelectorAll(".category-pill[data-category]")).forEach(button => {
+                if (button.dataset.category === "all") return;
+                button.remove();
+            });
+
+            activeCategories.forEach(category => {
+                const id = String(category.id).toLowerCase();
+                const label = names[id] || category.id;
+                const icon = category.icon || "🍽️";
+                const iconHTML = typeof icon === "string" && (icon.indexOf("fa-") === 0 || icon.indexOf("<") === 0)
+                    ? `<i class="${escapeHTML(icon)}"></i>`
+                    : `<span>${escapeHTML(icon)}</span>`;
+
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "category-pill";
+                button.dataset.category = id;
+                button.title = label;
+                button.innerHTML = `${iconHTML} ${escapeHTML(label)}`;
+                container.appendChild(button);
+            });
+
+            // Re-apply the previously selected category (defaults to "All") so
+            // the active state and results count stay consistent after rebuild.
+            const target = container.querySelector('.category-pill[data-category="' + currentActiveId + '"]') ||
+                container.querySelector('.category-pill[data-category="all"]');
+            if (target) {
+                container.querySelectorAll(".category-pill").forEach(btn => btn.classList.remove("active"));
+                target.classList.add("active");
+            }
         } catch (error) {
             console.warn("Unable to load category visibility:", error.message);
         }
@@ -598,6 +647,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
     window.addEventListener("language:changed", loadMenu);
     window.addEventListener("languageChanged", loadMenu);
+    window.addEventListener("language:changed", loadActiveCategoryFilters);
+    window.addEventListener("languageChanged", loadActiveCategoryFilters);
     // Also re-apply cart badge translation after render
     window.addEventListener("language:changed", () => { if (window.applyTranslations) window.applyTranslations(); });
 

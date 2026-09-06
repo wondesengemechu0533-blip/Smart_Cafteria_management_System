@@ -108,7 +108,13 @@ function canCancel(current, order) {
   function refundEligible(order) {
     if (!order) return false;
     if (String(order.status || "").toUpperCase() !== "CANCELLED") return false;
-    if (String(order.paymentStatus || "").toUpperCase() !== "PAID") return false;
+    // Check both top-level paymentStatus and embedded payment.status
+    var topStatus = String(order.paymentStatus || "").toUpperCase();
+    var embeddedStatus = order.payment && order.payment.status
+      ? String(order.payment.status).toUpperCase()
+      : topStatus;
+    var isPaid = topStatus === "PAID" || embeddedStatus === "PAID";
+    if (!isPaid) return false;
     if (String(order.refundStatus || "").toUpperCase() === "REFUNDED") return false;
     return Number(order.totalAmount || 0) > 0;
   }
@@ -388,7 +394,9 @@ function canCancel(current, order) {
         ? "Refunded" +
           (order.refundReference ? ' <small>(' + window.esc(order.refundReference) + ")</small>" : "") +
           (order.refundedAt ? " · " + window.AdminAPI.formatDateTime(order.refundedAt) : "")
-        : "—";
+        : (rfndUp === "REFUND_REQUESTED" || rfndUp === "REFUND_PROCESSING"
+            ? 'Refund Pending <small>(awaiting admin processing)</small>'
+            : "—");
     }
     var modalRefundBtn = document.getElementById("refundOrderBtn");
     if (modalRefundBtn) modalRefundBtn.style.display = refundEligible(order) ? "inline-flex" : "none";

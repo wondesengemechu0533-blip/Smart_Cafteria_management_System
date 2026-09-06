@@ -25,9 +25,6 @@ document.addEventListener("DOMContentLoaded", function () {
     // ELEMENTS
     // =========================================================
 
-    const categoryButtons =
-        document.querySelectorAll(".category-pill");
-
     const resultsCount =
         document.getElementById("results-count");
 
@@ -678,6 +675,13 @@ document.addEventListener("DOMContentLoaded", function () {
                 categoryName = isAm ? "መክሰስ" : "Snacks";
                 break;
         }
+        if (categoryName === "menu") {
+            const dynamicNames = window.__CUSTOMER_CATEGORY_NAMES || {};
+            const info = dynamicNames[String(currentCategory).toLowerCase()];
+            if (info) {
+                categoryName = info;
+            }
+        }
         categoryName = categoryName === "menu" && isAm ? "ማውጫ" : categoryName;
 
         if (currentSearch !== "") {
@@ -706,36 +710,49 @@ document.addEventListener("DOMContentLoaded", function () {
     // CATEGORY BUTTONS
     // =========================================================
 
-    categoryButtons.forEach(function (button) {
+    // Event delegation on the pills container so category buttons that are
+    // created dynamically (admin-added categories rendered by
+    // customer-menu.js) receive the same filtering behaviour as the
+    // pre-rendered ones.
+    const categoryContainer =
+        document.getElementById("category-tabs-container");
 
-        button.addEventListener(
+    if (categoryContainer) {
+
+        categoryContainer.addEventListener(
             "click",
-            function () {
+            function (event) {
+
+                const button =
+                    event.target.closest(
+                        ".category-pill[data-category]"
+                    );
+
+                if (!button) {
+                    return;
+                }
 
                 currentCategory =
-                    this.getAttribute(
+                    button.getAttribute(
                         "data-category"
                     );
 
-
-                categoryButtons.forEach(
-                    function (btn) {
+                categoryContainer
+                    .querySelectorAll(".category-pill")
+                    .forEach(function (btn) {
 
                         btn.classList.remove(
                             "active"
                         );
 
-                    }
-                );
+                    });
 
-
-                this.classList.add("active");
-
+                button.classList.add("active");
 
                 filterMenu();
             }
         );
-    });
+    }
 
 
     // =========================================================
@@ -842,7 +859,9 @@ document.addEventListener("DOMContentLoaded", function () {
                 }
 
 
-                categoryButtons.forEach(
+                document.querySelectorAll(
+                    ".category-pill"
+                ).forEach(
                     function (button) {
 
                         button.classList.remove(

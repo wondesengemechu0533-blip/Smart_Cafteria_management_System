@@ -150,12 +150,13 @@ exports.requestCancellation = async (req, res) => {
     // ================================================================
     // Self-service cancellation: the eligibility check above guarantees
     // the order is still PENDING/RECEIVED (awaiting preparation), so the
-    // order is cancelled immediately and a FULL refund is issued
-    // automatically. No admin approval is required for a pending
-    // cancellation, and no separate refund step is needed.
+    // order is cancelled immediately. However, if the payment was already
+    // completed (PAID), the refund is NOT processed automatically — it
+    // requires admin review and approval first (PENDING → CANCELLED →
+    // Admin Refund → REFUNDED workflow).
     // ================================================================
 
-    // 1. Approve immediately, then cancel the order + restore stock.
+    // 1. Approve the cancellation immediately, then cancel the order + restore stock.
     cancellation.status = CANCELLATION_FLOW_STATUS.APPROVED;
     cancellation.approvedAt = new Date();
     cancellation.processedBy = req.user.id;
@@ -170,21 +171,40 @@ exports.requestCancellation = async (req, res) => {
       adminNote: cancellation.adminNote,
     });
 
-    // 2. Full refund when payment already succeeded; otherwise complete now.
+    // 2. Handle refund: if payment was PAID, leave the refund for admin
+    //    review and processing. If unpaid, mark as not required.
     const paid = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
-    const refunded = paid && Number(order.totalAmount) > 0;
 
-    if (refunded) {
-      await svc.requestRefund({ order, cancellation, amount: order.totalAmount, actorId: req.user.id });
-      // In the self-service flow the refund resolves immediately (simulated
-      // provider confirmation), so the payment is fully returned right away.
-      await svc.confirmRefund({ cancellation, order, providerReference: cancellation.refundReference, actorId: req.user.id });
+    if (paid && Number(order.totalAmount) > 0) {
+      // Mark refund as requested but do NOT process it yet — the admin must
+      // review the cancellation and process the refund from the admin panel.
+      cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      cancellation.refundAmount = order.totalAmount;
+      await cancellation.save();
+
+      // Sync order refund fields so admin panel sees the request.
+      order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      order.refundAmount = order.totalAmount;
+      await order.save();
+
       try {
         await Payment.findOneAndUpdate(
           { orderId: order._id },
-          { status: 'REFUNDED', refundStatus: 'REFUNDED', refundedAt: new Date(), refundAmount: cancellation.refundAmount, refundReference: cancellation.refundReference },
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount },
         );
       } catch (_) { /* best effort */ }
+
+      await Notification.create({
+        userId: order.userId,
+        title: 'Order Cancelled',
+        message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly. You will be notified once the refund is complete.`,
+        type: 'order',
+        orderId: order.orderId,
+        isRead: false,
+      });
+
+      // Keep cancellation as CANCELLED (not COMPLETED) so admin sees it
+      // in the refund queue.
     } else {
       cancellation.refundStatus = REFUND_STATUS.NOT_REQUIRED;
       cancellation.refundAmount = 0;
@@ -203,12 +223,12 @@ exports.requestCancellation = async (req, res) => {
         orderId: order.orderId,
         isRead: false,
       });
-    }
 
-    // The whole flow is immediate → mark the cancellation as completed.
-    cancellation.status = CANCELLATION_FLOW_STATUS.COMPLETED;
-    cancellation.completedAt = new Date();
-    await cancellation.save();
+      // Mark as completed since no refund is needed.
+      cancellation.status = CANCELLATION_FLOW_STATUS.COMPLETED;
+      cancellation.completedAt = new Date();
+      await cancellation.save();
+    }
 
     await OrderStatusHistoryCreate(order, current, 'CANCELLED', req.user.id, 'Customer cancelled pending order');
 
@@ -218,16 +238,17 @@ exports.requestCancellation = async (req, res) => {
         action: 'CANCELLATION_AUTO_FULFILLED',
         entityType: 'Cancellation',
         entityId: String(cancellation.cancellationNumber || cancellation._id),
-        description: `Pending order #${order.orderId} cancelled immediately by customer. Refund: ${refunded ? 'full - ' + cancellation.refundAmount + ' ETB' : 'not required'}`,
+        description: `Pending order #${order.orderId} cancelled immediately by customer. Refund: ${paid ? cancellation.refundAmount + ' ETB pending admin processing' : 'not required'}`,
       });
     } catch (_) { /* audit is best effort */ }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: refunded
-        ? `Order cancelled successfully. A full refund of ${cancellation.refundAmount} ETB has been processed.`
+      message: paid
+        ? `Order cancelled successfully. A refund of ${cancellation.refundAmount} ETB will be processed by an administrator.`
         : 'Order cancelled successfully.',
-      refunded,
+      refunded: false,
+      refundRequested: paid && Number(order.totalAmount) > 0,
       cancellation: await svc.serializeCancellation(cancellation, order),
     });
   } catch (error) {

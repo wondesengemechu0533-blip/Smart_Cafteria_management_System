@@ -75,7 +75,7 @@ window.cancelOrderFromStatusPage = async function(orderId) {
         });
 
         localStorage.setItem("orderHistory", JSON.stringify(historyData));
-        alert("Order cancelled successfully. If you paid, a full refund has been processed.");
+        alert("Order cancelled successfully. If you paid, your refund will be processed shortly and you will be notified.");
         location.reload();
     } catch (error) {
         alert(error.message || "Failed to submit the cancellation request.");

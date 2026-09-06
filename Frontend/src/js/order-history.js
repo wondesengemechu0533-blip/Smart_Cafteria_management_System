@@ -109,6 +109,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (filterStatus === "Completed") return currentStatus === "Completed";
                 if (filterStatus === "Pending") return currentStatus === "Pending" || currentStatus === "In Progress";
                 if (filterStatus === "Cancelled") return currentStatus === "Cancelled";
+                if (filterStatus === "Refunded") {
+                    return String(order.paymentStatus || "").toUpperCase() === "REFUNDED" ||
+                           String(order.refundStatus || "").toUpperCase() === "REFUNDED" ||
+                           String(order.refundStatus || "").toUpperCase() === "REFUND_REQUESTED";
+                }
                 return true;
             });
 
@@ -131,11 +136,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (status === "Cancelled") statusClass = "status-tag-cancelled";
 
             const refunded = String(order.paymentStatus || "").toUpperCase() === "REFUNDED";
-            const refundTag = refunded
-                ? `<span class="status-tag" style="margin-left: 6px; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; background: #e0e7ff; color: #4338ca;"><i class="fa-solid fa-rotate-left"></i> Refunded</span>`
+            const refundRequested = String(order.refundStatus || "").toUpperCase() === "REFUND_REQUESTED" ||
+                                    String(order.refundStatus || "").toUpperCase() === "REFUND_PROCESSING";
+            const showRefundTag = refunded || refundRequested;
+            const refundTag = showRefundTag
+                ? `<span class="status-tag" style="margin-left: 6px; padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; ${refunded ? 'background: #e0e7ff; color: #4338ca;' : 'background: #fef3c7; color: #92400e;'}"><i class="fa-solid fa-rotate-left"></i> ${refunded ? 'Refunded' : 'Refund Pending'}</span>`
                 : "";
-            const refundInfoLine = refunded
-                ? `<div class="refund-line" style="margin-top: 6px; font-size: 0.85rem; color: #4338ca;"><i class="fa-solid fa-rotate-left"></i> Refunded${order.refundReference ? " · Ref " + order.refundReference : ""}${order.refundedAt ? " · " + new Date(order.refundedAt).toLocaleString() : ""}</div>`
+            const refundInfoLine = showRefundTag
+                ? `<div class="refund-line" style="margin-top: 6px; font-size: 0.85rem; ${refunded ? 'color: #4338ca;' : 'color: #92400e;'}"><i class="fa-solid fa-rotate-left"></i> ${refunded ? 'Refunded' : 'Refund Pending — processing by admin'}${order.refundReference ? " · Ref " + order.refundReference : ""}${order.refundedAt ? " · " + new Date(order.refundedAt).toLocaleString() : ""}</div>`
                 : "";
 
             const items = order.items || [];
