@@ -1,7 +1,8 @@
 {
-  "buildCommand": "",
-  "outputDirectory": ".",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/src/pages/common/index.html" }
+    {
+      "source": "/((?!src/).*)",
+      "destination": "/src/pages/common/index.html"
+    }
   ]
 }
