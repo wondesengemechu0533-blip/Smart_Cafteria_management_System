@@ -115,7 +115,7 @@ if (process.env.NODE_ENV === 'production') {
 
     // Catch-all: serve the login page for any unmatched route so deep links
     // from the frontend work without a 404 from Express.
-    app.get('*', (req, res) => {
+    app.get('/*', (req, res) => {
         res.sendFile(path.join(frontendPath, 'src', 'pages', 'common', 'login.html'));
     });
 }
