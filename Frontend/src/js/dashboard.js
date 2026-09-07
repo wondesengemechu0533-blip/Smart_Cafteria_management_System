@@ -325,6 +325,23 @@
   /* ====================================================================
    * TABLES
    * ==================================================================== */
+  function recentOrderRow(o) {
+    var status = o.status || "pending";
+    var payment = o.paymentStatus || "PENDING";
+    var orderId = o.orderId || "ET-0000";
+    var customer = (o.customer && o.customer.name) || o.customerName || "Customer";
+    return (
+      "<tr>" +
+      "<td><strong>" + window.esc(orderId) + "</strong></td>" +
+      "<td>" + window.esc(customer) + "</td>" +
+      "<td><strong>" + money(o.totalAmount) + " ETB</strong></td>" +
+      "<td>" + paymentBadge(payment) + "</td>" +
+      "<td>" + statusBadge(status) + "</td>" +
+      "<td>" + formatDateTime(o.createdAt || o.orderTime) + "</td>" +
+      "</tr>"
+    );
+  }
+
   function renderRecentOrders(orders) {
     var tbody = document.getElementById("recentOrdersTableBody");
     if (!tbody) return;
@@ -334,22 +351,35 @@
       return;
     }
 
-    tbody.innerHTML = orders.map(function (o) {
-      var status = o.status || "pending";
-      var payment = o.paymentStatus || "PENDING";
-      var orderId = o.orderId || "ET-0000";
-      var customer = o.customerName || (o.customer && o.customer.name) || "Customer";
-      return (
-        "<tr>" +
-        "<td><strong>" + window.esc(orderId) + "</strong></td>" +
-        "<td>" + window.esc(customer) + "</td>" +
-        "<td><strong>" + money(o.totalAmount) + " ETB</strong></td>" +
-        "<td>" + paymentBadge(payment) + "</td>" +
-        "<td>" + statusBadge(status) + "</td>" +
-        "<td>" + formatDateTime(o.createdAt) + "</td>" +
-        "</tr>"
-      );
-    }).join("");
+    tbody.innerHTML = orders.map(recentOrderRow).join("");
+  }
+
+  var lastIncomingOrderId = null;
+  var lastIncomingAt = 0;
+
+  function prependRecentOrder(order) {
+    var tbody = document.getElementById("recentOrdersTableBody");
+    if (!tbody || !order) return;
+
+    // An admin socket auto-joins both the kitchen and admin rooms (and vice
+    // versa), so a single new order can reach this dashboard twice in quick
+    // succession. Dedupe to keep it listed exactly once, at the top.
+    var id = order.orderId;
+    var now = Date.now();
+    if (id && id === lastIncomingOrderId && now - lastIncomingAt < 3000) return;
+    lastIncomingOrderId = id;
+    lastIncomingAt = now;
+
+    // Remove the loading / empty placeholder before inserting the new row.
+    var placeholder = tbody.querySelector(".table-empty");
+    if (placeholder) placeholder.parentNode.removeChild(placeholder);
+
+    var row = document.createElement("tr");
+    row.innerHTML = recentOrderRow(order);
+    tbody.insertBefore(row, tbody.firstChild);
+
+    // Keep the table trimmed to the same limit used by the backend (6).
+    while (tbody.rows.length > 6) tbody.deleteRow(-1);
   }
 
   function renderRecentPayments(payments) {
@@ -640,6 +670,42 @@
     }
   }
 
+  /* ====================================================================
+   * REAL-TIME (Socket.io) - new customer orders appear instantly
+   * ==================================================================== */
+  function setupRealtime() {
+    try {
+      if (typeof io === "undefined") return;
+      var token = (window.AdminAPI && window.AdminAPI.getToken) ? window.AdminAPI.getToken() : (localStorage.getItem("auth_token") || "");
+      if (!token) return;
+
+      var socket = io(window.SOCKET_URL || window.__API_BASE, {
+        transports: ["websocket", "polling"],
+        auth: { token: token }
+      });
+
+      socket.on("connect", function () {
+        socket.emit("join:admin");
+        // Fetch everything missed while disconnected so the board stays correct.
+        loadDashboard();
+      });
+
+      // Newly created customer order -> show it at the top of Recent Orders
+      // immediately, using the real customer info sent by the backend.
+      socket.on("order:new", function (order) {
+        if (!order) return;
+        prependRecentOrder(order);
+        loadDashboard();
+      });
+
+      socket.on("order:status", function () {
+        loadDashboard();
+      });
+    } catch (e) {
+      console.warn("Admin dashboard realtime setup failed", e);
+    }
+  }
+
   function init() {
     // Setup event listeners for controls
     var refreshBtn = document.getElementById("refreshMetricsBtn");
@@ -676,6 +742,9 @@
 
     // Setup
     setupStatCardNavigation();
+
+    // Real-time order updates (new orders appear first)
+    setupRealtime();
 
     // Load initial data
     loadDashboard();

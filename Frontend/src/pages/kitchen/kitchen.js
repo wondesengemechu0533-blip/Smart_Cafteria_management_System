@@ -22,6 +22,8 @@ const KDS = {
     readyCountEl: null,
     updateInterval: null,
     _inflight: new Set(),
+    _lastNewOrderId: null,
+    _lastNewOrderAt: 0,
 
     setActionLoading(orderId, loading) {
         const containers = [this.gridContainer, this.tableBody];
@@ -141,8 +143,18 @@ const KDS = {
     },
 
     handleNewOrder(order) {
+        // An admin socket auto-joins both the kitchen and admin rooms, so a single
+        // new order can arrive twice in quick succession. Dedupe to avoid double
+        // sounds / double rendering.
+        const id = order && order.orderId;
+        const now = Date.now();
+        if (id && id === this._lastNewOrderId && now - this._lastNewOrderAt < 3000) {
+            return;
+        }
+        this._lastNewOrderId = id;
+        this._lastNewOrderAt = now;
         console.log('New order received:', order);
-        this.orders.set(order.orderId, order);
+        this.orders.set(id, order);
         this.playNotificationSound();
         this.updateStats();
         this.render();
@@ -179,12 +191,23 @@ const KDS = {
 
     getFilteredOrders() {
         const orders = Array.from(this.orders.values());
+        let filtered;
         if (!this.currentFilter || this.currentFilter.toLowerCase() === 'all') {
-            return orders.filter(o => o.status !== 'served' && o.status !== 'cancelled');
+            filtered = orders.filter(o => String(o.status || '').toLowerCase() !== 'served' && String(o.status || '').toLowerCase() !== 'cancelled');
+        } else {
+            filtered = orders.filter(o => String(o.status || '').toLowerCase() === this.currentFilter.toLowerCase());
         }
-        return orders.filter(o => 
-            o.status?.toLowerCase() === this.currentFilter.toLowerCase()
-        );
+        // Newest orders first so every newly created order appears at the top.
+        return filtered.sort((a, b) => {
+            const ta = new Date(a.createdAt || a.orderTime || 0).getTime();
+            const tb = new Date(b.createdAt || b.orderTime || 0).getTime();
+            return tb - ta;
+        });
+    },
+
+    getCustomerName(order) {
+        if (order.customer && order.customer.name) return order.customer.name;
+        return order.customerName || 'Unknown';
     },
 
     getElapsedTime(createdAt) {
@@ -374,7 +397,7 @@ const KDS = {
                             <span class="badge ${this.getBadgeClass(order.status)}">${order.status}</span>
                         </div>
                         <div class="ticket-customer">
-                            <i class="fa-solid fa-user"></i> ${order.customerName || 'Unknown'}
+                            <i class="fa-solid fa-user"></i> ${this.getCustomerName(order)}
                         </div>
                         <div class="ticket-type">
                             <i class="fa-solid ${this.getOrderTypeIcon(order)}"></i> ${this.capitalize(this.getOrderTypeLabel(order))}
@@ -433,7 +456,7 @@ const KDS = {
                     return `
                         <tr data-order-id="${order.orderId}">
                             <td><strong>#${order.orderId}</strong></td>
-                            <td>${order.customerName || 'Unknown'}</td>
+                            <td>${this.getCustomerName(order)}</td>
                             <td><span class="badge badge-type"><i class="fa-solid ${this.getOrderTypeIcon(order)}"></i> ${this.capitalize(this.getOrderTypeLabel(order))}</span></td>
                             <td>${this.formatItems(order)}</td>
                             <td><span class="badge ${this.getBadgeClass(order.status)}">${order.status}</span></td>

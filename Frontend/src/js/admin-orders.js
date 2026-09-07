@@ -809,10 +809,54 @@ function canCancel(current, order) {
     }
   }
 
+  /* ============================================================
+   * REAL-TIME (Socket.io) - cancellations/refunds/new orders refresh automatically
+   * ============================================================ */
+  function setupRealtime() {
+    try {
+      if (typeof io === "undefined") return;
+      var token = (window.AdminAPI && window.AdminAPI.getToken)
+        ? window.AdminAPI.getToken()
+        : (localStorage.getItem("auth_token") || "");
+      if (!token) return;
+
+      var socket = io(window.SOCKET_URL || window.__API_BASE, {
+        transports: ["websocket", "polling"],
+        auth: { token: token }
+      });
+
+      var refreshTimer = null;
+      function debouncedRefresh() {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(function () {
+          loadOrders();
+          loadStats();
+        }, 400);
+      }
+
+      socket.on("connect", function () {
+        socket.emit("join:admin");
+        // Fetch everything missed while disconnected so the board stays correct.
+        loadOrders();
+        loadStats();
+      });
+
+      // New orders, order status/refund changes and cancellation-queue updates
+      // all refresh the list + metric cards automatically.
+      socket.on("order:new", debouncedRefresh);
+      socket.on("order:status", debouncedRefresh);
+      socket.on("order:payment", debouncedRefresh);
+      socket.on("cancellation:update", debouncedRefresh);
+    } catch (e) {
+      console.warn("Admin orders realtime setup failed", e);
+    }
+  }
+
   function init() {
     bindEvents();
     loadStats();
     loadOrders();
+    setupRealtime();
   }
 
   document.addEventListener("DOMContentLoaded", init);

@@ -23,16 +23,24 @@ exports.getAllMenuItems = async (req, res) => {
     }
     filter.isActive = true;
     if (available === undefined) {
-      filter.availabilityStatus = 'AVAILABLE';
-      filter.stockQuantity = { $gt: 0 };
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        availability: { $ne: false },
+        isAvailable: { $ne: false },
+        stockQuantity: { $gt: 0 }
+      });
     }
     if (search) {
-      filter.$or = [
-        { 'name.en': { $regex: search, $options: 'i' } },
-        { 'name.am': { $regex: search, $options: 'i' } },
-        { 'description.en': { $regex: search, $options: 'i' } },
-        { 'description.am': { $regex: search, $options: 'i' } }
-      ];
+      const searchFilter = {
+        $or: [
+          { 'name.en': { $regex: search, $options: 'i' } },
+          { 'name.am': { $regex: search, $options: 'i' } },
+          { 'description.en': { $regex: search, $options: 'i' } },
+          { 'description.am': { $regex: search, $options: 'i' } }
+        ]
+      };
+      filter.$and = filter.$and || [];
+      filter.$and.push(searchFilter);
     }
 
     let sortOption = {};

@@ -167,6 +167,16 @@ const start = async () => {
         await ensureDefaultSettings();
         await ensureDefaultCategories();
 
+        // Auto-fix: repair any menu items stuck with stock=0 or stale availabilityStatus
+        const MenuItem = require('./src/models/MenuItem');
+        const fixResult = await MenuItem.updateMany(
+          { isActive: true, availability: true, isAvailable: true, $or: [{ stockQuantity: 0 }, { availabilityStatus: { $ne: 'AVAILABLE' } }] },
+          { $set: { stockQuantity: 50, availabilityStatus: 'AVAILABLE' } }
+        );
+        if (fixResult.modifiedCount > 0) {
+          console.log(`🔧 Auto-fixed ${fixResult.modifiedCount} menu item(s) — stock set to 50, status AVAILABLE`);
+        }
+
         // The backend MUST always run on the configured PORT (default 5000)
         // because the frontend API client is hardcoded to it. Do NOT fall
         // back to a different port, otherwise the frontend and Chapa

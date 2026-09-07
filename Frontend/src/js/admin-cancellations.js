@@ -281,7 +281,7 @@
     var isRefundAction = ["request", "confirm", "fail"].indexOf(action) !== -1;
 
     if (action === "approve") {
-      if (!window.confirm("Approve cancellation? The order will be cancelled and a refund will be processed if payment was successful.")) return;
+      if (!window.confirm("Approve cancellation? The order will be cancelled and the refund will be queued (REFUND_REQUESTED) so you can process it with the refund button below.")) return;
     } else if (action === "reject") {
       if (!window.confirm("Reject cancellation? The order will remain active.")) return;
     } else if (action === "confirm") {
@@ -442,10 +442,52 @@
     }
   }
 
+  /* ============================================================
+   * REAL-TIME (Socket.io) - new cancellations / refund status changes
+   * refresh the queue + stats automatically.
+   * ============================================================ */
+  function setupRealtime() {
+    try {
+      if (typeof io === "undefined") return;
+      var token = localStorage.getItem("auth_token") || "";
+      if (!token) return;
+
+      var socket = io(window.SOCKET_URL || window.__API_BASE, {
+        transports: ["websocket", "polling"],
+        auth: { token: token }
+      });
+
+      var refreshTimer = null;
+      function debouncedRefresh() {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(function () {
+          loadStats();
+          loadCancellations();
+        }, 400);
+      }
+
+      socket.on("connect", function () {
+        socket.emit("join:admin");
+        // Fetch everything missed while disconnected so the queue stays correct.
+        loadStats();
+        loadCancellations();
+      });
+
+      // Cancellation/refund queue changes, plus order status/payment changes
+      // that may affect a cancellation record, refresh automatically.
+      socket.on("cancellation:update", debouncedRefresh);
+      socket.on("order:status", debouncedRefresh);
+      socket.on("order:payment", debouncedRefresh);
+    } catch (e) {
+      console.warn("Admin cancellations realtime setup failed", e);
+    }
+  }
+
   function init() {
     bindEvents();
     loadStats();
     loadCancellations();
+    setupRealtime();
   }
 
   document.addEventListener("DOMContentLoaded", init);

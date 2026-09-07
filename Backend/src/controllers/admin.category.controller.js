@@ -118,7 +118,7 @@ exports.getCategoryById = async (req, res) => {
  */
 exports.createCategory = async (req, res) => {
   try {
-    const { name, icon, imageUrl, description, isActive } = req.body || {};
+    const { name, icon, imageUrl, description, isActive, sortOrder, isFeatured, showOnHomepage, availabilityTime, notes } = req.body || {};
     if (!name) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Category name is required' });
     }
@@ -138,7 +138,11 @@ exports.createCategory = async (req, res) => {
       imageUrl: imageUrl || null,
       description: { en: description || '', am: description || '' },
       isActive: isActive !== undefined ? isActive : true,
-      sortOrder: await Category.countDocuments(),
+      sortOrder: sortOrder !== undefined ? sortOrder : await Category.countDocuments(),
+      isFeatured: isFeatured === true,
+      showOnHomepage: showOnHomepage === true,
+      availabilityTime: availabilityTime || { enabled: false, startTime: '', endTime: '' },
+      notes: notes || '',
     });
 
     await logAction({
@@ -163,7 +167,7 @@ exports.createCategory = async (req, res) => {
  */
 exports.updateCategory = async (req, res) => {
   try {
-    const { name, icon, imageUrl, description, isActive } = req.body || {};
+    const { name, icon, imageUrl, description, isActive, sortOrder, isFeatured, showOnHomepage, availabilityTime, notes } = req.body || {};
     const category = await Category.findOne({ id: req.params.id });
     if (!category) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Category not found' });
@@ -181,6 +185,11 @@ exports.updateCategory = async (req, res) => {
       category.description = { en: description, am: description };
     }
     if (isActive !== undefined) category.isActive = isActive;
+    if (sortOrder !== undefined) category.sortOrder = sortOrder;
+    if (isFeatured !== undefined) category.isFeatured = isFeatured;
+    if (showOnHomepage !== undefined) category.showOnHomepage = showOnHomepage;
+    if (availabilityTime !== undefined) category.availabilityTime = availabilityTime;
+    if (notes !== undefined) category.notes = notes;
 
     await category.save();
 

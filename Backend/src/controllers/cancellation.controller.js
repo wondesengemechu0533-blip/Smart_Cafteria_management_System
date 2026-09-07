@@ -194,7 +194,7 @@ exports.requestCancellation = async (req, res) => {
         );
       } catch (_) { /* best effort */ }
 
-      await Notification.create({
+      const cancelNotice = await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
         message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly. You will be notified once the refund is complete.`,
@@ -202,6 +202,7 @@ exports.requestCancellation = async (req, res) => {
         orderId: order.orderId,
         isRead: false,
       });
+      try { await svc.emitUserNotification(order.userId, cancelNotice, order); } catch (_) { /* best effort */ }
 
       // Keep cancellation as CANCELLED (not COMPLETED) so admin sees it
       // in the refund queue.
@@ -215,7 +216,7 @@ exports.requestCancellation = async (req, res) => {
           { status: 'CANCELLED', cancelledAt: new Date() },
         );
       } catch (_) { /* best effort */ }
-      await Notification.create({
+      const cancelNotice = await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
         message: `Your order #${order.orderId} has been cancelled.`,
@@ -223,6 +224,7 @@ exports.requestCancellation = async (req, res) => {
         orderId: order.orderId,
         isRead: false,
       });
+      try { await svc.emitUserNotification(order.userId, cancelNotice, order); } catch (_) { /* best effort */ }
 
       // Mark as completed since no refund is needed.
       cancellation.status = CANCELLATION_FLOW_STATUS.COMPLETED;
@@ -231,6 +233,17 @@ exports.requestCancellation = async (req, res) => {
     }
 
     await OrderStatusHistoryCreate(order, current, 'CANCELLED', req.user.id, 'Customer cancelled pending order');
+
+    // ================================================================
+    // Realtime: tell the kitchen drop the ticket, tell the admin boards
+    // to refresh, and tell the customer's tracking page + notification
+    // bell that the order was cancelled (refund pending admin processing).
+    // ================================================================
+    try {
+      await svc.emitOrderStatusRealtime(order);
+      const serialized = await svc.serializeCancellation(cancellation, order);
+      await svc.emitCancellationQueueUpdate(serialized);
+    } catch (_) { /* realtime is best effort */ }
 
     try {
       await logAction({
@@ -495,7 +508,11 @@ exports.approveCancellation = async (req, res) => {
       );
     } catch (_) { /* best effort */ }
 
-    // 3. Refund if payment was successful, otherwise complete immediately.
+    // 3. Refund handling. Strict flow:
+    //    PENDING → CANCELLED → REFUND_REQUESTED → Admin Refund → REFUNDED.
+    //    Approving a cancellation ONLY cancels the order and queues the refund
+    //    (REFUND_REQUESTED). The refund is NEVER processed here — the admin
+    //    must take a separate, explicit refund action to reach REFUNDED.
     //    Refund amount is admin-controlled (full, partial, or none). If the
     //    admin supplies a valid refundAmount (e.g. 0 for no refund, or a partial
     //    amount), it is honored; otherwise it defaults to the full total.
@@ -509,9 +526,12 @@ exports.approveCancellation = async (req, res) => {
     }
 
     if (paid && refundAmountUsed > 0) {
-      await svc.requestRefund({ order, cancellation, amount: refundAmountUsed, actorId: req.user.id });
-      // Simulate provider acceptance so the refund enters the provider pipeline.
-      await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
+      cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      cancellation.refundAmount = refundAmountUsed;
+      order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      order.refundAmount = refundAmountUsed;
+      await cancellation.save();
+      await order.save();
     } else if (paid) {
       // Approved but no refund (admin set amount to 0) → record that explicitly.
       cancellation.refundStatus = REFUND_STATUS.NOT_REQUIRED;
@@ -521,30 +541,39 @@ exports.approveCancellation = async (req, res) => {
 
     await OrderStatusHistoryCreate(order, previousStatus, 'CANCELLED', req.user.id, adminNote || 'Cancellation approved');
 
-    await Notification.create({
+    const approveNotice = await Notification.create({
       userId: order.userId,
       title: 'Cancellation Approved',
       message: paid
-        ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB is being processed.`
+        ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB has been requested and will be processed by an administrator.`
         : `Your order #${order.orderId} has been cancelled.`,
       type: 'order',
       orderId: order.orderId,
       isRead: false,
     });
+    try { await svc.emitUserNotification(order.userId, approveNotice, order); } catch (_) { /* best effort */ }
+
+    // Realtime: kitchen drops the ticket, admin boards refresh, the customer's
+    // tracking page + notification bell update.
+    try {
+      await svc.emitOrderStatusRealtime(order);
+      const serialized = await svc.serializeCancellation(cancellation, order);
+      await svc.emitCancellationQueueUpdate(serialized);
+    } catch (_) { /* realtime is best effort */ }
 
     await logAction({
       req,
       action: 'CANCELLATION_APPROVED',
       entityType: 'Cancellation',
       entityId: String(cancellation.cancellationNumber || cancellation._id),
-      description: `Cancellation approved for order #${order.orderId}. Refund: ${paid ? 'requested' : 'not required'}`,
+      description: `Cancellation approved for order #${order.orderId}. Refund: ${paid ? 'requested (pending admin processing)' : 'not required'}`,
     });
 
     const record = await svc.serializeCancellation(cancellation, order);
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: paid
-        ? 'Cancellation approved. Order cancelled; refund processing started.'
+        ? 'Cancellation approved. Order cancelled; refund requested and pending admin processing.'
         : 'Cancellation approved. Order cancelled.',
       cancellation: record,
     });
@@ -647,6 +676,11 @@ exports.requestRefund = async (req, res) => {
 
     const result = await svc.requestRefund({ order, cancellation, amount: order.totalAmount, actorId: req.user.id });
     await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
+
+    try {
+      await svc.emitOrderStatusRealtime(order);
+      await svc.emitCancellationQueueUpdate(await svc.serializeCancellation(cancellation, order));
+    } catch (_) { /* realtime is best effort */ }
 
     await logAction({
       req,

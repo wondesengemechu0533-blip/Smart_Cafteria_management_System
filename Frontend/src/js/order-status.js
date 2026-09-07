@@ -129,6 +129,9 @@ function setStatusText(status) {
     const icon = document.getElementById("status-badge-icon");
     if (!heading && !subtext) return;
 
+    const refunded = normalizeStatus(currentRefundStatus) === "refunded";
+    const refundPending = ["refund_requested", "refund_approved", "refund_processing"].includes(normalizeStatus(currentRefundStatus));
+
     const map = {
         received: ["Order Received", "We have sent your order directly to the kitchen counter."],
         pending: ["Order Received", "We have sent your order directly to the kitchen counter."],
@@ -139,7 +142,11 @@ function setStatusText(status) {
         delivered: ["Delivered", "Your order has been delivered. Enjoy your meal!"],
         served: ["Served", "Your order has been served."],
         completed: ["Completed", "Your order has been completed."],
-        cancelled: ["Order Cancelled", "This order was cancelled and will not be prepared."]
+        cancelled: refunded
+            ? ["Order Cancelled & Refunded", "This order was cancelled and your payment has been refunded."]
+            : refundPending
+                ? ["Order Cancelled — Refund Pending", "This order was cancelled. Your refund is queued and will be processed by an administrator — you'll be notified once complete."]
+                : ["Order Cancelled", "This order was cancelled and will not be prepared."]
     };
 
     // Legacy "received" status is mapped to the first step (Order Received) so
@@ -160,7 +167,7 @@ function setStatusText(status) {
             delivered: 'fa-circle-check',
             served: 'fa-circle-check',
             completed: 'fa-circle-check',
-            cancelled: 'fa-circle-xmark'
+            cancelled: refunded ? 'fa-circle-check' : 'fa-circle-xmark'
         };
         const colors = {
             received: '#16a34a',
@@ -172,13 +179,46 @@ function setStatusText(status) {
             delivered: '#16a34a',
             served: '#16a34a',
             completed: '#16a34a',
-            cancelled: '#dc3545'
+            cancelled: refunded ? '#16a34a' : '#dc3545'
         };
         icon.innerHTML = `<i class="fa-solid ${icons[s] || 'fa-circle-check'}" style="color: ${colors[s] || '#ff6b00'}; font-size: 2.5rem;"></i>`;
     }
 
+    renderRefundNote();
     // Gate the cancel button (hide actions for terminal statuses)
     updateCancelButton(s);
+}
+
+/**
+ * Show a small inline note under the status banner clarifying the refund state
+ * when the order was cancelled (pending admin refund vs fully refunded).
+ */
+function renderRefundNote() {
+    const banner = document.getElementById("status-banner-card");
+    if (!banner) return;
+
+    const s = normalizeStatus(currentRefundStatus);
+    const refunded = s === "refunded";
+    const pending = ["refund_requested", "refund_approved", "refund_processing"].includes(s);
+
+    let el = document.getElementById("refund-status-note");
+    if (!el) {
+        el = document.createElement("p");
+        el.id = "refund-status-note";
+        el.style.margin = "10px auto 0";
+        el.style.textAlign = "left";
+        banner.appendChild(el);
+    }
+
+    if (refunded) {
+        el.style.cssText += ";max-width:460px;padding:10px 14px;background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;border-radius:8px;font-weight:600;display:block;";
+        el.innerHTML = `<i class="fa-solid fa-circle-check"></i>&nbsp; Your payment of <strong>${Number(currentRefundAmount).toFixed(0)} ETB</strong> has been <strong>refunded</strong>.`;
+    } else if (pending) {
+        el.style.cssText += ";max-width:460px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;font-weight:600;display:block;";
+        el.innerHTML = `<i class="fa-solid fa-hourglass-half"></i>&nbsp; Refund <strong>pending</strong> — an administrator must process it. You'll be notified when the refund is complete.`;
+    } else {
+        el.remove();
+    }
 }
 
 function updateCancelButton(s) {
@@ -229,6 +269,14 @@ function statusLabel(s) {
  * Updated by renderOrder() and by live socket/poll updates.
  */
 let currentOrderType = "dine-in";
+
+/**
+ * The live refund state of the tracked order (REFUNDED / REFUND_REQUESTED / …).
+ * Populated from backend payloads so the cancelled state can show exactly where
+ * the refund stands (queue until an admin processes it → REFUNDED).
+ */
+let currentRefundStatus = null;
+let currentRefundAmount = 0;
 
 /**
  * Tracks the highest step reached for the current delivery flow so that only
@@ -390,6 +438,8 @@ function escapeHtml(str) {
 function populateReceipt(orderData) {
     const currentId = orderData.orderId || orderData.id || "ET-0000";
     currentOrderType = orderData.orderType || currentOrderType;
+    currentRefundStatus = orderData.refundStatus || null;
+    currentRefundAmount = Number(orderData.refundAmount) || 0;
     if (document.getElementById("display-order-id")) document.getElementById("display-order-id").textContent = `#${currentId}`;
     if (document.getElementById("receipt-name")) document.getElementById("receipt-name").textContent = orderData.customerName || orderData.name || "Customer";
     if (document.getElementById("receipt-phone")) document.getElementById("receipt-phone").textContent = orderData.customerPhone || orderData.phone || "-";
@@ -553,6 +603,11 @@ socketClient.on("order:status", (order) => {
         const newStatus = order?.status;
         if (!newStatus) return;
 
+        if (order?.refundStatus !== undefined) {
+            currentRefundStatus = order.refundStatus;
+            if (order.refundAmount !== undefined) currentRefundAmount = Number(order.refundAmount) || 0;
+        }
+
         if (order?.orderType) {
             currentOrderType = order.orderType;
             buildTimelineDOM(true);
@@ -605,6 +660,11 @@ function startStatusPolling(orderId) {
             const live = await fetchLiveStatus(orderId);
             if (!live || !live.status) return;
             const s = normalizeStatus(live.status);
+
+            if (live.refundStatus !== undefined) {
+                currentRefundStatus = live.refundStatus;
+                if (live.refundAmount !== undefined) currentRefundAmount = Number(live.refundAmount) || 0;
+            }
 
             if (live.orderType) {
                 currentOrderType = live.orderType;

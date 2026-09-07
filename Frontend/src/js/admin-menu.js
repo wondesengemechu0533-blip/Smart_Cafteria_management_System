@@ -273,7 +273,7 @@
     document.getElementById("menuItemForm").reset();
     document.getElementById("itemId").value = "";
     document.getElementById("itemPrepTime").value = 10;
-    document.getElementById("itemStockQuantity").value = 0;
+    document.getElementById("itemStockQuantity").value = 50;
     document.getElementById("itemLowStockThreshold").value = 5;
     document.getElementById("itemPopular").checked = false;
     document.getElementById("itemRecommended").checked = false;

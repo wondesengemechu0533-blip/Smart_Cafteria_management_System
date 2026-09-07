@@ -799,6 +799,14 @@ id: order._id,
 orderId: order.orderId,
 customerName: order.customerName,
 customerPhone: order.customerPhone,
+customer: order.userId
+  ? {
+      id: String(order.userId._id || order.userId),
+      name: order.userId.name || order.customerName,
+      email: order.userId.email || '',
+      phone: order.userId.phone || order.customerPhone
+    }
+  : null,
 items: order.items.map(item => ({
 name: item.name,
 quantity: item.quantity,

@@ -76,11 +76,30 @@ $or: [
 });
 }
 
-if (!menuItem) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Food item not found' });
+    if (!menuItem) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Food item not found' });
 const quantity = parseInt(item.quantity);
 if (!Number.isInteger(quantity) || quantity < 1) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Quantity must be at least 1' });
+
+// Auto-repair: if item is active + available but availabilityStatus is stale, fix it
+if (menuItem.isActive && menuItem.availability !== false && menuItem.isAvailable !== false && menuItem.availabilityStatus !== 'AVAILABLE') {
+  await MenuItem.updateOne({ _id: menuItem._id }, { $set: { availabilityStatus: 'AVAILABLE' } });
+  menuItem.availabilityStatus = 'AVAILABLE';
+}
+
+// Check stock
+const currentStock = menuItem.stockQuantity || 0;
+if (currentStock < quantity) {
+  return res.status(HTTP_STATUS.CONFLICT).json({
+    success: false,
+    error: currentStock === 0
+      ? `"${menuItem.name?.en || item.name}" is currently out of stock.`
+      : `Only ${currentStock} "${menuItem.name?.en || item.name}" left in stock.`
+  });
+}
+
+// Atomic stock reservation
 const reserved = await MenuItem.findOneAndUpdate(
-  { _id: menuItem._id, isActive: true, availabilityStatus: 'AVAILABLE', availability: true, isAvailable: true, stockQuantity: { $gte: quantity } },
+  { _id: menuItem._id, isActive: true, availability: true, isAvailable: true, stockQuantity: { $gte: quantity } },
   { $inc: { stockQuantity: -quantity } },
   { new: false }
 );
@@ -172,19 +191,38 @@ await OrderStatusHistory.create({ orderId: order._id, previousStatus: 'NONE', ne
 for (const reservation of reservations) {
   const updated = await MenuItem.findById(reservation.id);
   if (updated) {
-    updated.availabilityStatus = updated.stockQuantity === 0 ? 'OUT_OF_STOCK' : updated.availabilityStatus;
+    if (updated.stockQuantity === 0) {
+      updated.availabilityStatus = 'OUT_OF_STOCK';
+    } else if (updated.availability !== false && updated.isAvailable !== false) {
+      updated.availabilityStatus = 'AVAILABLE';
+    }
     await updated.save();
     await StockTransaction.create({ foodId: updated._id, previousQuantity: reservation.previous, quantityChanged: -reservation.quantity, newQuantity: updated.stockQuantity, action: 'ORDER', performedBy: req.user.id, orderId: order._id });
   }
 }
 
-// ✅ Emit socket event for new order (kitchen dashboard real-time updates)
+// ✅ Emit socket event for new order (kitchen + admin dashboard real-time updates)
 const { emitSocketEvent } = require('../utils/socket');
 const orderSummary = order.getSummary();
-emitSocketEvent('kitchen', 'order:new', orderSummary);
-emitSocketEvent(`order:${order.orderId}`, 'order:created', orderSummary);
+// Real customer information straight from the backend (authenticated user).
+const orderPayload = {
+  ...orderSummary,
+  id: order._id,
+  orderStatus: order.orderStatus,
+  createdAt: order.createdAt,
+  customer: {
+    id: String(req.user.id),
+    name: req.user.name || order.customerName,
+    email: req.user.email || '',
+    phone: req.user.phone || order.customerPhone,
+    role: req.user.role || 'customer'
+  }
+};
+emitSocketEvent('kitchen', 'order:new', orderPayload);
+emitSocketEvent('admin', 'order:new', orderPayload);
+emitSocketEvent(`order:${order.orderId}`, 'order:created', orderPayload);
 if (isDelivery) {
-  emitSocketEvent('delivery', 'delivery:new', orderSummary);
+  emitSocketEvent('delivery', 'delivery:new', orderPayload);
 }
 
 res.status(HTTP_STATUS.CREATED).json({
@@ -553,7 +591,7 @@ if (paid) {
   } catch (_) { /* best effort */ }
 
   const Notification = require('../models/Notification');
-  await Notification.create({
+  const notice = await Notification.create({
     userId: order.userId,
     title: 'Order Cancelled',
     message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly.`,
@@ -561,11 +599,10 @@ if (paid) {
     orderId: order.orderId,
     isRead: false,
   });
+  try { await svc.emitUserNotification(order.userId, notice, order); } catch (_) { /* best effort */ }
 
-  const { emitSocketEvent } = require('../utils/socket');
-  const orderSummary = order.getSummary();
-  emitSocketEvent('kitchen', 'order:status', orderSummary);
-  emitSocketEvent(`order:${order.orderId}`, 'order:status', orderSummary);
+  await svc.emitOrderStatusRealtime(order);
+  try { await svc.emitCancellationQueueUpdate(await svc.serializeCancellation(cancellation, order)); } catch (_) { /* best effort */ }
 
   res.status(HTTP_STATUS.OK).json({
     success: true,
@@ -577,19 +614,18 @@ if (paid) {
 // ✅ For unpaid orders, cancel directly (no refund needed)
 order.status = 'cancelled';
 order.orderStatus = 'CANCELLED';
+order.refundStatus = 'NOT_REQUIRED';
 order.cancellationReason = reason || 'Cancelled by customer';
 order.cancellationStatus = 'approved';
 order.cancellationProcessedAt = new Date();
 order.cancellationProcessedBy = req.user.id;
 await order.save();
 
-const { emitSocketEvent } = require('../utils/socket');
-const orderSummary = order.getSummary();
-emitSocketEvent('kitchen', 'order:status', orderSummary);
-emitSocketEvent(`order:${order.orderId}`, 'order:status', orderSummary);
+const svc = require('../services/cancellation.service');
+await svc.emitOrderStatusRealtime(order);
 
 const Notification = require('../models/Notification');
-await Notification.create({
+const notice = await Notification.create({
   userId: order.userId,
   title: 'Order Cancelled',
   message: `Your order #${order.orderId} has been cancelled.`,
@@ -597,6 +633,7 @@ await Notification.create({
   orderId: order.orderId,
   isRead: false,
 });
+try { await svc.emitUserNotification(order.userId, notice, order); } catch (_) { /* best effort */ }
 
 res.status(HTTP_STATUS.OK).json({
   success: true,

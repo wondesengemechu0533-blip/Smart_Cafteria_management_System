@@ -180,7 +180,7 @@ exports.createMenuItem = async (req, res) => {
       preparationTime,
       available,
       isAvailable,
-      stockQuantity = 0,
+      stockQuantity = 50,
       lowStockThreshold = 5,
       isActive = true,
       isPopular = false,
@@ -239,7 +239,7 @@ exports.createMenuItem = async (req, res) => {
       availability: avail,
       isAvailable: avail
       , isActive: Boolean(isActive), stockQuantity: stock, lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0),
-      availabilityStatus: !Boolean(isActive) || !avail ? 'UNAVAILABLE' : stock > 0 ? 'AVAILABLE' : 'OUT_OF_STOCK',
+      availabilityStatus: !Boolean(isActive) || !avail ? 'UNAVAILABLE' : 'AVAILABLE',
       isPopular: Boolean(isPopular), isRecommended: Boolean(isRecommended), showOnHomepage: Boolean(showOnHomepage)
     });
 
@@ -364,6 +364,17 @@ exports.updateMenuItem = async (req, res) => {
     } else if (isAvailable !== undefined) {
       item.isAvailable = Boolean(isAvailable);
       item.availability = Boolean(isAvailable);
+    }
+
+    if (available !== undefined || isAvailable !== undefined) {
+      const availNow = item.availability && item.isAvailable;
+      if (!availNow) {
+        item.availabilityStatus = 'UNAVAILABLE';
+      } else if ((item.stockQuantity || 0) > 0) {
+        item.availabilityStatus = 'AVAILABLE';
+      } else {
+        item.availabilityStatus = 'OUT_OF_STOCK';
+      }
     }
 
     if (stockQuantity !== undefined) {

@@ -232,12 +232,29 @@ async function confirmRefund({ cancellation, order, providerReference, actorId }
   try {
     const { emitSocketEvent } = require('../utils/socket');
     if (order) {
-      if (createdNotification) emitSocketEvent(`user:${order.userId}`, 'notification:new', createdNotification);
-      const payload = { orderId: order.orderId, status: order.status || 'cancelled', orderType: order.orderType, paymentStatus: 'REFUNDED' };
+      if (createdNotification) {
+        emitSocketEvent(`user:${order.userId}`, 'notification:new', serializeNotification(createdNotification, order));
+      }
+      const payload = {
+        orderId: order.orderId,
+        id: order._id,
+        status: order.status || 'cancelled',
+        orderStatus: order.orderStatus,
+        orderType: order.orderType,
+        paymentStatus: 'REFUNDED',
+        refundStatus: 'REFUNDED',
+        refundAmount: cancellation.refundAmount,
+        refundReference: cancellation.refundReference,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        totalAmount: order.totalAmount,
+      };
       emitSocketEvent(`order:${order.orderId}`, 'order:status', payload);
       emitSocketEvent('kitchen', 'order:status', payload);
       emitSocketEvent('admin', 'order:status', payload);
       emitSocketEvent(`user:${order.userId}`, 'order:status', payload);
+      const serialized = await serializeCancellation(cancellation, order);
+      emitSocketEvent('admin', 'cancellation:update', { type: 'update', cancellation: serialized });
     }
   } catch (_) { /* realtime is best effort */ }
 
@@ -334,6 +351,77 @@ async function serializeCancellation(cancellation, order) {
   };
 }
 
+/**
+ * Serialize a Notification into the shape the frontend expects for real-time
+ * `notification:new` events (id, link, timestamps, etc.).
+ */
+function serializeNotification(notification, order) {
+  return {
+    id: String(notification._id || notification.id),
+    title: notification.title,
+    message: notification.message,
+    type: notification.type,
+    orderId: notification.orderId,
+    link: notification.link || (order ? `/src/pages/customer/order-tracking.html?orderId=${order.orderId}` : null),
+    isRead: notification.isRead,
+    createdAt: notification.createdAt || new Date(),
+  };
+}
+
+/**
+ * Push a notification to a single customer's real-time user room.
+ * Best effort; never throws.
+ */
+async function emitUserNotification(userId, notification, order) {
+  try {
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent(`user:${userId}`, 'notification:new', serializeNotification(notification, order));
+  } catch (_) { /* realtime is best effort */ }
+}
+
+/**
+ * Broadcast an order status change to the kitchen, admin, the customer's order
+ * room and the customer's user room. Payload mirrors the order summary fields
+ * the frontends consume (status, paymentStatus, refundStatus).
+ */
+async function emitOrderStatusRealtime(order) {
+  try {
+    const { emitSocketEvent } = require('../utils/socket');
+    const payload = {
+      orderId: order.orderId,
+      id: order._id,
+      status: order.status || 'pending',
+      orderStatus: order.orderStatus,
+      orderType: order.orderType,
+      paymentStatus: order.paymentStatus,
+      refundStatus: order.refundStatus || 'NOT_REQUIRED',
+      refundAmount: Number(order.refundAmount) || 0,
+      refundReference: order.refundReference || null,
+      customerName: order.customerName,
+      customerPhone: order.customerPhone,
+      totalAmount: order.totalAmount,
+      createdAt: order.createdAt,
+    };
+    emitSocketEvent('kitchen', 'order:status', payload);
+    emitSocketEvent('admin', 'order:status', payload);
+    emitSocketEvent(`order:${order.orderId}`, 'order:status', payload);
+    emitSocketEvent(`user:${order.userId}`, 'order:status', payload);
+    return payload;
+  } catch (_) { /* realtime is best effort */ }
+  return null;
+}
+
+/**
+ * Notify the admin room that the cancellation/refund queue changed so open
+ * admin cancellations pages can refresh without a manual reload.
+ */
+async function emitCancellationQueueUpdate(cancellation) {
+  try {
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent('admin', 'cancellation:update', { type: 'update', cancellation: cancellation || null });
+  } catch (_) { /* realtime is best effort */ }
+}
+
 module.exports = {
   resolveOrder,
   findActiveCancellation,
@@ -345,4 +433,8 @@ module.exports = {
   failRefund,
   cancelOrderForApproval,
   serializeCancellation,
+  serializeNotification,
+  emitUserNotification,
+  emitOrderStatusRealtime,
+  emitCancellationQueueUpdate,
 };

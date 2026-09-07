@@ -3,7 +3,7 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
-const { PAYMENT_STATUS, ORDER_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
+const { PAYMENT_STATUS, ORDER_STATUS, REFUND_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
 const { logAction } = require('../utils/audit');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
 const MenuItem = require('../models/MenuItem');
@@ -480,6 +480,17 @@ exports.cancelOrder = async (req, res) => {
     await OrderStatusHistory.create({ orderId: order._id, previousStatus, newStatus: 'CANCELLED', changedBy: req.user.id, reason: reason || 'Cancelled by admin' });
 
     // Keep the standalone Cancellation record in sync (create one if missing).
+    // Strict refund flow: paid orders are marked REFUND_REQUESTED and stay
+    // in the admin refund queue — they are NOT auto-refunded here. The admin
+    // must take the explicit refund action to reach REFUNDED.
+    const isPaidOrder = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
+    const alreadyRefunded = String(order.refundStatus || '').toUpperCase() === REFUND_STATUS.REFUNDED;
+    if (isPaidOrder && !alreadyRefunded && Number(order.totalAmount) > 0) {
+      order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      order.refundAmount = Number(order.totalAmount) || 0;
+    } else if (!isPaidOrder) {
+      order.refundStatus = REFUND_STATUS.NOT_REQUIRED;
+    }
     try {
       let cancellation = await Cancellation.findOne({ orderId: order._id, isActive: true });
       if (!cancellation) {
@@ -496,6 +507,13 @@ exports.cancelOrder = async (req, res) => {
       cancellation.processedBy = req.user.id;
       cancellation.adminNote = adminNote || cancellation.adminNote || 'Cancelled by admin';
       cancellation.isActive = true;
+      if (isPaidOrder && !alreadyRefunded && Number(order.totalAmount) > 0) {
+        cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+        cancellation.refundAmount = Number(order.totalAmount) || 0;
+      } else if (!isPaidOrder) {
+        cancellation.refundStatus = REFUND_STATUS.NOT_REQUIRED;
+        cancellation.refundAmount = 0;
+      }
       await cancellation.save();
       // Re-sync order flat fields (createCancellation reset them for a request flow).
       order.orderStatus = 'CANCELLED';
@@ -505,23 +523,43 @@ exports.cancelOrder = async (req, res) => {
       order.cancellationAdminNote = adminNote || '';
       order.cancellationProcessedAt = new Date();
       order.cancellationProcessedBy = req.user.id;
+      if (isPaidOrder && !alreadyRefunded && Number(order.totalAmount) > 0) {
+        order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+        order.refundAmount = Number(order.totalAmount) || 0;
+      } else if (!isPaidOrder) {
+        order.refundStatus = REFUND_STATUS.NOT_REQUIRED;
+      }
       await order.save();
     } catch (syncError) {
       console.error('⚠️ Cancellation record sync failed (admin cancel):', syncError.message);
     }
 
+    let cancelNotice = null;
     try {
-      await Notification.create({
+      cancelNotice = await Notification.create({
         userId: order.userId,
-        title: 'Order Cancelled',
-        message: `Your order #${order.orderId} has been cancelled${adminNote ? ': ' + adminNote : '.'}`,
+        title: isPaidOrder ? 'Order Cancelled — Refund Pending' : 'Order Cancelled',
+        message: isPaidOrder
+          ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB has been requested and will be processed by an administrator.`
+          : `Your order #${order.orderId} has been cancelled${adminNote ? ': ' + adminNote : '.'}`,
         type: 'cancellation',
         orderId: order.orderId,
         isRead: false
       });
+      try { await svc.emitUserNotification(order.userId, cancelNotice, order); } catch (_) { /* best effort */ }
     } catch (notifError) {
       // best effort
     }
+
+    // Realtime: kitchen drops the ticket, admin boards refresh, the customer's
+    // tracking page + notification bell update.
+    try {
+      await svc.emitOrderStatusRealtime(order);
+      const cancellationRecord = await Cancellation.findOne({ orderId: order._id, isActive: true });
+      if (cancellationRecord) {
+        await svc.emitCancellationQueueUpdate(await svc.serializeCancellation(cancellationRecord, order));
+      }
+    } catch (_) { /* realtime is best effort */ }
 
     await logAction({
       req,
