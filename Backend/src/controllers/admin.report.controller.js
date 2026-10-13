@@ -92,7 +92,11 @@ function resolveRange({ period, startDate, endDate }) {
       return { period: normalized, start, end: tomorrowStart };
     }
     case 'month':
-      return { period: normalized, start: new Date(now.getFullYear(), now.getMonth(), 1), end: new Date(now.getFullYear(), now.getMonth() + 1, 1) };
+      return {
+        period: normalized,
+        start: new Date(now.getFullYear(), now.getMonth(), 1),
+        end: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+      };
     case 'custom': {
       const start = parseDateParam(startDate, 'startDate');
       const end = parseDateParam(endDate, 'endDate');
@@ -167,10 +171,7 @@ exports.getReportSummary = async (req, res) => {
       // Orders created within the period.
       Order.find({ createdAt: dateFilter }).select('status orderStatus createdAt').lean(),
       // Payment counts within the period.
-      Payment.aggregate([
-        { $match: { paymentDate: dateFilter } },
-        { $group: { _id: '$status', count: { $sum: 1 } } },
-      ]),
+      Payment.aggregate([{ $match: { paymentDate: dateFilter } }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
       // Most ordered foods - pure server-side aggregation on actual orders.
       Order.aggregate([
         { $match: { createdAt: dateFilter } },

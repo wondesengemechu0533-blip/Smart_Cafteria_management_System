@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Activity Log - Smart Cafeteria</title>
+    <title data-i18n="admin_activity_page_title">Activity Log - Smart Cafeteria</title>
 
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
@@ -24,12 +24,12 @@
         <main class="admin-main">
             <div class="page-header">
                 <div>
-                    <h1>Activity Log</h1>
-                    <p class="subtitle">Audit trail of administrative actions. Passwords, tokens, and secret keys are never recorded.</p>
+                    <h1 data-i18n="admin_activity_title">Activity Log</h1>
+                    <p class="subtitle" data-i18n="admin_activity_subtitle">Audit trail of administrative actions. Passwords, tokens, and secret keys are never recorded.</p>
                 </div>
                 <div class="page-actions">
                     <button class="btn btn-secondary" id="refreshLogsBtn">
-                        <i class="fa-solid fa-rotate"></i> Refresh
+                        <i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span>
                     </button>
                 </div>
             </div>
@@ -39,52 +39,50 @@
                 <div class="card-header users-toolbar">
                     <div class="search-wrap">
                         <i class="fa-solid fa-magnifying-glass"></i>
-                        <input type="text" id="logSearchInput" class="form-control" placeholder="Search admin, description, entity id...">
+                        <input type="text" id="logSearchInput" class="form-control" placeholder="Search admin, description, entity id..." data-i18n-placeholder="admin_activity_search_placeholder">
                     </div>
                     <div class="filter-group">
+                        <select id="logRoleFilter" class="form-select">
+                            <option value="all" data-i18n="admin_all_roles">All Roles</option>
+                            <option value="customer" data-i18n="role_customer">Customer</option>
+                            <option value="kitchen" data-i18n="admin_user_role_kitchen">Kitchen Staff</option>
+                            <option value="delivery" data-i18n="role_delivery">Delivery Staff</option>
+                            <option value="cashier" data-i18n="role_cashier">Cashier</option>
+                            <option value="cafeteria_manager" data-i18n="role_cafeteria_manager">Cafeteria Manager</option>
+                            <option value="cafeteria_admin" data-i18n="role_cafeteria_admin">Cafeteria Admin</option>
+                            <option value="admin,system_admin" data-i18n="role_system_admin">System Admin</option>
+                            <option value="tax_authority" data-i18n="role_tax_authority">Tax Authority</option>
+                        </select>
                         <select id="logActionFilter" class="form-select">
-                            <option value="">All Actions</option>
-                            <option value="ADMIN_LOGIN">Admin Login</option>
-                            <option value="USER_CREATED">User Created</option>
-                            <option value="USER_UPDATED">User Updated</option>
-                            <option value="USER_ACTIVATED">User Activated</option>
-                            <option value="USER_DEACTIVATED">User Deactivated</option>
-                            <option value="USER_DELETED">User Deleted</option>
-                            <option value="ROLE_CHANGED">Role Changed</option>
-                            <option value="FOOD_CREATED">Food Created</option>
-                            <option value="FOOD_UPDATED">Food Updated</option>
-                            <option value="FOOD_DELETED">Food Deleted</option>
-                            <option value="FOOD_AVAILABILITY_CHANGED">Food Availability Changed</option>
-                            <option value="ORDER_CANCELLED">Order Cancelled</option>
-                            <option value="ORDER_STATUS_UPDATED">Order Status Updated</option>
-                            <option value="CATEGORY_CREATED">Category Created</option>
-                            <option value="CATEGORY_UPDATED">Category Updated</option>
-                            <option value="CATEGORY_STATUS_CHANGED">Category Status Changed</option>
-                            <option value="CATEGORY_DELETED">Category Deleted</option>
-                            <option value="SETTINGS_UPDATED">Settings Updated</option>
+                            <option value="all" data-i18n="admin_all_actions">All Actions</option>
                         </select>
                         <select id="logEntityFilter" class="form-select">
-                            <option value="">All Entities</option>
-                            <option value="User">User</option>
-                            <option value="MenuItem">Menu Item</option>
-                            <option value="Order">Order</option>
-                            <option value="Category">Category</option>
-                            <option value="Setting">Setting</option>
+                            <option value="" data-i18n="admin_all_entities">All Entities</option>
+                            <option value="User" data-i18n="entity_User">User</option>
+                            <option value="MenuItem" data-i18n="entity_MenuItem">Menu Item</option>
+                            <option value="Order" data-i18n="entity_Order">Order</option>
+                            <option value="Category" data-i18n="entity_Category">Category</option>
+                            <option value="Setting" data-i18n="entity_Setting">Setting</option>
+                            <option value="Payment" data-i18n="entity_Payment">Payment</option>
+                            <option value="Refund" data-i18n="entity_Refund">Refund</option>
+                            <option value="Cancellation" data-i18n="entity_Cancellation">Cancellation</option>
+                            <option value="Feedback" data-i18n="entity_Feedback">Feedback</option>
+                            <option value="Report" data-i18n="entity_Report">Report</option>
                         </select>
                         <div class="date-filter-field">
-                            <label class="form-date-label"><i class="fa-solid fa-calendar-days"></i> Start Date</label>
+                            <label class="form-date-label" data-i18n="admin_start_date"><i class="fa-solid fa-calendar-days"></i> Start Date</label>
                             <div class="date-input-wrap">
                                 <input type="date" id="logStartDate" class="form-control" placeholder="mm/dd/yyyy" title="Start date">
                             </div>
                         </div>
                         <div class="date-filter-field">
-                            <label class="form-date-label"><i class="fa-solid fa-calendar-days"></i> End Date</label>
+                            <label class="form-date-label" data-i18n="admin_end_date"><i class="fa-solid fa-calendar-days"></i> End Date</label>
                             <div class="date-input-wrap">
                                 <input type="date" id="logEndDate" class="form-control" placeholder="mm/dd/yyyy" title="End date">
                             </div>
                         </div>
                         <button class="btn btn-secondary" id="resetLogFiltersBtn" title="Reset filters">
-                            <i class="fa-solid fa-filter-circle-xmark"></i> Reset
+                            <i class="fa-solid fa-filter-circle-xmark"></i> <span data-i18n="admin_reset">Reset</span>
                         </button>
                     </div>
                 </div>
@@ -93,16 +91,20 @@
                     <table class="admin-table orders-table" id="logsTable">
                         <thead>
                             <tr>
-                                <th>Agent / Admin</th>
-                                <th>Action</th>
-                                <th>Entity</th>
-                                <th>Entity ID</th>
-                                <th>Description</th>
-                                <th>Date & Time</th>
+                                <th data-i18n="admin_col_agent">Agent / Admin</th>
+                                <th data-i18n="admin_col_email">Email</th>
+                                <th data-i18n="admin_col_role">Role</th>
+                                <th data-i18n="admin_col_action">Action</th>
+                                <th data-i18n="admin_col_entity">Entity</th>
+                                <th data-i18n="admin_col_entity_id">Entity ID</th>
+                                <th data-i18n="admin_col_description">Description</th>
+                                <th data-i18n="admin_col_result">Result</th>
+                                <th data-i18n="admin_col_ip">IP Address</th>
+                                <th data-i18n="admin_col_date_time">Date & Time</th>
                             </tr>
                         </thead>
                         <tbody id="logsTableBody">
-                            <tr><td colspan="6" class="table-empty">Loading activity logs...</td></tr>
+                            <tr><td colspan="10" class="table-empty" data-i18n="admin_loading_logs">Loading activity logs...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -111,10 +113,10 @@
                     <span class="pagination-info" id="logsPaginationInfo">Page 1</span>
                     <div class="pagination-actions">
                         <button class="btn btn-secondary" id="prevLogsBtn" title="Previous page">
-                            <i class="fa-solid fa-chevron-left"></i> Prev
+                            <i class="fa-solid fa-chevron-left"></i> <span data-i18n="admin_prev">Prev</span>
                         </button>
                         <button class="btn btn-secondary" id="nextLogsBtn" title="Next page">
-                            Next <i class="fa-solid fa-chevron-right"></i>
+                            <span data-i18n="admin_next">Next</span> <i class="fa-solid fa-chevron-right"></i>
                         </button>
                     </div>
                 </div>
@@ -127,9 +129,9 @@
         </main>
     </div>
 
-    <!-- JavaScript Files -->
+<!-- JavaScript Files -->
     <script src="../../js/config.js"></script>
-<script src="../../js/admin-api.js"></script>
+    <script src="../../js/admin-api.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/admin-layout.js"></script>
     <script src="../../js/admin-ui.js"></script>
@@ -143,5 +145,3 @@
     </script>
 </body>
 </html>
-
-

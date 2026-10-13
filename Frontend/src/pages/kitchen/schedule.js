@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function") return window.tr(key, fallback, vars);
+  return fallback;
+}
 import api from '../../js/api.js';
 
 const toastEl = document.getElementById('toast');
@@ -40,7 +44,7 @@ function duration(clockIn, clockOut) {
 
 function statusBadge(status) {
     const cls = status === 'clocked_in' ? 'clocked-in' : status;
-    return `<span class="status-badge ${cls}">${status.replace(/_/g, ' ')}</span>`;
+    return `<span class="status-badge ${cls}">${(typeof window.translateStatus==='function'?window.translateStatus(status):(status||'').replace(/_/g,' '))}</span>`;
 }
 
 function updateStats() {
@@ -58,32 +62,32 @@ function renderCurrentShift() {
         currentShiftBody.innerHTML = `
             <div class="empty-state" style="padding:20px;">
                 <i class="fa-solid fa-calendar-xmark"></i>
-                <p>No shift scheduled right now</p>
+                <p>${tr('no_shift_now', 'No shift scheduled right now')}</p>
             </div>`;
         return;
     }
     const s = currentShift;
     const isClockedIn = s.status === 'clocked_in' || s.clockInTime;
     const clockActionBtn = isClockedIn
-        ? `<button class="btn btn-danger" onclick="window.clockOut('${s._id}')"><i class="fa-solid fa-right-from-bracket"></i> Clock Out</button>`
-        : `<button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> Clock In</button>`;
+        ? `<button class="btn btn-danger" onclick="window.clockOut('${s._id}')"><i class="fa-solid fa-right-from-bracket"></i> ${tr('clock_out', 'Clock Out')}</button>`
+        : `<button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button>`;
 
     currentShiftBody.innerHTML = `
         <div class="shift-details">
             <div class="shift-detail-item">
-                <div class="shift-detail-label">Shift Type</div>
+                <div class="shift-detail-label">${tr('shift_type', 'Shift Type')}</div>
                 <div class="shift-detail-value">${s.shiftType || '--'}</div>
             </div>
             <div class="shift-detail-item">
-                <div class="shift-detail-label">Start Time</div>
+                <div class="shift-detail-label">${tr('start_time', 'Start Time')}</div>
                 <div class="shift-detail-value">${fmtTime(s.startTime)}</div>
             </div>
             <div class="shift-detail-item">
-                <div class="shift-detail-label">End Time</div>
+                <div class="shift-detail-label">${tr('end_time', 'End Time')}</div>
                 <div class="shift-detail-value">${fmtTime(s.endTime)}</div>
             </div>
             <div class="shift-detail-item">
-                <div class="shift-detail-label">Status</div>
+                <div class="shift-detail-label">${tr('status', 'Status')}</div>
                 <div class="shift-detail-value">${statusBadge(s.status)}</div>
             </div>
             ${s.clockInTime ? `<div class="shift-detail-item"><div class="shift-detail-label">Clocked In</div><div class="shift-detail-value">${fmtTime(s.clockInTime)}</div></div>` : ''}
@@ -101,7 +105,7 @@ function renderUpcomingShifts() {
     }
     upcomingShiftsBody.innerHTML = `
         <table class="data-table">
-            <thead><tr><th>Date</th><th>Shift Type</th><th>Staff</th><th>Status</th><th class="text-center">Action</th></tr></thead>
+            <thead><tr><th>Date</th><th>${tr('shift_type', 'Shift Type')}</th><th>Staff</th><th>${tr('status', 'Status')}</th><th class="text-center">Action</th></tr></thead>
             <tbody>
                 ${upcoming.map(s => `
                     <tr>
@@ -109,7 +113,7 @@ function renderUpcomingShifts() {
                         <td>${s.shiftType || '--'}</td>
                         <td>${s.staffName || s.staff?.name || '--'}</td>
                         <td>${statusBadge(s.status)}</td>
-                        <td class="text-center"><button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> Clock In</button></td>
+                        <td class="text-center"><button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button></td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -125,7 +129,7 @@ function renderPastShifts() {
     }
     pastShiftsBody.innerHTML = `
         <table class="data-table">
-            <thead><tr><th>Date</th><th>Shift Type</th><th>Staff</th><th>Clock In</th><th>Clock Out</th><th>Duration</th><th>Status</th></tr></thead>
+            <thead><tr><th>Date</th><th>${tr('shift_type', 'Shift Type')}</th><th>Staff</th><th>Clock In</th><th>Clock Out</th><th>${tr('duration', 'Duration')}</th><th>${tr('status', 'Status')}</th></tr></thead>
             <tbody>
                 ${past.map(s => `
                     <tr>

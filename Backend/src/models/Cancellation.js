@@ -6,19 +6,19 @@ const cancellationSchema = new mongoose.Schema(
       type: String,
       unique: true,
       sparse: true,
-      index: true
+      index: true,
     },
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Order',
       required: true,
-      index: true
+      index: true,
     },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
-      index: true
+      index: true,
     },
     // Reason for cancellation (predefined + optional explanation)
     reason: {
@@ -31,92 +31,92 @@ const cancellationSchema = new mongoose.Schema(
         'PAYMENT_ISSUE',
         'DUPLICATE_ORDER',
         'CAFETERIA_ISSUE',
-        'OTHER'
+        'OTHER',
       ],
-      required: true
+      required: true,
     },
     description: {
       type: String,
       maxlength: 500,
-      default: null
+      default: null,
     },
     // Cancellation workflow status
     status: {
       type: String,
       enum: ['REQUESTED', 'APPROVED', 'REJECTED', 'CANCELLED', 'PROCESSING', 'COMPLETED'],
       default: 'REQUESTED',
-      index: true
+      index: true,
     },
     // Timestamps for workflow
     requestedAt: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
     approvedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     rejectedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     completedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     // Admin who processed the request
     processedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null
+      default: null,
     },
     // Admin's note/reason for approval/rejection
     adminNote: {
       type: String,
       maxlength: 500,
-      default: null
+      default: null,
     },
     // Payment-related fields
     paymentStatus: {
       type: String,
       enum: ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED'],
-      default: 'PENDING'
+      default: 'PENDING',
     },
     // Refund tracking
     refundStatus: {
       type: String,
       enum: ['NOT_REQUIRED', 'REFUND_REQUESTED', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED', 'REFUND_FAILED'],
       default: 'NOT_REQUIRED',
-      index: true
+      index: true,
     },
     refundAmount: {
       type: Number,
-      default: 0
+      default: 0,
     },
     refundReference: {
       type: String,
-      default: null
+      default: null,
     },
     // Inventory restoration tracking (idempotency protection)
     inventoryRestored: {
       type: Boolean,
-      default: false
+      default: false,
     },
     // Link to Payment if refund was processed
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Payment',
-      default: null
+      default: null,
     },
     // For deduplication and safety checks
     isActive: {
       type: Boolean,
-      default: true
-    }
+      default: true,
+    },
   },
   {
     timestamps: true,
-    collection: 'cancellations'
+    collection: 'cancellations',
   }
 );
 

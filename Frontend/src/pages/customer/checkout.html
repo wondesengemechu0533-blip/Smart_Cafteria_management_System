@@ -9,7 +9,8 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="/src/css/style.css">
      <link rel="stylesheet" href="/src/css/cart.css">
-      <link rel="stylesheet" href="/src/css/menu.css">
+       <link rel="stylesheet" href="/src/css/menu.css">
+<link rel="stylesheet" href="/src/css/searchable-dropdown.css">
 <link rel="stylesheet" href="/src/css/themes/dark-theme.css">
     <script src="../../js/config.js"></script>
 <script src="../../js/theme.js"></script>
@@ -26,9 +27,13 @@
                 </a>
             </div>
             <h2><i class="fa-solid fa-receipt"></i> Checkout</h2>
+            <div id="checkout-table-badge" style="display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:8px;background:rgba(37,99,235,0.15);border:1px solid rgba(37,99,235,0.3);margin-left:auto;">
+                <i class="fa-solid fa-table" style="color:#2563eb;font-size:0.85rem;"></i>
+                <span id="checkout-table-number" style="color:#2563eb;font-size:0.8rem;font-weight:600;"></span>
+            </div>
             <div style="display:flex;align-items:center;gap:6px;">
-                <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode"><i class="fa-solid fa-moon"></i></button>
-                <a href="../common/login.html" class="nav-icon-link nav-logout" title="Logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
+                <button type="button" class="theme-toggle-btn" data-theme-toggle aria-label="Toggle theme" data-i18n-title="title_toggle_theme"><i class="fa-solid fa-moon"></i></button>
+                <a href="../common/login.html" class="nav-icon-link nav-logout" data-i18n-title="nav_logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
             </div>
         </div>
     </header>
@@ -46,50 +51,91 @@
                         <label class="radio-card active">
                             <input type="radio" name="orderType" value="dine-in" checked>
                             <i class="fa-solid fa-chair"></i>
-                            <span>Dine-In</span>
+                            <span data-i18n="dine_in">Dine-In</span>
                         </label>
                         <label class="radio-card">
                             <input type="radio" name="orderType" value="takeaway">
                             <i class="fa-solid fa-bag-shopping"></i>
-                            <span>Takeaway</span>
+                            <span data-i18n="takeaway">Takeaway</span>
                         </label>
                         <label class="radio-card" id="delivery-radio-card">
                             <input type="radio" name="orderType" value="delivery">
                             <i class="fa-solid fa-truck-fast"></i>
-                            <span>Delivery</span>
+                            <span data-i18n="delivery">Delivery</span>
                         </label>
                     </div>
 
                     <!-- Table Number Field (Visible for Dine-In) -->
                     <div class="form-group" id="table-number-group">
                         <label for="table-number">Table Number <span class="required">*</span></label>
-                        <input type="number" id="table-number" placeholder="e.g., 12" min="1" max="100" required>
+                        <input type="text" id="table-number" placeholder="e.g., 12" required>
                     </div>
 
                     <!-- Delivery Address Fields (Visible for Delivery) -->
+                    <!-- Each choice field is a searchable dropdown (City -> Area ->
+                         Street -> Landmark). The dropdown writes into the hidden
+                         native control with the same id, which stays the single
+                         source of truth for validation and order submission. -->
                     <div id="delivery-info-group" style="display:none;">
                         <div class="form-group">
-                            <label for="delivery-subcity">Area / Kebele <span class="required">*</span></label>
-                            <select id="delivery-subcity" required>
-                                <option value="">Select area</option>
-                                <option value="Debre Berhan Kebele 01">Debre Berhan Kebele 01</option>
-                                <option value="Debre Berhan Kebele 02">Debre Berhan Kebele 02</option>
-                                <option value="Debre Berhan Kebele 03">Debre Berhan Kebele 03</option>
-                                <option value="Debre Berhan Kebele 04">Debre Berhan Kebele 04</option>
-                                <option value="Debre Berhan Kebele 05">Debre Berhan Kebele 05</option>
-                                <option value="Debre Berhan Kebele 06">Debre Berhan Kebele 06</option>
-                                <option value="Debre Berhan Kebele 07">Debre Berhan Kebele 07</option>
-                                <option value="Debre Berhan Kebele 08">Debre Berhan Kebele 08</option>
-                                <option value="Debre Berhan Kebele 09">Debre Berhan Kebele 09</option>
+                            <label for="delivery-city"><span data-i18n="delivery_city_label">City / ከተማ</span> <span class="required">*</span></label>
+                            <div id="delivery-city-dropdown"></div>
+                            <select id="delivery-city" required hidden>
+                                <option value="" data-i18n="select_city">Select city</option>
                             </select>
+                        </div>
+                        <div class="form-group" id="delivery-city-other-group" style="display:none;">
+                            <label for="delivery-city-other">City Name <span class="required">*</span></label>
+                            <input type="text" id="delivery-city-other" placeholder="e.g., Debre Berhan">
+                            <button type="button" id="delivery-city-back" class="sdd-back-btn"><i class="fa-solid fa-arrow-left"></i> <span data-i18n="delivery_dd_back_cities">Back to city list</span></button>
+                        </div>
+                        <div class="form-group" id="delivery-subcity-group">
+                            <label for="delivery-subcity"><span data-i18n="delivery_area_label">Area / Subcity / Kebele / አካባቢ / ክፍለ ከተማ / ቀበሌ</span> <span class="required">*</span></label>
+                            <div id="delivery-area-dropdown"></div>
+                            <select id="delivery-subcity" required hidden>
+                                <option value="" data-i18n="select_area">Select area</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="delivery-area-text-group" style="display:none;">
+                            <label for="delivery-area-text"><span data-i18n="delivery_area_label">Area / Subcity / Kebele / አካባቢ / ክፍለ ከተማ / ቀበሌ</span> <span class="required">*</span></label>
+                            <input type="text" id="delivery-area-text" placeholder="e.g., Kebele 04, Bole Road">
+                            <button type="button" id="delivery-area-back" class="sdd-back-btn"><i class="fa-solid fa-arrow-left"></i> <span data-i18n="delivery_dd_back_areas">Back to area list</span></button>
                         </div>
                         <div class="form-group">
                             <label for="delivery-house-number">House Number <span class="required">*</span></label>
                             <input type="text" id="delivery-house-number" placeholder="e.g., 123" required>
                         </div>
                         <div class="form-group">
-                            <label for="delivery-location">Street / Area Name <span class="required">*</span></label>
-                            <input type="text" id="delivery-location" placeholder="e.g., Main Road, Selam Area, near DBU" required>
+                            <label for="delivery-location"><span data-i18n="delivery_street_label">Street / Area Name / የመንገድ / የአካባቢ ስም</span> <span class="required">*</span></label>
+                            <div id="delivery-street-dropdown"></div>
+                            <input type="hidden" id="delivery-location" value="">
+                            <small class="form-hint" data-i18n="delivery_street_hint">Type to search famous places, or enter your own street / area name.</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="delivery-landmark"><span data-i18n="delivery_landmark_label">Landmark (optional) / መለያ</span></label>
+                            <div id="delivery-landmark-dropdown"></div>
+                            <input type="hidden" id="delivery-landmark" value="">
+                        </div>
+                        <div class="form-group">
+                            <!-- Explicit customer opt-in to share their current GPS
+                                 location with the delivery person. The actual
+                                 coordinate is only captured on explicit tap. -->
+                            <!-- Hidden fields hold the customer-provided coordinates -->
+                            <input type="hidden" id="delivery-lat" value="">
+                            <input type="hidden" id="delivery-lng" value="">
+                            <div id="location-permission-row">
+                                <button type="button" id="btn-use-location" class="btn-use-location">
+                                    <i class="fa-solid fa-location-crosshairs"></i> <span data-i18n="checkout_use_my_location">Use My Current Location</span>
+                                </button>
+                                <button type="button" id="btn-clear-location" style="display:none;" class="btn-use-location btn-clear-location">
+                                    <i class="fa-solid fa-xmark"></i> <span data-i18n="checkout_clear_location">Clear Location</span>
+                                </button>
+                            </div>
+                            <p id="location-hint" class="form-hint" data-i18n="checkout_location_hint">
+                                We only use your location to help the delivery person find you. It is never shared with anyone else.
+                            </p>
+                            <p id="location-status" class="location-status" style="display:none;"></p>
+                            <p id="delivery-distance" class="form-hint delivery-distance" style="display:none;"></p>
                         </div>
                     </div>
                 </div>
@@ -99,7 +145,7 @@
                     <h3><i class="fa-solid fa-user"></i> Contact Details</h3> 
                     <div class="form-group">
                         <label for="customer-name">Full Name <span class="required">*</span></label>
-                        <input type="text" id="customer-name" placeholder="Enter your full name" required>
+                        <input type="text" id="customer-name" data-i18n-placeholder="enter_full_name" placeholder="Enter your full name" required>
                     </div>
                     <div class="form-group">
                         <label for="customer-phone">Phone Number <span class="required">*</span></label>
@@ -115,7 +161,7 @@
                             <input type="radio" name="paymentMethod" value="CHAPA" checked>
                             <div class="payment-info">
                                 <strong>Chapa</strong>
-                                <small>Pay securely with Chapa</small>
+                                <small data-i18n="chapa_desc">Pay securely with Chapa</small>
                             </div>
                             <i class="fa-solid fa-credit-card"></i>
                         </label>
@@ -150,7 +196,7 @@
         <!-- Right Column: Order Summary Review -->
         <aside class="cart-summary-section">
             <div class="summary-card">
-                <h3>Order Review</h3>
+                <h3 data-i18n="order_review">Order Review</h3>
                 <hr>
 
                 <!-- Dynamic Item List Preview -->
@@ -161,24 +207,24 @@
                 <hr class="divider">
 
                 <div class="summary-row">
-                    <span>Subtotal</span>
+                    <span data-i18n="subtotal">Subtotal</span>
                     <span><strong id="checkout-subtotal">0</strong> <small>ETB</small></span>
                 </div>
                 
                 <div class="summary-row">
-                    <span>Service Fee</span>
+                    <span data-i18n="service_fee">Service Fee</span>
                     <span><strong id="checkout-service-fee">20</strong> <small>ETB</small></span>
                 </div>
 
                 <div class="summary-row" id="checkout-delivery-fee-row" style="display:none;">
-                    <span>Delivery Fee</span>
+                    <span data-i18n="delivery_fee">Delivery Fee</span>
                     <span><strong id="checkout-delivery-fee">0</strong> <small>ETB</small></span>
                 </div>
 
                 <hr class="divider">
 
                 <div class="summary-row total-row">
-                    <span>Total Amount</span>
+                    <span data-i18n="total_amount">Total Amount</span>
                     <span><strong id="checkout-total">0</strong> <small>ETB</small></span>
                 </div>
 
@@ -191,8 +237,8 @@
     </main>
 
     <!-- Connect scripts -->
-<script type="module" src="../../js/utils/i18n.js"></script>
-    <script type="module" src="../../js/checkout.js"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261005-ethiopia"></script>
+    <script type="module" src="../../js/checkout.js?v=20261005-textfix"></script>
     <script type="module" src="../../js/utils/storage.js"></script>
     <script type="module" src="../../js/utils/validators.js"></script>
     <script type="module" src="../../js/utils/formatters.js"></script>

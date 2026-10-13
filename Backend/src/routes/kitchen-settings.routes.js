@@ -1,16 +1,13 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
-const {
-    getKitchenSettings,
-    updateKitchenSettings
-} = require('../controllers/kitchen-settings.controller');
+const { getKitchenSettings, updateKitchenSettings } = require('../controllers/kitchen-settings.controller');
 
 // ============================================================
 // ALL ROUTES REQUIRE KITCHEN OR ADMIN ROLE
 // ============================================================
 router.use(protect);
-router.use(authorize('kitchen', 'admin'));
+router.use(authorize('kitchen', 'admin', 'cafeteria_admin', 'manager'));
 
 /**
  * @route   GET /api/v1/kitchen/settings

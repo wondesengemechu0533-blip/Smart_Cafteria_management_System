@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const {
@@ -9,7 +9,7 @@ const {
   startBreak,
   endBreak,
   getCurrentShift,
-  getKitchenStaffMembers
+  getKitchenStaffMembers,
 } = require('../controllers/kitchen-staff.controller');
 
 // ============================================================
@@ -20,27 +20,27 @@ const {
  * @route   GET /api/kitchen-staff/shifts
  * @desc    Get all kitchen shifts with filters
  * @access  Private/Admin or Kitchen
- * 
+ *
  * Query Params: status, staffId, date
  */
 router.use(protect);
-router.get('/shifts', authorize('admin', 'kitchen'), getKitchenShifts);
+router.get('/shifts', authorize('admin', 'cafeteria_admin', 'manager', 'kitchen'), getKitchenShifts);
 
 /**
  * @route   GET /api/kitchen-staff/members
  * @desc    Get all kitchen staff members
  * @access  Private/Admin
  */
-router.get('/members', authorize('admin'), getKitchenStaffMembers);
+router.get('/members', authorize('admin', 'cafeteria_admin', 'manager'), getKitchenStaffMembers);
 
 /**
  * @route   POST /api/kitchen-staff/shifts
  * @desc    Create a new kitchen shift
  * @access  Private/Admin
- * 
+ *
  * Body: { staffId, shiftType, startTime, endTime }
  */
-router.post('/shifts', authorize('admin'), createKitchenShift);
+router.post('/shifts', authorize('admin', 'cafeteria_admin', 'manager'), createKitchenShift);
 
 /**
  * @route   GET /api/kitchen-staff/shifts/current
@@ -67,7 +67,7 @@ router.patch('/shifts/:shiftId/clock-out', authorize('kitchen'), clockOutShift);
  * @route   PATCH /api/kitchen-staff/shifts/:shiftId/break/start
  * @desc    Start a break during shift
  * @access  Private/Kitchen
- * 
+ *
  * Body: { reason }
  */
 router.patch('/shifts/:shiftId/break/start', authorize('kitchen'), startBreak);

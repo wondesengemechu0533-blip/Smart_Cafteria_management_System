@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="cashier_dashboard_page_title">Cashier Dashboard - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Shared Stylesheets -->
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="/src/css/delivery.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+
+    <!-- Layout is injected by cashier-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar cashier-sidebar" id="cashierSidebar"></aside>
+        <main class="admin-main">
+
+            <div class="delivery-header">
+                <h1><i class="fa-solid fa-cash-register"></i> <span data-i18n="cashier_dashboard">Cashier Dashboard</span></h1>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshBtn"><i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span></button>
+                </div>
+            </div>
+
+            <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+            <div class="stats-row">
+                <div class="stat-card"><div class="num" id="statTodayOrders">0</div><div class="lbl">Today's Orders</div></div>
+                <div class="stat-card"><div class="num" id="statPendingPayments">0</div><div class="lbl">Pending Payments</div></div>
+                <div class="stat-card"><div class="num" id="statGrossToday">0.00 ETB</div><div class="lbl">Gross Today</div></div>
+                <div class="stat-card"><div class="num" id="statVatToday">0.00 ETB</div><div class="lbl">VAT Collected Today</div></div>
+                <div class="stat-card"><div class="num" id="statCashToday">0.00 ETB</div><div class="lbl">Cash Collected Today</div></div>
+                <div class="stat-card"><div class="num" id="statNetCash">0.00 ETB</div><div class="lbl">Net Cash at Hand</div></div>
+            </div>
+
+            <div class="section-title">
+                <h3><i class="fa-solid fa-receipt" style="color:#2563eb;"></i> Recent Orders</h3>
+            </div>
+
+            <div class="card">
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Amount</th>
+                                <th>Payment</th>
+                                <th>Payment Status</th>
+                                <th>Order Status</th>
+                                <th>Created</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentOrdersTableBody">
+                            <tr><td colspan="8" class="table-empty">Loading recent orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript Dependencies -->
+    <script src="../../js/config.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/cashier-layout.js"></script>
+    <script src="../../js/cashier-dashboard.js"></script>
+
+    <script>
+        // Page-specific initialization hook (called by cashier-layout.js)
+        function initPageSpecific() {
+            // cashier-dashboard.js handles its own DOMContentLoaded logic
+        }
+    </script>
+</body>
+</html>

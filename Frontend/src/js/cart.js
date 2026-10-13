@@ -1,7 +1,24 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
+function cartTr(key, fallback) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+  return fallback;
+}
 const CART_KEY = "smart_cafeteria_cart";
 const CHECKOUT_KEY = "checkoutCart";
-function getLang(){ try{ return localStorage.getItem("scos_language")||localStorage.getItem("cafeteria_language")||"en"; }catch(e){return "en";} }
-function tc(key){ const m={ en:{emptyTitle:"Your cart is empty", emptyDesc:"Add some delicious food from the menu.", browse:"Browse Menu", clearConfirm:"Are you sure you want to clear your cart?", emptyAlert:"Your cart is empty."}, am:{emptyTitle:"ካርትዎ ባዶ ነው!", emptyDesc:"ከማውጫው አንዳንድ ጣፋጭ ምግቦችን ይጨምሩ።", browse:"ምግቦችን ይመልከቱ", clearConfirm:"ካርትዎን ማፅዳት ይፈልጋሉ?", emptyAlert:"ካርትዎ ባዶ ነው።"} }; return (m[getLang()]&&m[getLang()][key])||m.en[key]; }
+function getLang(){ try{ return (window.getCurrentLanguage && window.getCurrentLanguage()) || localStorage.getItem("scos_language")||localStorage.getItem("cafeteria_language")||"en"; }catch(e){return "en";} }
+function tc(key){
+  const fallbackMap = { emptyTitle:"Your cart is empty", emptyDesc:"Add some delicious food from the menu.", browse:"Browse Menu", clearConfirm:"Are you sure you want to clear your cart?", emptyAlert:"Your cart is empty." };
+  const keyMap = { emptyTitle:"cart_empty_title", emptyDesc:"cart_empty_desc", browse:"nav_menu", clearConfirm:"cart_clear_confirm", emptyAlert:"cart_empty_alert" };
+  const k = keyMap[key] || key;
+  const fb = fallbackMap[key] || key;
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(k, fb);
+  const m={ en:fallbackMap, am:{emptyTitle:"ካርትዎ ባዶ ነው!", emptyDesc:"ከማውጫው አንዳንድ ጣፋጭ ምግቦችን ይጨምሩ።", browse:"ምግቦችን ይመልከቱ", clearConfirm:"ካርትዎን ማፅዳት ይፈልጋሉ?", emptyAlert:"ካርትዎ ባዶ ነው።"} };
+  return (m[getLang()]&&m[getLang()][key])||m.en[key];
+}
 const DISH_NAME_MAP = {
   "Pasta with Bread": "ፓስታ በዳቦ",
   "Pasta with Injera": "ፓስታ በእንጀራ",
@@ -30,6 +47,22 @@ const DISH_NAME_MAP = {
   "Juice": "ጁስ"
 };
 function translateDish(name){ if(getLang()==="am" && DISH_NAME_MAP[name]) return DISH_NAME_MAP[name]; return name; }
+
+// Resolve a cart item's display name. Prefer built-in bilingual fields
+// (name object { [lang] } / { en } / { am } and name_en / name_am) when
+// present, since the name may already be localized at add time; otherwise
+// fall back to the static DISH_NAME_MAP translation.
+function resolveCartItemName(item) {
+    if (!item) return "";
+    const lang = getLang();
+    const value = item.name;
+    if (value && typeof value === "object") {
+        return value[lang] || value.en || value.am || "";
+    }
+    const snake = lang === "am" ? (item.name_am || item.name_en) : (item.name_en || item.name_am);
+    if (snake) return snake;
+    return translateDish(value);
+}
 
 // ===================================================================
 // Shared cart API (module scope + exports)
@@ -97,8 +130,8 @@ document.addEventListener("DOMContentLoaded", function () {
         if (document.getElementById("login-required-modal")) return;
 
         const isAm = getLang() === "am";
-        const title = isAm ? "እባክዎ ይመዝገቡ ወይም ይግቡ" : "Please register or log in to order";
-        const message = isAm ? "እቃ ለማዘዝ መግባት ያስፈልግዎታል።" : "You need to log in to proceed to checkout and place your order.";
+        const title = cartTr("login_required", isAm ? "እባክዎ ይመዝገቡ ወይም ይግቡ" : "Please register or log in to order");
+        const message = tr("login_required", isAm ? "እቃ ለማዘዝ መግባት ያስፈልግዎታል።" : "You need to log in to proceed to checkout and place your order.");
         const loginText = isAm ? "ግባ" : "Login";
         const registerText = isAm ? "ተመዝገብ" : "Register";
 
@@ -226,13 +259,15 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const itemId = escapeHTML(String(item.menuItemId || item.id || ''));
 
+            const itemName = escapeHTML(resolveCartItemName(item));
+
             return `
                 <div class="cart-item-card">
 
                     <div class="cart-item-info">
 
                         <div class="cart-item-title">
-                            ${escapeHTML(translateDish(item.name))}
+                            ${itemName}
                         </div>
 
                         <div class="cart-item-price">
@@ -278,7 +313,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             type="button"
                             class="btn-remove remove-btn"
                             data-id="${itemId}"
-                            title="Remove item"
+                            title="' + tr('remove_item', 'Remove item') + '"
                         >
                             <i class="fa-solid fa-trash"></i>
                         </button>
@@ -473,12 +508,31 @@ document.addEventListener("DOMContentLoaded", function () {
                     JSON.stringify(cart)
                 );
 
-
-                const checkoutUrl =
+                // Preserve the selected table into checkout via query params
+                // (checkout also reads localStorage, this is belt-and-braces).
+                var checkoutUrlObj =
                     new URL(
                         "checkout.html",
                         window.location.href
-                    ).href;
+                    );
+                try {
+                    var params = new URLSearchParams(window.location.search);
+                    var tid = params.get("tableId") || params.get("tid") || "";
+                    var tnum = params.get("table") || "";
+                    if (!tid || !tnum) {
+                        try {
+                            var stored = JSON.parse(localStorage.getItem("scos_table_selection") || sessionStorage.getItem("scos_table_selection") || "null");
+                            if (stored) {
+                                if (!tid && stored.tableId) tid = stored.tableId;
+                                if (!tnum && stored.tableNumber) tnum = stored.tableNumber;
+                            }
+                        } catch (e) {}
+                    }
+                    if (!tnum) tnum = localStorage.getItem("scos_table_number") || "";
+                    if (tid) checkoutUrlObj.searchParams.set("tableId", tid);
+                    if (tnum) checkoutUrlObj.searchParams.set("table", tnum);
+                } catch (e) {}
+                var checkoutUrl = checkoutUrlObj.href;
 
 
                 console.log("Going to checkout:", checkoutUrl);
@@ -506,6 +560,36 @@ document.addEventListener("DOMContentLoaded", function () {
     window.addEventListener("languageChanged", updateCart);
 
 
+    // Display table number from the URL or localStorage
+    function getTableNumber() {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            const urlTable = params.get("table");
+            if (urlTable) return urlTable;
+        } catch (e) {}
+        return localStorage.getItem("scos_table_number") || "";
+    }
+
+    const cartTableNumber = getTableNumber();
+    // Keep the table on the "Back to Menu" link so Menu -> Cart round-trips
+    // never lose the selected table.
+    try {
+        var backLink = document.querySelector('a.btn-back[href*="menu.html"]');
+        if (backLink && cartTableNumber) {
+            var menuUrl = new URL(backLink.getAttribute("href"), window.location.href);
+            var srcParams = new URLSearchParams(window.location.search);
+            var backTid = srcParams.get("tableId") || srcParams.get("tid") || "";
+            if (!backTid) {
+                try {
+                    var backStored = JSON.parse(localStorage.getItem("scos_table_selection") || "null");
+                    if (backStored && backStored.tableId) backTid = backStored.tableId;
+                } catch (e) {}
+            }
+            if (backTid) menuUrl.searchParams.set("tableId", backTid);
+            menuUrl.searchParams.set("table", cartTableNumber);
+            backLink.setAttribute("href", menuUrl.pathname + "?" + menuUrl.searchParams.toString());
+        }
+    } catch (e) {}
     updateCart();
 
 });

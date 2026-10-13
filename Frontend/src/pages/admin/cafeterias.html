@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="admin_cafeterias">Cafeterias - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="admin_cafeterias">Cafeterias</h1>
+                    <p class="subtitle">Manage all cafeterias — location, hours, status, and staff counts.</p>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-primary" id="openAddCafeteriaBtn">
+                        <i class="fa-solid fa-plus"></i> Add Cafeteria
+                    </button>
+                </div>
+            </div>
+
+            <div class="metrics-grid mb-4">
+                <div class="metric-card"><div class="metric-icon bg-indigo"><i class="fa-solid fa-store"></i></div><div class="metric-content"><span class="metric-label">Total Cafeterias</span><h2 class="metric-value" id="metricTotalCafeterias">0</h2></div></div>
+                <div class="metric-card"><div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div><div class="metric-content"><span class="metric-label">Active</span><h2 class="metric-value" id="metricActiveCafeterias">0</h2></div></div>
+                <div class="metric-card"><div class="metric-icon bg-orange"><i class="fa-solid fa-circle-pause"></i></div><div class="metric-content"><span class="metric-label">Inactive</span><h2 class="metric-value" id="metricInactiveCafeterias">0</h2></div></div>
+                <div class="metric-card"><div class="metric-icon bg-blue"><i class="fa-solid fa-users"></i></div><div class="metric-content"><span class="metric-label">Staff Tracked</span><h2 class="metric-value" id="metricStaffCafeterias">0</h2></div></div>
+            </div>
+
+            <!-- FILTER TOOLBAR -->
+            <section class="card">
+                <div class="card-header users-toolbar">
+                    <div class="search-wrap">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="cafeteriaSearchInput" class="form-control" placeholder="Search cafeterias...">
+                    </div>
+                    <div class="filter-group">
+                        <select id="cafeteriaStatusFilter" class="form-select">
+                            <option value="">All Status</option>
+                            <option value="ACTIVE">Active</option>
+                            <option value="INACTIVE">Inactive</option>
+                        </select>
+                        <button class="btn btn-secondary" id="resetCafeteriaFiltersBtn" title="Reset filters">
+                            <i class="fa-solid fa-filter-circle-xmark"></i> Reset
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Code</th>
+                                <th>Address</th>
+                                <th>Phone</th>
+                                <th>Hours</th>
+                                <th>Status</th>
+                                <th>Default</th>
+                                <th>Staff</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="cafeteriasTableBody">
+                            <tr><td colspan="9" class="table-empty">Loading cafeterias...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- ===== ADD / EDIT CAFETERIA MODAL ===== -->
+    <div class="modal-overlay" id="cafeteriaModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="cafeteriaModalTitle">Add New Cafeteria</h3>
+                <button class="modal-close" data-close-modal="cafeteriaModal">&times;</button>
+            </div>
+            <form id="cafeteriaForm">
+                <input type="hidden" name="id" id="cafeteriaId">
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="cafeteriaName" class="form-label">Name <span class="required">*</span></label>
+                            <input type="text" name="name" id="cafeteriaName" class="form-control" placeholder="e.g. Main Campus Cafe" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaCode" class="form-label">Code</label>
+                            <input type="text" name="code" id="cafeteriaCode" class="form-control" placeholder="e.g. MAIN">
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaAddress" class="form-label">Address</label>
+                            <input type="text" id="cafeteriaAddress" class="form-control" placeholder="Street, building, city">
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaPhone" class="form-label">Phone</label>
+                            <input type="text" id="cafeteriaPhone" class="form-control" placeholder="+251...">
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaEmail" class="form-label">Email</label>
+                            <input type="email" id="cafeteriaEmail" class="form-control" placeholder="cafe@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaStatus" class="form-label">Status</label>
+                            <select id="cafeteriaStatus" class="form-select">
+                                <option value="ACTIVE">Active</option>
+                                <option value="INACTIVE">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaOpeningTime" class="form-label">Opening Time</label>
+                            <input type="time" id="cafeteriaOpeningTime" class="form-control" value="07:00">
+                        </div>
+                        <div class="form-group">
+                            <label for="cafeteriaClosingTime" class="form-label">Closing Time</label>
+                            <input type="time" id="cafeteriaClosingTime" class="form-control" value="22:00">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal="cafeteriaModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveCafeteriaBtn">Save Cafeteria</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/admin-cafeterias.js"></script>
+
+    <script>
+        function initPageSpecific() {
+            // admin-cafeterias.js handles initialization via its own DOMContentLoaded
+        }
+    </script>
+</body>
+</html>

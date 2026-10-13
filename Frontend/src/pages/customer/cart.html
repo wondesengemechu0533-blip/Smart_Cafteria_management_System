@@ -61,7 +61,7 @@
             <!-- Navigation Links -->
             <div class="nav-links">
 
-                <button type="button" class="theme-toggle-btn nav-link-track" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode">
+                <button type="button" class="theme-toggle-btn nav-link-track" data-theme-toggle aria-label="Toggle theme" data-i18n-title="title_toggle_theme">
                     <i class="fa-solid fa-moon"></i>
                 </button>
 
@@ -87,7 +87,7 @@
                 <a
                     href="../common/login.html"
                     class="nav-icon-link nav-logout"
-                    title="Logout"
+                    data-i18n-title="nav_logout"
                     onclick="localStorage.clear()"
                 >
                     <i class="fa-solid fa-right-from-bracket"></i>
@@ -157,7 +157,7 @@
 
             <div class="summary-card">
 
-                <h3>Order Summary</h3>
+                <h3 data-i18n="order_summary">Order Summary</h3>
 
                 <hr>
 
@@ -166,7 +166,7 @@
 
                 <div class="summary-row">
 
-                    <span>Subtotal</span>
+                    <span data-i18n="subtotal">Subtotal</span>
 
                     <span>
                         <strong id="summary-subtotal">0</strong>
@@ -180,7 +180,7 @@
 
                 <div class="summary-row">
 
-                    <span>Service Fee</span>
+                    <span data-i18n="service_fee">Service Fee</span>
 
                     <span>
                         <strong id="summary-service-fee">0</strong>
@@ -197,7 +197,7 @@
 
                 <div class="summary-row total-row">
 
-                    <span>Total Amount</span>
+                    <span data-i18n="total_amount">Total Amount</span>
 
                     <span>
                         <strong id="summary-total">0</strong>
@@ -226,6 +226,7 @@
                     <a
                         href="menu.html"
                         class="btn btn-secondary btn-block"
+                        data-i18n="add_more_food"
                     >
                         Add More Food
                     </a>

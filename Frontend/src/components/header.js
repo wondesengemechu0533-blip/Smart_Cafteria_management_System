@@ -48,6 +48,13 @@ export function createHeader(options = {}) {
         onLogout = null,
     } = options;
 
+    // Store the callback so a single document-level listener can handle
+    // logout no matter how the header HTML was injected (createHeader alone
+    // cannot attach event listeners to its returned string).
+    if (typeof window !== 'undefined') {
+        window.__scosHeaderOnLogout = typeof onLogout === 'function' ? onLogout : null;
+    }
+
     // ---- Build Nav Links ----
     const navLinksHTML = navLinks.map((link) => `
         <a href="${link.href}" class="${link.active ? 'active' : ''}">
@@ -174,10 +181,9 @@ export function renderHeader(container, options = {}) {
     }
     el.innerHTML = createHeader(options);
 
-    const logoutBtn = el.querySelector('#headerLogoutBtn');
-    if (logoutBtn && typeof options.onLogout === 'function') {
-        logoutBtn.addEventListener('click', options.onLogout);
-    }
+    // Logout is handled by the document-level delegation set up below,
+    // which reads window.__scosHeaderOnLogout (set by createHeader).
+
     // Bind language switcher - immediate without refresh, persisted in localStorage, centralized via i18n.js
     const langSelect = el.querySelector('.scos-lang-select');
     if (langSelect) {
@@ -200,6 +206,33 @@ export function renderHeader(container, options = {}) {
     }
     // Ensure global i18n also handles it
     if (window.applyTranslations) setTimeout(() => window.applyTranslations(), 0);
+}
+
+// ---- Document-level logout delegation ----
+// Works for pages that inject the header via createHeader() + insertAdjacentHTML
+// without ever calling renderHeader().
+if (typeof document !== 'undefined') {
+    document.addEventListener('click', function (e) {
+        const btn = e.target && e.target.closest ? e.target.closest('#headerLogoutBtn') : null;
+        if (!btn) return;
+        e.preventDefault();
+        const custom = window.__scosHeaderOnLogout;
+        if (typeof custom === 'function') {
+            custom(e);
+            return;
+        }
+        // Default logout behaviour
+        if (!confirm('Are you sure you want to log out?')) return;
+        try {
+            ['auth_token', 'current_user', 'role', 'userRole', 'userName', 'name',
+             'isLoggedIn', 'userProfile', 'latestOrder', 'adminLoggedIn',
+             'customerLoggedIn', 'kitchenLoggedIn', 'cashierLoggedIn',
+             'deliveryLoggedIn', 'managerLoggedIn'].forEach(function (k) {
+                localStorage.removeItem(k);
+            });
+        } catch (_) {}
+        window.location.href = '../common/login.html';
+    });
 }
 
 export default {

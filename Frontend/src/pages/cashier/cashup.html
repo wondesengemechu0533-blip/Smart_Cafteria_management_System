@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="cashier_sales">Sales - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Shared Stylesheets -->
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="/src/css/delivery.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+
+    <!-- Layout is injected by cashier-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar cashier-sidebar" id="cashierSidebar"></aside>
+        <main class="admin-main">
+
+            <div class="delivery-header">
+                <h1><i class="fa-solid fa-chart-column"></i> <span data-i18n="cashier_sales">Sales</span></h1>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="d-flex gap-2" style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <label class="form-label" for="cashupDate"><i class="fa-solid fa-calendar-days"></i> Date</label>
+                            <input type="date" id="cashupDate" class="form-control" style="min-width:200px;">
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-primary" id="loadCashupBtn"><i class="fa-solid fa-magnifying-glass"></i> Load</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+            <div id="cashupResults" style="display:none;">
+                <div class="stats-row">
+                    <div class="stat-card"><div class="num" id="cashStatTotalCollected">0.00 ETB</div><div class="lbl">Total Collected</div></div>
+                    <div class="stat-card"><div class="num" id="cashStatCash">0.00 ETB</div><div class="lbl">Cash</div></div>
+                    <div class="stat-card"><div class="num" id="cashStatElectronic">0.00 ETB</div><div class="lbl">Electronic</div></div>
+                    <div class="stat-card"><div class="num" id="cashStatNetCash">0.00 ETB</div><div class="lbl">Net Cash at Hand</div></div>
+                </div>
+
+                <div class="section-title">
+                    <h3><i class="fa-solid fa-list-check" style="color:#2563eb;"></i> Reconciliation</h3>
+                </div>
+
+                <div class="card">
+                    <div class="table-wrapper">
+                        <table class="admin-table">
+                            <tbody id="cashupTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript Dependencies -->
+    <script src="../../js/config.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/cashier-layout.js"></script>
+    <script src="../../js/cashier-cashup.js"></script>
+
+    <script>
+        // Page-specific initialization hook (called by cashier-layout.js)
+        function initPageSpecific() {
+            // cashier-cashup.js handles its own DOMContentLoaded logic
+        }
+    </script>
+</body>
+</html>

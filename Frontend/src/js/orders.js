@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ORDERS MODULE
@@ -135,7 +140,7 @@ export async function placeOrder(orderData) {
         // Clear cart after order placed
         clearCart(false);
 
-        showToast('Order placed successfully! 🎉', 'success');
+        showToast(tr('order_placed_success', 'Order placed successfully!'), 'success');
 
         return { success: true, order };
 
@@ -188,14 +193,22 @@ export async function updateOrderStatus(orderId, status) {
         // Notify listeners
         notifyOrderListeners();
 
-        const statusLabels = {
-            [ORDER_STATUS.PENDING]: 'pending',
-            [ORDER_STATUS.PREPARING]: 'being prepared',
-            [ORDER_STATUS.READY]: 'ready for pickup',
-            [ORDER_STATUS.SERVED]: 'served',
-        };
+const statusLabels = {
+            [ORDER_STATUS.PENDING]: 'pending',
+            [ORDER_STATUS.PREPARING]: 'being prepared',
+            [ORDER_STATUS.READY]: 'ready for pickup',
+            [ORDER_STATUS.SERVED]: 'served',
+        };
 
-        showToast(Order ${orderId} is now ${statusLabels[status] || status}, 'info');
+        const am = typeof window.getCurrentLanguage === "function" && window.getCurrentLanguage() === "am";
+        const labelsAm = {
+            [ORDER_STATUS.PENDING]: 'በመጠባበቅ ላይ',
+            [ORDER_STATUS.PREPARING]: 'በዝግጅት ላይ',
+            [ORDER_STATUS.READY]: 'ለመውሰድ ዝግጁ',
+            [ORDER_STATUS.SERVED]: 'ተላልፏል',
+        };
+        const statusWord = am ? (labelsAm[status] || status) : (statusLabels[status] || status);
+        showToast(tr("order_now_status", "Order #{id} is now {status}").replace("{id}", orderId).replace("{status}", statusWord), 'info');
 
         return { success: true, order };
 
@@ -250,7 +263,7 @@ export async function cancelOrder(orderId, reason = '') {
         order.cancellationReason = reason || 'Cancelled by customer';
 
         notifyOrderListeners();
-        showToast('Order cancelled successfully', 'info');
+        showToast(tr('order_cancelled_success', 'Order cancelled successfully'), 'info');
 
         return { success: true, order };
 

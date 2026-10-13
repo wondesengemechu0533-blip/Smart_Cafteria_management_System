@@ -1,7 +1,7 @@
-const express = require("express");
+const express = require('express');
 
 const router = express.Router();
-const { protect } = require("../middleware/auth");
+const { protect } = require('../middleware/auth');
 const {
   getCart,
   addToCart,
@@ -9,7 +9,7 @@ const {
   removeFromCart,
   clearCart,
   getCartSummary,
-} = require("../controllers/cart.controller");
+} = require('../controllers/cart.controller');
 
 // ============================================================
 //  ALL ROUTES REQUIRE
@@ -25,7 +25,7 @@ router.use(protect);
  *
  * Frontend: cart.js → getCart()
  */
-router.get("/", getCart);
+router.get('/', getCart);
 
 /**
  * @route   GET /api/cart/summary
@@ -36,7 +36,7 @@ router.get("/", getCart);
  * Frontend: checkout.js → Cart summary
  * Body: { items: [...] }
  */
-router.post("/summary", getCartSummary);
+router.post('/summary', getCartSummary);
 
 /**
  * @route   POST /api/cart
@@ -48,7 +48,7 @@ router.post("/summary", getCartSummary);
 
 price, image }
  */
-router.post("/", addToCart);
+router.post('/', addToCart);
 
 /**
  * @route   PUT /api/cart/:itemId
@@ -58,7 +58,7 @@ router.post("/", addToCart);
  * Frontend: cart.js → changeQuantity(id, delta)
  * Body: { quantity }
  */
-router.put("/:itemId", updateCartItem);
+router.put('/:itemId', updateCartItem);
 
 /**
  * @route   DELETE /api/cart/:itemId
@@ -68,7 +68,7 @@ router.put("/:itemId", updateCartItem);
  * 
  * Frontend: cart.js → removeItem(id)
  */
-router.delete("/:itemId", removeFromCart);
+router.delete('/:itemId', removeFromCart);
 
 /**
  * @route   DELETE /api/cart
@@ -77,6 +77,6 @@ router.delete("/:itemId", removeFromCart);
  *
  * Frontend: cart.js → clearCart()
  */
-router.delete("/", clearCart);
+router.delete('/', clearCart);
 
 module.exports = router;

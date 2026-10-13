@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="government_dashboard_page_title">Government Dashboard - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="../../css/admin.css">
+
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+
+<body class="admin-body">
+
+    <header class="admin-navbar">
+        <div class="nav-left">
+            <a href="dashboard.html" class="brand-logo"><i class="fa-solid fa-building-columns"></i><span>Government <small>Tax Portal</small></span></a>
+        </div>
+        <div class="nav-right">
+            <button type="button" class="btn-icon theme-toggle" id="themeToggle" title="Toggle Theme">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+            <div class="user-profile-menu">
+                <div class="avatar" id="govAvatar">G</div>
+                <div class="user-info">
+                    <strong id="govNameDisplay">Tax Authority</strong>
+                    <small>Tax Authority</small>
+                </div>
+                <button id="logoutBtn" class="btn-logout-icon" title="Logout"><i class="fa-solid fa-right-from-bracket"></i><span>Logout</span></button>
+            </div>
+        </div>
+    </header>
+
+    <div class="admin-container">
+        <main class="admin-main" style="margin-left:0;">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="government_dashboard_overview">VAT Compliance Dashboard</h1>
+                    <p class="text-muted">Aggregate tax figures reported by Smart Cafeteria. No customer data is exposed.</p>
+                </div>
+                <div class="page-actions">
+                    <select id="govYearSelect" class="form-control" style="min-width:140px;" title="Reporting period">
+                        <option value="all">All time</option>
+                    </select>
+                    <button type="button" class="btn btn-secondary" id="refreshMetricsBtn">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div id="govStatusMsg"></div>
+
+             <!-- VAT COMPLIANCE CARDS -->
+             <div class="metrics-grid mb-4">
+                 <div class="metric-card">
+                     <div class="metric-icon bg-indigo"><i class="fa-solid fa-sack-dollar"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Gross Sales (VAT-inclusive)</span>
+                         <h2 class="metric-value" id="govGrossSales">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-green"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">VAT Collected</span>
+                         <h2 class="metric-value" id="govVatCollected">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-blue"><i class="fa-solid fa-scale-balanced"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Taxable Base</span>
+                         <h2 class="metric-value" id="govTaxableBase">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-amber"><i class="fa-solid fa-receipt"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Paid Transactions</span>
+                         <h2 class="metric-value" id="govTransactionCount">0</h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-indigo"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Total Gross Revenue</span>
+                         <h2 id="revGross">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-green"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">VAT Remitted (Revenue)</span>
+                         <h2 id="revVat">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-blue"><i class="fa-solid fa-vault"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Net Cafeteria Income</span>
+                         <h2 id="revNet">0 <small>ETB</small></h2>
+                     </div>
+                 </div>
+                 <div class="metric-card">
+                     <div class="metric-icon bg-amber"><i class="fa-solid fa-box"></i></div>
+                     <div class="metric-content">
+                         <span class="metric-label">Order Count</span>
+                         <h2 id="revOrders">0</h2>
+                     </div>
+                 </div>
+             </div>
+
+             <!-- SUMMARY TABLE -->
+             <div class="card mb-4">
+                 <div class="card-header">
+                     <h3 class="card-title"><i class="fa-solid fa-table-list"></i> VAT Summary</h3>
+                 </div>
+                 <div class="table-wrapper">
+                     <table class="admin-table">
+                         <thead>
+                             <tr>
+                                 <th>Metric</th>
+                                 <th>Value (ETB)</th>
+                                 <th>Details</th>
+                             </tr>
+                         </thead>
+                         <tbody>
+                             <tr>
+                                 <td>Gross Sales (VAT-inclusive)</td>
+                                 <td id="tblGrossSales">0.00</td>
+                                 <td>Total sales including VAT</td>
+                             </tr>
+                             <tr>
+                                 <td>VAT Collected</td>
+                                 <td id="tblVatCollected">0.00</td>
+                                 <td>VAT amount collected</td>
+                             </tr>
+                             <tr>
+                                 <td>Taxable Base</td>
+                                 <td id="tblTaxableBase">0.00</td>
+                                 <td>Base amount before VAT</td>
+                             </tr>
+                             <tr>
+                                 <td>Paid Transactions</td>
+                                 <td id="tblTransactionCount">0</td>
+                                 <td>Number of paid orders</td>
+                             </tr>
+                             <tr>
+                                 <td>Total Gross Revenue</td>
+                                 <td id="tblRevGross">0.00</td>
+                                 <td>All-time gross revenue</td>
+                             </tr>
+                             <tr>
+                                 <td>VAT Remitted</td>
+                                 <td id="tblRevVat">0.00</td>
+                                 <td>Total VAT remitted</td>
+                             </tr>
+                             <tr>
+                                 <td>Net Cafeteria Income</td>
+                                 <td id="tableRevNet">0.00</td>
+                                 <td>Net income after VAT</td>
+                             </tr>
+                             <tr>
+                                 <td>Order Count</td>
+                                 <td id="tblRevOrders">0</td>
+                                 <td>Total orders</td>
+                             </tr>
+                         </tbody>
+                     </table>
+                 </div>
+             </div>
+
+             <!-- MONTHLY VAT BREAKDOWN -->
+             <div class="card mb-4">
+                 <div class="card-header">
+                     <h3 class="card-title"><i class="fa-solid fa-calendar-days"></i> Monthly VAT Breakdown</h3>
+                 </div>
+                 <div class="table-wrapper">
+                     <table class="admin-table">
+                         <thead>
+                             <tr>
+                                 <th>Month</th>
+                                 <th>Gross Sales (ETB)</th>
+                                 <th>VAT Collected (ETB)</th>
+                             </tr>
+                         </thead>
+                         <tbody id="govMonthlyTableBody">
+                             <tr><td colspan="3" class="table-empty">Loading tax compliance report...</td></tr>
+                         </tbody>
+                     </table>
+                 </div>
+             </div>
+
+             <!-- DAILY REVENUE BREAKDOWN -->
+             <div class="card">
+                 <div class="card-header">
+                     <h3 class="card-title"><i class="fa-solid fa-table-list"></i> Daily Revenue &amp; VAT (All Time)</h3>
+                 </div>
+                 <div class="table-wrapper">
+                     <table class="admin-table">
+                         <thead>
+                             <tr>
+                                 <th>Date</th>
+                                 <th>Orders</th>
+                                 <th>Gross (ETB)</th>
+                                 <th>Subtotal (ETB)</th>
+                                 <th>VAT (ETB)</th>
+                             </tr>
+                         </thead>
+                         <tbody id="govDailyTableBody">
+                             <tr><td colspan="5" class="table-empty">Loading revenue report...</td></tr>
+                         </tbody>
+                     </table>
+                 </div>
+             </div>
+        </main>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/roles.js"></script>
+    <script src="../../js/session-timeout.js"></script>
+    <script src="../../js/notification-sound.js"></script>
+    <script src="../../js/government-dashboard.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+</body>

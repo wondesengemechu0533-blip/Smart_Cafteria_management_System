@@ -1,11 +1,28 @@
+function ohTr(key, fallback) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+  return fallback;
+}
 import { requestCancellation } from "./order-cancellation.js";
+
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
+
+function isAmharic() {
+    return typeof window.getCurrentLanguage === "function" && window.getCurrentLanguage() === "am";
+}
 
 /**
  * Attached to window so that HTML onclick="cancelOrder('ID')" works without scope issues.
  * Submits a real cancellation request to the backend; only updates localStorage on success.
  */
 window.cancelOrder = async function(orderId) {
-    if (!confirm(`Are you sure you want to cancel order #${orderId}?`)) {
+    const am = isAmharic();
+    if (!confirm(am ? `ትዕዛዙን #${orderId} መሰረዝ ይፈልጋሉ?` : `Are you sure you want to cancel order #${orderId}?`)) {
         return;
     }
 
@@ -13,7 +30,7 @@ window.cancelOrder = async function(orderId) {
         const result = await requestCancellation(orderId, "CUSTOMER_CHANGED_MIND", "Cancelled by customer from order history");
 
         if (!result || result.success !== true) {
-            alert((result && result.error) || "Cancellation request could not be submitted.");
+            alert((result && result.error) || ohTr("cancel_request_failed", am ? "የስረዛ ጥያቄ ማስገባት አልተሳካም።" : "Cancellation request could not be submitted."));
             return;
         }
 
@@ -43,10 +60,10 @@ window.cancelOrder = async function(orderId) {
             localStorage.setItem("orderHistory", JSON.stringify(historyData));
         }
 
-        alert("Cancellation request submitted successfully. It will be reviewed by an administrator.");
+        alert(ohTr("cancel_request_submitted", am ? "የስረዛ ጥያቄ በተሳካ ሁኔታ ቀርቧል። በአስተዳዳሪው ይገመገማል።" : "Cancellation request submitted successfully. It will be reviewed by an administrator."));
         location.reload();
     } catch (error) {
-        alert(error.message || "Failed to submit the cancellation request.");
+        alert(error.message || ohTr("cancel_request_failed", am ? "የስረዛ ጥያቄ ማስገባት አልተሳካም።" : "Failed to submit the cancellation request."));
     }
 };
 
@@ -83,6 +100,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 d.getMonth() === now.getMonth() &&
                 d.getDate() === now.getDate();
         });
+    }
+
+    function statusText(status) {
+        const localized = window.translateStatus ? window.translateStatus(status) : "";
+        if (localized && String(localized).toUpperCase() !== String(status || "").toUpperCase()) return localized;
+        return status;
     }
 
     function renderOrders(filterStatus = "all") {
@@ -168,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <strong class="order-number" style="font-size: 1.1rem;">#${id}</strong>
                             <small class="order-date" style="margin-left: 10px; color: #6b7280;"><i class="fa-solid fa-calendar-day"></i> ${order.orderDate || "Today"}</small>
                         </div>
-                        <span class="status-tag ${statusClass}" style="padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; ${status === 'Cancelled' ? 'background: #fde8e8; color: #f05252;' : ''}">${status}</span>${refundTag}
+                        <span class="status-tag ${statusClass}" style="padding: 4px 10px; border-radius: 20px; font-weight: 600; font-size: 0.85rem; ${status === 'Cancelled' ? 'background: #fde8e8; color: #f05252;' : ''}">${statusText(status)}</span>${refundTag}
                     </div>
 
                     <div class="card-middle-row" style="margin: 12px 0;">
@@ -201,18 +224,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Filter Buttons Listener
+    let activeFilter = "all";
     filterTabs.forEach(tab => {
         tab.addEventListener("click", (e) => {
             filterTabs.forEach(t => t.classList.remove("active"));
             e.target.classList.add("active");
-            renderOrders(e.target.getAttribute("data-filter"));
+            activeFilter = e.target.getAttribute("data-filter") || "all";
+            renderOrders(activeFilter);
         });
     });
 
     // Clear History Listener
     if (clearHistoryBtn) {
         clearHistoryBtn.addEventListener("click", () => {
-            if (confirm("Are you sure you want to clear your entire order history?")) {
+            if (ohTr("cancel_clear_history", am ? "ሁሉንም የትዕዛዝ ታሪክ ማጽዳት ይፈልጋሉ?" : "Are you sure you want to clear your entire order history?")) {
                 localStorage.removeItem("orderHistory");
                 localStorage.removeItem("latestOrder");
                 renderOrders();
@@ -221,4 +246,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     renderOrders();
+
+    __registerLangChange(() => {
+        try {
+            if (!document.getElementById("orders-history-list")) return;
+            renderOrders(activeFilter);
+        } catch (e) { /* best-effort re-render */ }
+    });
 });

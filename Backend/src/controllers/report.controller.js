@@ -27,7 +27,7 @@ exports.getDailyOrdersReport = async (req, res) => {
     const payments = await Payment.find({ paymentDate: { $regex: reportDate } });
     const paymentMethods = {
       chapa: payments.filter((p) => p.method === 'CHAPA' || p.method === 'chapa').length,
-      cash: payments.filter((p) => p.method === 'cash').length
+      cash: payments.filter((p) => p.method === 'cash').length,
     };
 
     const itemCounts = {};
@@ -52,7 +52,7 @@ exports.getDailyOrdersReport = async (req, res) => {
       cancelledOrders,
       paymentMethods,
       popularItems,
-      averageOrderValue: totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : 0
+      averageOrderValue: totalOrders > 0 ? (totalRevenue / totalOrders).toFixed(2) : 0,
     };
 
     await Report.create({
@@ -62,7 +62,7 @@ exports.getDailyOrdersReport = async (req, res) => {
       toDate: new Date(reportDate),
       data: report,
       summary: { totalOrders, totalSales: totalRevenue, topItems: popularItems.slice(0, 5) },
-      generatedBy: req.user.id
+      generatedBy: req.user.id,
     });
 
     res.status(HTTP_STATUS.OK).json({ success: true, report });
@@ -87,7 +87,7 @@ exports.getSalesReport = async (req, res) => {
 
     const orders = await Order.find({
       createdAt: { $gte: new Date(fromDate), $lte: new Date(toDate) },
-      status: { $in: ['served', 'ready'] }
+      status: { $in: ['served', 'ready'] },
     });
 
     const totalSales = orders.reduce((sum, order) => sum + order.totalAmount, 0);
@@ -103,11 +103,11 @@ exports.getSalesReport = async (req, res) => {
 
     const payments = await Payment.find({
       paymentDate: { $gte: new Date(fromDate), $lte: new Date(toDate) },
-      status: 'PAID'
+      status: 'PAID',
     });
     const paymentBreakdown = {
       chapa: payments.filter((p) => p.method === 'CHAPA' || p.method === 'chapa').reduce((sum, p) => sum + p.amount, 0),
-      cash: payments.filter((p) => p.method === 'cash').reduce((sum, p) => sum + p.amount, 0)
+      cash: payments.filter((p) => p.method === 'cash').reduce((sum, p) => sum + p.amount, 0),
     };
 
     const report = {
@@ -117,7 +117,7 @@ exports.getSalesReport = async (req, res) => {
       totalOrders,
       averageOrderValue: totalOrders > 0 ? (totalSales / totalOrders).toFixed(2) : 0,
       dailyBreakdown,
-      paymentBreakdown
+      paymentBreakdown,
     };
 
     await Report.create({
@@ -127,7 +127,7 @@ exports.getSalesReport = async (req, res) => {
       toDate: new Date(toDate),
       data: report,
       summary: { totalOrders, totalSales },
-      generatedBy: req.user.id
+      generatedBy: req.user.id,
     });
 
     res.status(HTTP_STATUS.OK).json({ success: true, report });
@@ -176,7 +176,7 @@ exports.getPopularItemsReport = async (req, res) => {
       toDate: toDate || 'All time',
       items: popularItems,
       totalItems,
-      totalRevenue
+      totalRevenue,
     };
 
     res.status(HTTP_STATUS.OK).json({ success: true, report });
@@ -210,7 +210,7 @@ exports.getPaymentsReport = async (req, res) => {
 
     const methodBreakdown = {
       chapa: payments.filter((p) => p.method === 'CHAPA' || p.method === 'chapa').length,
-      cash: payments.filter((p) => p.method === 'cash').length
+      cash: payments.filter((p) => p.method === 'cash').length,
     };
 
     const report = {
@@ -222,12 +222,235 @@ exports.getPaymentsReport = async (req, res) => {
       failed,
       pending,
       methodBreakdown,
-      averageAmount: totalPayments > 0 ? (totalAmount / totalPayments).toFixed(2) : 0
+      averageAmount: totalPayments > 0 ? (totalAmount / totalPayments).toFixed(2) : 0,
     };
 
     res.status(HTTP_STATUS.OK).json({ success: true, report });
   } catch (error) {
     console.error('❌ Get Payments Report Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
+  }
+};
+
+/**
+ * @desc    Revenue & Tax report (VAT + revenue sharing breakdown)
+ * @route   GET /api/reports/revenue
+ * @access  Private/Admin/Cafeteria/Manager/TaxAuthority
+ * Query Params: fromDate, toDate
+ */
+exports.getRevenueReport = async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+    const filter = {};
+
+    if (fromDate && toDate) {
+      const f = fromDate.split('-');
+      const t = toDate.split('-');
+      const start = new Date(Number(f[0]), Number(f[1]) - 1, Number(f[2]), 0, 0, 0, 0);
+      const end = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]), 23, 59, 59, 999);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    const orders = await Order.find(filter).lean();
+
+    const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+    const agg = orders.reduce(
+      (acc, o) => {
+        const vatRate = Number(o.vatRate) || 0;
+        const vatEnabled = o.vatEnabled !== false;
+        const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
+        const effectiveVatAmount =
+          o.vatAmount ||
+          o.taxAmount ||
+          0 ||
+          (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+        acc.orderCount++;
+        acc.gross = acc.gross + (o.totalAmount || 0);
+        acc.subtotal = acc.subtotal + (o.subtotal || 0);
+        acc.vat = acc.vat + effectiveVatAmount;
+        acc.serviceFees = acc.serviceFees + (o.serviceFee || 0);
+        acc.deliveryFees = acc.deliveryFees + (o.deliveryFee || 0);
+        acc.platformFees = acc.platformFees + (o.platformFee || 0);
+        acc.cafeteriaShare = acc.cafeteriaShare + (o.cafeteriaShare ?? (o.subtotal || 0));
+        acc.platformShare = acc.platformShare + (o.platformShare || 0);
+        return acc;
+      },
+      {
+        orderCount: 0,
+        gross: 0,
+        subtotal: 0,
+        vat: 0,
+        serviceFees: 0,
+        deliveryFees: 0,
+        platformFees: 0,
+        cafeteriaShare: 0,
+        platformShare: 0,
+      }
+    );
+
+    for (const k of [
+      'gross',
+      'subtotal',
+      'vat',
+      'serviceFees',
+      'deliveryFees',
+      'platformFees',
+      'cafeteriaShare',
+      'platformShare',
+    ]) {
+      agg[k] = round2(agg[k]);
+    }
+
+    const daily = {};
+    orders.forEach((o) => {
+      const d = o.createdAt ? o.createdAt : new Date();
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      if (!daily[date]) daily[date] = { orders: 0, gross: 0, vat: 0, subtotal: 0, serviceFees: 0, deliveryFees: 0 };
+      const vatRate = Number(o.vatRate) || 0;
+      const vatEnabled = o.vatEnabled !== false;
+      const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
+      const effectiveVatAmount =
+        o.vatAmount ||
+        o.taxAmount ||
+        0 ||
+        (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+      daily[date].orders++;
+      daily[date].gross += o.totalAmount || 0;
+      daily[date].vat += effectiveVatAmount;
+      daily[date].subtotal += o.subtotal || 0;
+      daily[date].serviceFees += o.serviceFee || 0;
+      daily[date].deliveryFees += o.deliveryFee || 0;
+    });
+    const dailyBreakdown = Object.entries(daily)
+      .map(([date, v]) => ({
+        date,
+        orders: v.orders,
+        gross: round2(v.gross),
+        subtotal: round2(v.subtotal),
+        vat: round2(v.vat),
+        serviceFees: round2(v.serviceFees),
+        deliveryFees: round2(v.deliveryFees),
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    const report = {
+      fromDate: fromDate || 'All time',
+      toDate: toDate || 'All time',
+      summary: agg,
+      netCafeteriaIncome: round2(agg.cafeteriaShare),
+      totalTaxRemitted: agg.vat,
+      averageOrderValue: agg.orderCount > 0 ? round2(agg.gross / agg.orderCount) : 0,
+      dailyBreakdown,
+    };
+
+    res.status(HTTP_STATUS.OK).json({ success: true, report });
+  } catch (error) {
+    console.error('❌ Get Revenue Report Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
+  }
+};
+
+/**
+ * @desc    Tax compliance report (restricted - government / tax authority only)
+ * @route   GET /api/reports/tax-compliance
+ * @access  Private/TaxAuthority + system & cafeteria admins
+ *
+ * Exposes ONLY aggregate VAT figures (no order/customer PII). Every access is
+ * audit-logged with the actor role.
+ * Query Params: fromDate, toDate, year
+ */
+exports.getTaxComplianceReport = async (req, res) => {
+  try {
+    const { fromDate, toDate, year } = req.query;
+    const filter = { paymentStatus: 'PAID' };
+
+    if (year) {
+      const y = parseInt(year) || new Date().getFullYear();
+      const start = new Date(y, 0, 1, 0, 0, 0, 0);
+      const end = new Date(y, 11, 31, 23, 59, 59, 999);
+      filter.createdAt = { $gte: start, $lte: end };
+    } else if (fromDate && toDate) {
+      const f = fromDate.split('-');
+      const t = toDate.split('-');
+      const start = new Date(Number(f[0]), Number(f[1]) - 1, Number(f[2]), 0, 0, 0, 0);
+      const end = new Date(Number(t[0]), Number(t[1]) - 1, Number(t[2]), 23, 59, 59, 999);
+      filter.createdAt = { $gte: start, $lte: end };
+    }
+
+    const orders = await Order.find(filter)
+      .select('totalAmount vatAmount taxAmount vatRate vatEnabled createdAt orderId')
+      .lean();
+
+    const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+    const totals = orders.reduce(
+      (acc, o) => {
+        const vatRate = Number(o.vatRate) || 0;
+        const vatEnabled = o.vatEnabled !== false;
+        const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
+        const effectiveVatAmount =
+          o.vatAmount ||
+          o.taxAmount ||
+          0 ||
+          (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+        acc.grossSales = acc.grossSales + (o.totalAmount || 0);
+        acc.vatCollected = acc.vatCollected + effectiveVatAmount;
+        acc.taxableBase = acc.taxableBase + (o.totalAmount || 0) - effectiveVatAmount;
+        if (vatEnabled) acc.vatInclusiveOrders++;
+        else acc.vatExemptOrders++;
+        return acc;
+      },
+      { grossSales: 0, vatCollected: 0, taxableBase: 0, vatInclusiveOrders: 0, vatExemptOrders: 0 }
+    );
+
+    const months = {};
+    orders.forEach((o) => {
+      const d = o.createdAt ? o.createdAt : new Date();
+      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      if (!months[m]) months[m] = { grossSales: 0, vatCollected: 0 };
+      const vatRate = Number(o.vatRate) || 0;
+      const vatEnabled = o.vatEnabled !== false;
+      const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
+      const effectiveVatAmount =
+        o.vatAmount ||
+        o.taxAmount ||
+        0 ||
+        (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+      months[m].grossSales += o.totalAmount || 0;
+      months[m].vatCollected += effectiveVatAmount;
+    });
+
+    const monthlyBreakdown = Object.entries(months)
+      .map(([month, v]) => ({ month, grossSales: round2(v.grossSales), vatCollected: round2(v.vatCollected) }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
+    const { logAction } = require('../utils/audit');
+    await logAction({
+      req,
+      action: 'TAX_REPORT_ACCESSED',
+      entityType: 'Report',
+      entityId: '',
+      description: `${req.user.name || req.user.email} (${req.user.role}) accessed the VAT/tax compliance report`,
+      result: 'SUCCESS',
+      metadata: { fromDate: fromDate || 'all', toDate: toDate || 'all', year: year || null, orderCount: orders.length },
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      report: {
+        period: year ? `Year ${year}` : `${fromDate || 'All time'} - ${toDate || 'All time'}`,
+        transactionCount: orders.length,
+        grossSales: round2(totals.grossSales),
+        taxableBase: round2(totals.taxableBase),
+        vatCollected: round2(totals.vatCollected),
+        vatInclusiveOrders: totals.vatInclusiveOrders,
+        vatExemptOrders: totals.vatExemptOrders,
+        monthlyBreakdown,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Get Tax Compliance Report Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
   }
 };
@@ -249,8 +472,8 @@ exports.getAllReports = async (req, res) => {
         date: report.date,
         summary: report.summary,
         generatedBy: report.generatedBy?.name || 'System',
-        createdAt: report.createdAt
-      }))
+        createdAt: report.createdAt,
+      })),
     });
   } catch (error) {
     console.error('❌ Get All Reports Error:', error);
@@ -278,8 +501,8 @@ exports.getReportById = async (req, res) => {
         data: report.data,
         summary: report.summary,
         generatedBy: report.generatedBy?.name || 'System',
-        createdAt: report.createdAt
-      }
+        createdAt: report.createdAt,
+      },
     });
   } catch (error) {
     console.error('❌ Get Report By ID Error:', error);

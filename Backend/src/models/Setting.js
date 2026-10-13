@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * Setting Schema - Store cafeteria settings as key/value pairs.
@@ -20,16 +20,16 @@ const SettingSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["string", "number", "boolean", "object", "array"],
-      default: "string",
+      enum: ['string', 'number', 'boolean', 'object', 'array'],
+      default: 'string',
     },
     group: {
       type: String,
-      default: "general",
+      default: 'general',
     },
     label: {
       type: String,
-      default: "",
+      default: '',
     },
     protected: {
       type: Boolean,
@@ -38,7 +38,7 @@ const SettingSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("Setting", SettingSchema);
+module.exports = mongoose.model('Setting', SettingSchema);

@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - PAYMENT MODULE
@@ -53,7 +58,7 @@ export async function simulatePayment(orderId, method = PAYMENT_METHODS.CHAPA, d
 
         if (!success) {
             order.paymentStatus = PAYMENT_STATUS.FAILED;
-            showToast('Payment failed. Please try again.', 'error');
+            showToast(tr('payment_failed_try_again', 'Payment failed. Please try again.'), 'error');
             return {
                 success: false,
                 error: 'Payment failed. Please try again.',

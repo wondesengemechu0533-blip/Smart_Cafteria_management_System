@@ -19,14 +19,14 @@ const ALLOWED_TYPES = {
   'image/jpeg': '.jpg',
   'image/jpg': '.jpg',
   'image/png': '.png',
-  'image/webp': '.webp'
+  'image/webp': '.webp',
 };
 
 // Magic byte signatures for allowed formats
 const MAGIC = {
   jpg: Buffer.from([0xff, 0xd8, 0xff]),
   png: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-  webp: Buffer.from([0x52, 0x49, 0x46, 0x46]) // RIFF header, verified with WEBP tag below
+  webp: Buffer.from([0x52, 0x49, 0x46, 0x46]), // RIFF header, verified with WEBP tag below
 };
 
 const UPLOAD_DIR = path.join(__dirname, '..', '..', 'uploads', 'menu');
@@ -98,12 +98,12 @@ function storeDataUrl(dataUrl) {
     throw new Error('The file content does not match the declared image type');
   }
 
-      const dir = ensureUploadDir();
-      const filename = safeFileName(ext);
-      fs.writeFileSync(path.join(dir, filename), buffer);
+  const dir = ensureUploadDir();
+  const filename = safeFileName(ext);
+  fs.writeFileSync(path.join(dir, filename), buffer);
 
-      return `/uploads/menu/${filename}`;
-  }
+  return `/uploads/menu/${filename}`;
+}
 
 /**
  * Store a base64 data URL as a profile photo file and return its public path.
@@ -199,5 +199,5 @@ module.exports = {
   storeProfileImage,
   MAX_FILE_SIZE,
   ALLOWED_TYPES,
-  UPLOAD_DIR
+  UPLOAD_DIR,
 };

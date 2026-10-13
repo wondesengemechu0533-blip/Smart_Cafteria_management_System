@@ -25,26 +25,23 @@ exports.getKitchenReport = async (req, res) => {
     if (startDate && endDate) {
       filter.reportDate = {
         $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        $lte: new Date(endDate),
       };
     }
     if (reportType) filter.reportType = reportType;
 
-    const report = await KitchenReport.find(filter)
-      .populate('staffId', 'name')
-      .sort({ reportDate: -1 });
+    const report = await KitchenReport.find(filter).populate('staffId', 'name').sort({ reportDate: -1 });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: report.length,
-      reports: report
+      reports: report,
     });
-
   } catch (error) {
     console.error('❌ Get Kitchen Report Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -65,23 +62,23 @@ exports.generateDailyReport = async (req, res) => {
 
     // Get all orders completed today
     const ordersReceived = await Order.countDocuments({
-      createdAt: { $gte: today, $lt: tomorrow }
+      createdAt: { $gte: today, $lt: tomorrow },
     });
 
     const ordersCompleted = await Order.countDocuments({
       status: 'served',
-      completedTime: { $gte: today, $lt: tomorrow }
+      completedTime: { $gte: today, $lt: tomorrow },
     });
 
     const ordersCancelled = await Order.countDocuments({
       status: 'cancelled',
-      createdAt: { $gte: today, $lt: tomorrow }
+      createdAt: { $gte: today, $lt: tomorrow },
     });
 
     // Get completed orders for analysis
     const completedOrders = await Order.find({
       status: 'served',
-      completedTime: { $gte: today, $lt: tomorrow }
+      completedTime: { $gte: today, $lt: tomorrow },
     }).populate('items.itemId');
 
     // Calculate average preparation time
@@ -89,10 +86,10 @@ exports.generateDailyReport = async (req, res) => {
     let totalItems = 0;
     const itemCount = {};
 
-    completedOrders.forEach(order => {
+    completedOrders.forEach((order) => {
       const prepTime = (order.completedTime - order.orderTime) / 60000; // minutes
       totalPrepTime += prepTime;
-      order.items.forEach(item => {
+      order.items.forEach((item) => {
         totalItems++;
         itemCount[item.name] = (itemCount[item.name] || 0) + item.quantity;
       });
@@ -107,27 +104,27 @@ exports.generateDailyReport = async (req, res) => {
       .slice(0, 5)
       .map(([name, count]) => ({
         itemName: name,
-        count: count
+        count: count,
       }));
 
     // Get staff performance
     const staffShifts = await KitchenShift.find({
       status: 'completed',
-      clockOutTime: { $gte: today, $lt: tomorrow }
+      clockOutTime: { $gte: today, $lt: tomorrow },
     }).populate('staffId', 'name');
 
-    const staffPerformance = staffShifts.map(shift => ({
+    const staffPerformance = staffShifts.map((shift) => ({
       staffId: shift.staffId._id,
       staffName: shift.staffId.name,
       ordersCompleted: shift.ordersCompleted,
       averageTime: shift.averagePreparationTime,
-      efficiency: shift.ordersCompleted > 0 ? Math.round((shift.ordersCompleted / 8) * 100) : 0 // assuming 8-hour shift
+      efficiency: shift.ordersCompleted > 0 ? Math.round((shift.ordersCompleted / 8) * 100) : 0, // assuming 8-hour shift
     }));
 
     // Get stock issues
     const stockIssues = await StockAlert.countDocuments({
       status: 'active',
-      createdAt: { $gte: today, $lt: tomorrow }
+      createdAt: { $gte: today, $lt: tomorrow },
     });
 
     // Create report
@@ -142,20 +139,19 @@ exports.generateDailyReport = async (req, res) => {
       totalItemsPrepared: totalItems,
       mostPreparedItems: sortedItems,
       staffPerformance: staffPerformance,
-      stockIssuesReported: stockIssues
+      stockIssuesReported: stockIssues,
     });
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'Daily report generated successfully',
-      report: report
+      report: report,
     });
-
   } catch (error) {
     console.error('❌ Generate Daily Report Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -178,12 +174,12 @@ exports.getDetailedKitchenStats = async (req, res) => {
     const ready = await Order.countDocuments({ status: 'ready' });
     const served = await Order.countDocuments({
       status: 'served',
-      completedTime: { $gte: today }
+      completedTime: { $gte: today },
     });
 
     // Calculate average preparation time for active orders
     const activeOrders = await Order.find({
-      status: { $in: ['pending', 'preparing'] }
+      status: { $in: ['pending', 'preparing'] },
     });
 
     let avgPrepTime = 0;
@@ -198,57 +194,57 @@ exports.getDetailedKitchenStats = async (req, res) => {
     const topItems = await Order.aggregate([
       {
         $match: {
-          createdAt: { $gte: today }
-        }
+          createdAt: { $gte: today },
+        },
       },
       {
-        $unwind: '$items'
+        $unwind: '$items',
       },
       {
         $group: {
           _id: '$items.name',
-          count: { $sum: '$items.quantity' }
-        }
+          count: { $sum: '$items.quantity' },
+        },
       },
       {
-        $sort: { count: -1 }
+        $sort: { count: -1 },
       },
       {
-        $limit: 5
-      }
+        $limit: 5,
+      },
     ]);
 
     // Get stock alerts
     const stockAlerts = await StockAlert.countDocuments({
-      status: { $in: ['active', 'acknowledged'] }
+      status: { $in: ['active', 'acknowledged'] },
     });
 
     // Get active staff
     const activeStaff = await KitchenShift.countDocuments({
-      status: 'active'
+      status: 'active',
     });
 
     // Get peak hour (hour with most orders)
     const ordersByHour = await Order.aggregate([
       {
         $match: {
-          createdAt: { $gte: today }
-        }
+          createdAt: { $gte: today },
+        },
       },
       {
         $group: {
           _id: {
-            $hour: '$createdAt'
+            $hour: '$createdAt',
           },
-          count: { $sum: 1 }
-        }
+          count: { $sum: 1 },
+        },
       },
       {
-        $sort: { count: -1 }
+        $sort: { count: -1 },
       },
       {
-        $limit: 1
-      }
+        $limit: 1,
+      },
     ]);
 
     const peakHour = ordersByHour.length > 0 ? `${ordersByHour[0]._id}:00` : 'N/A';
@@ -261,28 +257,27 @@ exports.getDetailedKitchenStats = async (req, res) => {
           preparing,
           ready,
           served,
-          totalActive: pending + preparing
+          totalActive: pending + preparing,
         },
         performance: {
           averagePreparationTime: avgPrepTime,
           totalOrdersToday: pending + preparing + ready + served,
-          completionRate: served
+          completionRate: served,
         },
         topItems: topItems,
         staffing: {
           activeStaffMembers: activeStaff,
-          stockAlerts: stockAlerts
+          stockAlerts: stockAlerts,
         },
         peakHour: peakHour,
-        timestamp: new Date()
-      }
+        timestamp: new Date(),
+      },
     });
-
   } catch (error) {
     console.error('❌ Get Detailed Kitchen Stats Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -305,7 +300,7 @@ exports.getStaffPerformance = async (req, res) => {
     if (startDate && endDate) {
       filter.clockOutTime = {
         $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        $lte: new Date(endDate),
       };
     } else {
       // Default to last 30 days
@@ -315,27 +310,27 @@ exports.getStaffPerformance = async (req, res) => {
     }
 
     // Get shift data
-    const shifts = await KitchenShift.find(filter)
-      .populate('staffId', 'name email phone');
+    const shifts = await KitchenShift.find(filter).populate('staffId', 'name email phone');
 
     // Calculate metrics
     const totalShifts = shifts.length;
     const totalOrdersCompleted = shifts.reduce((sum, shift) => sum + shift.ordersCompleted, 0);
-    const avgPrepTime = totalOrdersCompleted > 0
-      ? Math.round(shifts.reduce((sum, shift) => sum + shift.averagePreparationTime, 0) / shifts.length)
-      : 0;
+    const avgPrepTime =
+      totalOrdersCompleted > 0
+        ? Math.round(shifts.reduce((sum, shift) => sum + shift.averagePreparationTime, 0) / shifts.length)
+        : 0;
 
     // Calculate active hours
     let totalHours = 0;
     let totalBreakTime = 0;
 
-    shifts.forEach(shift => {
+    shifts.forEach((shift) => {
       if (shift.clockInTime && shift.clockOutTime) {
         const shiftDuration = (shift.clockOutTime - shift.clockInTime) / (1000 * 60 * 60); // hours
         totalHours += shiftDuration;
 
         // Calculate break time
-        shift.breaksStarted.forEach(breakRecord => {
+        shift.breaksStarted.forEach((breakRecord) => {
           if (breakRecord.endTime) {
             const breakDuration = (breakRecord.endTime - breakRecord.startTime) / (1000 * 60); // minutes
             totalBreakTime += breakDuration;
@@ -357,15 +352,14 @@ exports.getStaffPerformance = async (req, res) => {
         totalActiveHours: Math.round(totalHours * 10) / 10,
         averageOrdersPerHour: avgOrdersPerHour,
         averageBreakTimePerShift: avgBreaksPerShift,
-        efficiency: Math.round((totalOrdersCompleted / (totalHours * 10)) * 100) // orders per 10 hours
-      }
+        efficiency: Math.round((totalOrdersCompleted / (totalHours * 10)) * 100), // orders per 10 hours
+      },
     });
-
   } catch (error) {
     console.error('❌ Get Staff Performance Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -387,7 +381,7 @@ exports.getOrderPreparationReport = async (req, res) => {
     if (startDate && endDate) {
       filter.createdAt = {
         $gte: new Date(startDate),
-        $lte: new Date(endDate)
+        $lte: new Date(endDate),
       };
     }
 
@@ -397,15 +391,11 @@ exports.getOrderPreparationReport = async (req, res) => {
       filter.status = { $in: ['served', 'cancelled'] };
     }
 
-    const orders = await Order.find(filter)
-      .populate('userId', 'name phone')
-      .sort({ completedTime: -1 });
+    const orders = await Order.find(filter).populate('userId', 'name phone').sort({ completedTime: -1 });
 
     // Enrich with metrics
-    const enrichedOrders = orders.map(order => {
-      const prepTime = order.completedTime
-        ? (order.completedTime - order.orderTime) / 60000
-        : null;
+    const enrichedOrders = orders.map((order) => {
+      const prepTime = order.completedTime ? (order.completedTime - order.orderTime) / 60000 : null;
 
       return {
         orderId: order.orderId,
@@ -415,21 +405,20 @@ exports.getOrderPreparationReport = async (req, res) => {
         preparationTime: prepTime ? Math.round(prepTime) : null,
         createdAt: order.orderTime,
         completedAt: order.completedTime,
-        preparationDelayReason: order.preparationDelayReason
+        preparationDelayReason: order.preparationDelayReason,
       };
     });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: enrichedOrders.length,
-      orders: enrichedOrders
+      orders: enrichedOrders,
     });
-
   } catch (error) {
     console.error('❌ Get Order Preparation Report Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };

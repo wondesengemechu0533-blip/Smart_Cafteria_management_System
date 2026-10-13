@@ -220,6 +220,32 @@
             border-left: 2px solid #ccc;
         }
 
+        .alert-response {
+            margin-top: 10px;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .alert-response .response-meta {
+            display: block;
+            font-size: 12px;
+            opacity: 0.8;
+            margin-top: 4px;
+        }
+        .alert-response.response-acknowledged {
+            background: rgba(37, 99, 235, 0.08);
+            border: 1px solid rgba(37, 99, 235, 0.25);
+            color: #1e40af;
+        }
+        .alert-response.response-resolved {
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #166534;
+        }
+        [data-theme="dark"] .alert-response.response-acknowledged { background: rgba(37, 99, 235, 0.15); color: #93c5fd; }
+        [data-theme="dark"] .alert-response.response-resolved { background: rgba(34, 197, 94, 0.15); color: #6ee7b7; }
+
         .alert-actions {
             display: flex;
             flex-direction: column;
@@ -280,12 +306,28 @@
             color: #0f5132;
         }
 
+        .status-low-stock {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .status-out-of-stock {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
         .empty-state {
             background: white;
             padding: 60px 20px;
             border-radius: 8px;
             text-align: center;
             color: #666;
+        }
+
+        .empty-state .error-detail {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #999;
         }
 
         .empty-icon {
@@ -474,8 +516,10 @@
         [data-theme="dark"] .severity-high { background: #422006; color: #fcd34d; }
         [data-theme="dark"] .severity-medium { background: #0c1e3f; color: #93c5fd; }
         [data-theme="dark"] .severity-low,
-        [data-theme="dark"] .status-acknowledged { background: #052e1f; color: #6ee7b7; }
+        [data-theme="dark"] .status-acknowledged,
+        [data-theme="dark"] .status-low-stock { background: #052e1f; color: #6ee7b7; }
         [data-theme="dark"] .status-resolved { background: #0c1a11; color: #86efac; }
+        [data-theme="dark"] .status-out-of-stock { background: #3b0f0f; color: #fecaca; }
         [data-theme="dark"] .empty-state { color: #94a3b8; }
         [data-theme="dark"] .notification-success { background: #052e1f; color: #6ee7b7; border-color: #065f46; }
         [data-theme="dark"] .notification-error { background: #3b0f0f; color: #fecaca; border-color: #7f1d1d; }
@@ -505,7 +549,7 @@
             </button>
             <div class="kds-header-title">
                 <i class="fa-solid fa-fire-burner fa-xl"></i>
-                <h1>Kitchen Display System</h1>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
             </div>
         </div>
         <div class="user-menu">
@@ -518,7 +562,7 @@
             <div class="user-dropdown">
                 <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
                     <i class="fa-solid fa-user-circle"></i>
-                    <span id="userName">Profile</span>
+                    <span data-i18n="profile" id="userName">Profile</span>
                 </button>
                 <div class="dropdown-menu-custom" id="userDropdownMenu">
                 </div>
@@ -535,31 +579,34 @@
         <aside class="kds-sidebar" id="kdsSidebar">
             <div class="kds-sidebar-brand">
                 <i class="fa-solid fa-fire-burner"></i>
-                <span>Kitchen Menu</span>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-group">
-                    <a href="dashboard.html" class="sidebar-link">
+                    <a data-i18n="kitchen_nav_dashboard" href="/src/pages/kitchen/dashboard.html" class="sidebar-link">
                         <i class="fa-solid fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="orders.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link">
                         <i class="fa-solid fa-receipt"></i> Orders
                     </a>
-                    <a href="availability.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link">
                         <i class="fa-solid fa-burger"></i> Availability
                     </a>
-                    <a href="stock-alerts.html" class="sidebar-link active">
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link active">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
+                    </a>
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
                     </a>
                 </div>
                 <div class="sidebar-group" style="margin-top: 16px;">
-                    <a href="notifications.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
-                    <a href="schedule.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
                         <i class="fa-solid fa-clock"></i> Preparation Schedule
                     </a>
-                    <a href="settings.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link">
                         <i class="fa-solid fa-gear"></i> Settings
                     </a>
                 </div>
@@ -570,28 +617,28 @@
         <main class="kds-main">
             <div class="container">
                 <div class="header">
-                    <h1>?? Stock Alerts</h1>
-                    <button class="btn-report" onclick="openReportModal()">+ Report Issue</button>
+                    <h1><i class="fa-solid fa-triangle-exclamation" style="color:#f59e0b"></i> Stock Alerts</h1>
+                    <button data-i18n="report_issue" class="btn-report" onclick="openReportModal()">+ Report Issue</button>
                 </div>
 
                 <div id="notificationContainer"></div>
 
                 <div class="filters">
                     <div class="filter-group">
-                        <label for="statusFilter">Status:</label>
+                        <label data-i18n="status_colon" for="statusFilter">Status:</label>
                         <select id="statusFilter" onchange="filterAlerts()">
-                            <option value="">All</option>
+                            <option data-i18n="all" value="">All</option>
                             <option value="active">Active</option>
                             <option value="acknowledged">Acknowledged</option>
-                            <option value="resolved">Resolved</option>
+                            <option data-i18n="issue_status_resolved" value="resolved">Resolved</option>
                         </select>
                     </div>
                 </div>
 
                 <div class="alerts-list" id="alertsList">
                     <div class="empty-state">
-                        <div class="empty-icon">?</div>
-                        <p>No stock alerts at the moment</p>
+                        <div class="empty-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+                        <p>Loading stock alerts…</p>
                     </div>
                 </div>
             </div>
@@ -619,6 +666,7 @@
                 <div class="form-group">
                     <label for="severity">Severity *</label>
                     <select id="severity" required>
+                        <option value="" selected disabled>Select severity...</option>
                         <option value="low">Low</option>
                         <option value="medium">Medium</option>
                         <option value="high">High</option>
@@ -630,16 +678,17 @@
                     <textarea id="reason" placeholder="Describe the issue..." required></textarea>
                 </div>
                 <div class="modal-buttons">
-                    <button type="button" class="btn-cancel" onclick="closeReportModal()">Cancel</button>
+                    <button data-i18n="nav_cancel" type="button" class="btn-cancel" onclick="closeReportModal()">Cancel</button>
                     <button type="submit" class="btn-submit">Report Issue</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <script type="module" src="../../js/utils/i18n.js?v=20260907"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261013c"></script>
     <script src="../../js/config.js?v=20260907"></script>
-<script src="../../js/kitchen/stock-alerts.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
+<script src="../../js/kitchen/stock-alerts.js?v=20261013c"></script>
 
     <!-- Navigation & User Menu Script -->
     <script>

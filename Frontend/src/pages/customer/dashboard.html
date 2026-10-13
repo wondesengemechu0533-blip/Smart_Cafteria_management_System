@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Customer Dashboard - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Bootstrap CSS (required for grid + components) -->
+    <link rel="stylesheet" href="/src/css/customer.css">
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/components.css">
+    <link rel="stylesheet" href="/css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+
+<body>
+
+    <!-- Layout will be injected by customer-sidebar.js -->
+    <header class="navbar-header"></header>
+    <div class="customer-dashboard">
+        <div class="welcome-banner">
+            <h1>Customer Dashboard</h1>
+            <p>Welcome, Customer</p>
+        </div>
+        <div class="dashboard-content">
+            <!-- Quick stats or overview can be added here -->
+        </div>
+    </div>
+
+    <!-- Font Awesome Icons -->
+    <script src="/public/assets/vendor/js/charts/chart.umd.min.js"></script>
+
+    <!-- Config -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/theme.js"></script>
+
+    <!-- Customer Sidebar (auto-injected on page load if user is logged in) -->
+    <script src="../../js/components/customer-sidebar.js"></script>
+
+    <!-- Customer dashboard scripts -->
+    <script src="../../js/customer-orders-sync.js"></script>
+    <script src="../../js/customer-realtime.js"></script>
+
+</body>
+</html>

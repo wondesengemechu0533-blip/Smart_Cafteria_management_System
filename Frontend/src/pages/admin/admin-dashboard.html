@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="admin_cafeteria_dashboard_page_title">Cafeteria Admin Dashboard - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Bootstrap CSS (required for grid + components) -->
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+
+    <!-- Shared Theme -->
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="admin_cafeteria_management">Cafeteria Management</h1>
+                </div>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshMetricsBtn" data-i18n="admin_refresh">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATISTICS CARDS -->
+            <div class="metrics-grid mb-4">
+                <div class="metric-card" data-nav="users.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-users"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="admin_total_users">Total Users</span>
+                        <h2 class="metric-value" id="statTotalUsers">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="users.html">
+                    <div class="metric-icon bg-blue">
+                        <i class="fa-solid fa-user"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="admin_customers">Customers</span>
+                        <h2 class="metric-value" id="statCustomers">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="menu.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-bowl-food"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="admin_total_menu_items">Total Menu Items</span>
+                        <h2 class="metric-value" id="statTotalMenu">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="feedback.html">
+                    <div class="metric-icon purple">
+                        <i class="fa-solid fa-star"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="admin_total_feedback">Total Feedback</span>
+                        <h2 class="metric-value" id="statTotalFeedback">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="payments.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="admin_total_revenue">Total Revenue</span>
+                        <h2 id="statTotalRevenue">0 <small>ETB</small></h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHARTS -->
+            <div class="charts-grid mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title" data-i18n="admin_order_status_overview"><i class="fa-solid fa-chart-pie"></i> Order Status Overview</h3>
+                        <div class="btn-group" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary date-range-btn active" data-range="7d">7D</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary date-range-btn" data-range="30d">30D</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary date-range-btn" data-range="90d">90D</button>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="orderStatusChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title" data-i18n="admin_revenue_last7"><i class="fa-solid fa-chart-column"></i> Revenue (Last 7 Days)</h3>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title" data-i18n="admin_feedback_rating_distribution"><i class="fa-solid fa-star"></i> Feedback Rating Distribution</h3>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="feedbackRatingChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RECENT TABLES -->
+            <div class="row g-4 recent-tables">
+                <!-- RECENT ORDERS -->
+                <div class="col-xl-6">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h3 class="card-title" data-i18n="admin_recent_orders"><i class="fa-solid fa-list-check"></i> Recent Orders</h3>
+                            <div class="d-flex gap-2">
+                                <input type="text" id="orderSearchInput" class="form-control form-control-sm" placeholder="Search orders..." data-i18n-placeholder="admin_search_orders" style="width: 200px; max-width: 100%;">
+                                <a href="orders.html" class="btn btn-sm btn-outline-primary" data-i18n="admin_view_all">View All</a>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="admin_col_order_id">Order ID</th>
+                                        <th data-i18n="admin_col_customer">Customer</th>
+                                        <th data-i18n="admin_col_amount">Amount</th>
+                                        <th data-i18n="admin_col_payment">Payment</th>
+                                        <th data-i18n="admin_col_status">Status</th>
+                                        <th data-i18n="admin_col_date">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentOrdersTableBody">
+                                    <tr><td colspan="6" class="table-empty" data-i18n="admin_loading_recent_orders">Loading recent orders...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RECENT PAYMENTS -->
+                <div class="col-xl-6">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h3 class="card-title" data-i18n="admin_recent_payments"><i class="fa-solid fa-credit-card"></i> Recent Payments</h3>
+                            <div class="d-flex gap-2">
+                                <input type="text" id="paymentSearchInput" class="form-control form-control-sm" placeholder="Search payments..." data-i18n-placeholder="admin_search_payments" style="width: 200px; max-width: 100%;">
+                                <a href="payments.html" class="btn btn-sm btn-outline-primary" data-i18n="admin_view_all">View All</a>
+                            </div>
+                        </div>
+                        <div class="table-wrapper">
+                            <table class="admin-table">
+                                <thead>
+                                    <tr>
+                                        <th data-i18n="admin_col_transaction">Transaction</th>
+                                        <th data-i18n="admin_col_customer">Customer</th>
+                                        <th data-i18n="admin_col_amount">Amount</th>
+                                        <th data-i18n="admin_col_provider">Provider</th>
+                                        <th data-i18n="admin_col_status">Status</th>
+                                        <th data-i18n="admin_col_date">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentPaymentsTableBody">
+                                    <tr><td colspan="6" class="table-empty" data-i18n="admin_loading_recent_payments">Loading recent payments...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+
+    <!-- Shared Theme -->
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/dashboard.js"></script>
+
+    <script>
+        // Page-specific initialization
+        function initPageSpecific() {
+            // Dashboard.js handles initialization via its own DOMContentLoaded
+        }
+    </script>
+</body>
+</html>

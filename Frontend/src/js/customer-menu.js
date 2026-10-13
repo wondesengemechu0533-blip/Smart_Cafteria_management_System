@@ -1,3 +1,12 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
+function cmTr(key, fallback) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+  return fallback;
+}
 /**
  * Smart Cafeteria Ordering System
  * File: Frontend/src/js/customer-menu.js
@@ -8,9 +17,19 @@
 
 import api from "./api.js";
 
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
+
 const CUSTOMER_MENU = {
 
     CART_KEY: "smart_cafeteria_cart",
+
+    TABLE_SELECTION_KEY: "scos_table_selection",
 
     // Database category values mapped onto the static filter pills
     CATEGORY_ALIASES: {
@@ -126,6 +145,24 @@ document.addEventListener("DOMContentLoaded", function () {
         return (L[lang] && L[lang][key]) || (L.en[key] || key);
     }
 
+    // Resolve a bilingual menu field (name / description) preferring, in order:
+    // object { [lang] } -> { en } -> { am } -> plain string -> snake_case.
+    function resolveText(item, field) {
+        if (!item) return "";
+        const lang = getLang();
+        const value = item[field];
+        if (value && typeof value === "object") {
+            return value[lang] || value.en || value.am || "";
+        }
+        if (value) {
+            return String(value);
+        }
+        return item[field + "_" + lang] ||
+            item[field + "_en"] ||
+            item[field + "_am"] ||
+            "";
+    }
+
     function isUserLoggedIn() {
         return localStorage.getItem("isLoggedIn") === "true" ||
             Boolean(localStorage.getItem("auth_token"));
@@ -143,7 +180,7 @@ document.addEventListener("DOMContentLoaded", function () {
         const lang = getLang();
         const isAm = lang === "am";
         const title = isAm ? "እባክዎ ይመዝገቡ ወይም ይግቡ" : "Please register or log in to order";
-        const message = isAm ? "እቃ ለማዘዝ መግባት ያስፈልግዎታል።" : "You need to log in to add items to your cart and place orders.";
+        const message = tr("login_required_cart", isAm ? "እቃ ለማዘዝ መግባት ያስፈልግዎታል።" : "You need to log in to add items to your cart and place orders.");
         const loginText = isAm ? "ግባ" : "Login";
         const registerText = isAm ? "ተመዝገብ" : "Register";
 
@@ -207,10 +244,10 @@ document.addEventListener("DOMContentLoaded", function () {
 
             const lang = getLang();
             const name =
-                escapeHTML(item.name?.[lang] || item.name?.en || item.name?.am || "");
+                escapeHTML(resolveText(item, "name"));
 
             const description =
-                escapeHTML(item.description?.[lang] || item.description?.en || "");
+                escapeHTML(resolveText(item, "description"));
 
             const price =
                 Number(item.price) || 0;
@@ -253,7 +290,7 @@ document.addEventListener("DOMContentLoaded", function () {
                             disabled
                             aria-disabled="true"
                             aria-label="Currently unavailable"
-                            title="Currently unavailable">
+                            title="${tr('currently_unavailable', 'Currently unavailable')}"
 
                             <i class="fa-solid fa-circle-minus"></i>
                             ${t("unavailable")}
@@ -298,13 +335,13 @@ document.addEventListener("DOMContentLoaded", function () {
                         </h3>
 
                         <span class="food-price">
-                            ${price} <small>ብር</small>
+                            ${Number(price).toFixed(2)} <small>ETB</small>
                         </span>
 
                     </div>
 
                     <p class="food-description">
-                        ${description || "Delicious item from our kitchen."}
+                        ${description || tr("delicious_from_kitchen", lang === "am" ? "ከኩሽናችን ጣፋጭ ምግብ" : "Delicious item from our kitchen.")}
                     </p>
 
                     <div class="food-card-footer">
@@ -315,7 +352,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
                             <a href="food-details.html?id=${id}"
                                class="btn btn-icon-secondary"
-                               title="View Details">
+                               title="${tr('view_details', 'View details')}"
 
                                 <i class="fa-solid fa-eye"></i>
 
@@ -369,6 +406,8 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
         }
 
+        const isAm = getLang() === "am";
+
         grid.innerHTML = `
 
             <div class="menu-state menu-error" id="menu-error">
@@ -376,12 +415,11 @@ document.addEventListener("DOMContentLoaded", function () {
                 <i class="fa-solid fa-circle-exclamation"></i>
 
                 <h3>
-                    Unable to Load Menu
+                    ${cmTr("unable_load_menu", isAm ? "ማውጫውን መጫን አልተቻለም" : "Unable to Load Menu")}
                 </h3>
 
                 <p>
-                    We couldn't reach the menu right now.
-                    Please check your connection and try again.
+                    ${tr("menu_unreachable", isAm ? "ማውጫውን አሁን ማግኘት አልቻልንም። እባክዎ ግንኙነትዎን ይፈትሹ እና እንደገና ይሞክሩ።" : "We couldn't reach the menu right now. Please check your connection and try again.")}
                 </p>
 
                 <button
@@ -390,7 +428,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     id="menu-retry-btn">
 
                     <i class="fa-solid fa-rotate-right"></i>
-                    Try Again
+                    ${isAm ? "እንደገና ይሞክሩ" : "Try Again"}
 
                 </button>
 
@@ -398,7 +436,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (resultsCount) {
             resultsCount.textContent =
-                "Menu unavailable";
+                isAm ? "ማውጫ አልተገኘም" : "Menu unavailable";
         }
 
         if (noResults) {
@@ -411,7 +449,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (resultsCount) {
             resultsCount.textContent =
-                "Loading menu...";
+                cmTr("loading_menu", getLang() === "am" ? "ምግቦችን በመጫን ላይ..." : "Loading menu...");
         }
     }
 
@@ -428,8 +466,13 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await api.get("/menu?limit=100");
             const items = response?.items || response || [];
-            if (items.length > 0) {
+            if (Array.isArray(items) && items.length > 0) {
                 renderMenu(items);
+                return;
+            }
+            if (Array.isArray(items)) {
+                // Backend responded successfully with an empty menu.
+                renderMenu([]);
                 return;
             }
         } catch (apiError) {
@@ -547,7 +590,7 @@ document.addEventListener("DOMContentLoaded", function () {
                     badge.textContent = cart.reduce((total, item) => total + Number(item.quantity || 0), 0);
                 });
                 const original = addButton.innerHTML;
-                addButton.innerHTML = '<i class="fa-solid fa-check"></i> Added';
+                addButton.innerHTML = '<i class="fa-solid fa-check"></i> ' + cmTr("menu_added", getLang() === "am" ? "ተጨምሯል" : "Added");
                 addButton.disabled = true;
                 setTimeout(() => { addButton.innerHTML = original; addButton.disabled = false; }, 700);
                 return;
@@ -606,50 +649,51 @@ document.addEventListener("DOMContentLoaded", function () {
     function adaptCustomerHeader() {
         const loggedIn = isUserLoggedIn();
 
-        const profileMenu = document.querySelector(".user-profile-menu");
-        const logoutLink = document.querySelector(".nav-logout, .logout-link, a[title='Logout']");
+            const profileMenu = document.querySelector(".user-profile-menu");
+            const logoutLink = document.querySelector(".nav-logout, .logout-link, a[title='Logout']");
 
-        if (!loggedIn) {
-            if (profileMenu) profileMenu.style.display = "none";
-            if (logoutLink) logoutLink.style.display = "none";
+            if (!loggedIn) {
+                if (profileMenu) profileMenu.style.display = "none";
+                if (logoutLink) logoutLink.style.display = "none";
 
-            // Add Login / Register buttons for guests.
-            if (!document.getElementById("guest-auth-links") && document.querySelector(".header-actions")) {
-                const guestLinks = document.createElement("div");
-                guestLinks.id = "guest-auth-links";
-                guestLinks.style.cssText = "display:flex;align-items:center;gap:8px;";
-                guestLinks.innerHTML = `
-                    <a href="../common/register.html" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;font-size:0.85rem;font-weight:600;">Register</a>
-                    <a href="../common/login.html" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:2px solid #2563eb;color:#2563eb;text-decoration:none;font-size:0.85rem;font-weight:600;">Login</a>`;
-                document.querySelector(".header-actions").insertBefore(guestLinks, document.querySelector(".header-actions").firstChild);
-            }
-        } else {
-            if (profileMenu) profileMenu.style.display = "";
-            if (logoutLink) logoutLink.style.display = "";
-            const guestLinks = document.getElementById("guest-auth-links");
-            if (guestLinks) guestLinks.remove();
+                if (!document.getElementById("guest-auth-links") && document.querySelector(".header-actions")) {
+                    const guestLinks = document.createElement("div");
+                    guestLinks.id = "guest-auth-links";
+                    guestLinks.style.cssText = "display:flex;align-items:center;gap:8px;";
+                    guestLinks.innerHTML = `
+                        <a href="../common/register.html" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;text-decoration:none;font-size:0.85rem;font-weight:600;">Register</a>
+                        <a href="../common/login.html" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;border:2px solid #2563eb;color:#2563eb;text-decoration:none;font-size:0.85rem;font-weight:600;">Login</a>`;
+                    document.querySelector(".header-actions").insertBefore(guestLinks, document.querySelector(".header-actions").firstChild);
+                }
+            } else {
+                if (profileMenu) profileMenu.style.display = "";
+                if (logoutLink) logoutLink.style.display = "";
+                const guestLinks = document.getElementById("guest-auth-links");
+                if (guestLinks) guestLinks.remove();
 
-            // Show the real name instead of the hardcoded placeholder.
-            const nameEl = document.querySelector(".user-name");
-            const savedName = localStorage.getItem("name") ||
-                localStorage.getItem("userName") || "";
-            if (nameEl && savedName) {
-                nameEl.textContent = savedName;
+                const nameEl = document.querySelector(".user-name");
+                const savedName = localStorage.getItem("name") ||
+                    localStorage.getItem("userName") || "";
+                if (nameEl && savedName) {
+                    nameEl.textContent = savedName;
+                }
             }
         }
-    }
 
-    loadActiveCategoryFilters();
-    loadMenu();
-    updateCartBadges();
-    processPendingOrderItem();
-    adaptCustomerHeader();
+        loadActiveCategoryFilters();
+        loadMenu();
+        updateCartBadges();
+        processPendingOrderItem();
+        adaptCustomerHeader();
 
-    window.addEventListener("language:changed", loadMenu);
-    window.addEventListener("languageChanged", loadMenu);
-    window.addEventListener("language:changed", loadActiveCategoryFilters);
-    window.addEventListener("languageChanged", loadActiveCategoryFilters);
+    const rerenderOnLanguageChange = () => {
+        try { loadMenu(); } catch (e) {}
+        try { loadActiveCategoryFilters(); } catch (e) {}
+    };
+
+    __registerLangChange(rerenderOnLanguageChange);
     // Also re-apply cart badge translation after render
     window.addEventListener("language:changed", () => { if (window.applyTranslations) window.applyTranslations(); });
+    window.addEventListener("languageChanged", () => { if (window.applyTranslations) window.applyTranslations(); });
 
 });

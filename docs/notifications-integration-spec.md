@@ -126,10 +126,10 @@ Three transport layers work together:
 
 | Event name | Target room | Emitted from | Payload |
 |------------|-------------|--------------|---------|
-| `order:new` | `'kitchen'` | `order.controller.js` (place order) | `orderSummary` |
+| `order:new` | `'kitchen'` | `order-queue.service.js` (payment confirmed — see §6.1) | `orderSummary` |
 | `order:created` | `order:<id>` | `order.controller.js` | `orderSummary` |
 | `order:status` | `'kitchen'` + `order:<id>` | `kitchen.controller.js`, `order.controller.js` | `orderSummary` |
-| `order:payment` | `'kitchen'` + `order:<id>` | `chapa.controller.js` | `orderSummary` |
+| `order:payment` | `'kitchen'` + `order:<id>` | `order-queue.service.js` (payment confirmed) | `orderSummary` |
 | `order:delayed` | `order:<id>` | `kitchen.controller.js` | — |
 | `item:status:updated` | `order:<id>` | `kitchen.controller.js` | — |
 | `item:unavailable` | `'kitchen'` | `kitchen.controller.js` | — |
@@ -166,13 +166,16 @@ Pattern used across the codebase (see `kitchen.controller.js` accept/ready/serve
 
 | # | Trigger (actor/event) | Controller action | Notification persisted (customer) | Socket emitted |
 |---|----------------------|-------------------|-----------------------------------|----------------|
-| 1 | Customer places order | `order.controller.js` `createOrder` | (implicit confirmation — order record) | `order:new` → kitchen, `order:created` → `order:<id>` |
-| 2 | Kitchen accepts → `preparing` | `kitchen.controller.js` `acceptOrder` | `status_update` "Order Accepted!… estimated time" + link | `order:status` → kitchen & order room; `notification:new` → `user:<id>` |
-| 3 | Kitchen marks **ready** | `kitchen.controller.js` `markOrderReady` | `ready` "Order Ready for pickup" + link | `order:status`; `notification:new` → `user:<id>` |
-| 4 | Kitchen marks **served** | `kitchen.controller.js` `markOrderServed` | `status_update` "Order Served" | `order:status`; `notification:new` → `user:<id>` |
-| 5 | Kitchen **rejects** | `kitchen.controller.js` `rejectOrder` | `system` "Order Rejected" | `order:status` |
-| 6 | Admin updates status (alt path) | `admin.order.controller.js` update status | `status_update` (READY etc.) — best-effort | (order rooms) |
-| 7 | Admin replies to feedback | `feedback.controller.js` reply | `system` "Reply to your feedback" | `notification:new` → `user:<id>` |
+| 1 | Customer places order | `order.controller.js` `createOrder` | (implicit confirmation — order record) | `order:created` → `order:<id>` |
+| 2 | **Payment successful** → order = PENDING, enters the kitchen queue | `order-queue.service.js` `releaseOrderToKitchen` (Chapa verify/callback, `payments/simulate`, cashier `mark-paid`) | durable `order` notification to kitchen + management (`kitchen:new:<id>`) | `order:new` → kitchen, `order:payment` → kitchen & `order:<id>` |
+| 3 | Kitchen accepts → `preparing` | `kitchen.controller.js` `acceptOrder` | `status_update` "Order Accepted!… estimated time" + link | `order:status` → kitchen & order room; `notification:new` → `user:<id>` |
+| 4 | Kitchen marks **ready** | `kitchen.controller.js` `markOrderReady` | `ready` "Order Ready for pickup" + link | `order:status`; `notification:new` → `user:<id>` |
+| 5 | Kitchen marks **served** | `kitchen.controller.js` `markOrderServed` | `status_update` "Order Served" | `order:status`; `notification:new` → `user:<id>` |
+| 6 | Kitchen **rejects** | `kitchen.controller.js` `rejectOrder` | `system` "Order Rejected" | `order:status` |
+| 7 | Admin updates status (alt path) | `admin.order.controller.js` update status | `status_update` (READY etc.) — best-effort | (order rooms) |
+| 8 | Admin replies to feedback | `feedback.controller.js` reply | `system` "Reply to your feedback" | `notification:new` → `user:<id>` |
+
+> The kitchen board, its orders list and its stats filter on `paymentStatus: 'PAID'`, and `kitchen.acceptOrder` rejects an unpaid order with `409 PAYMENT_REQUIRED`. An unpaid order is therefore invisible to the kitchen — and its cancellation is not broadcast to the kitchen room — until a payment confirms it.
 
 > Admin update path (`admin.order.controller.js:364`) creates a notification but currently does **not** emit `notification:new`. If real-time is desired for admin-driven status changes, mirror the socket emit used in `updateOrderStatus`.
 

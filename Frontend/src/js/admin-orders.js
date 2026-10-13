@@ -1,3 +1,10 @@
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN ORDER MANAGEMENT
@@ -15,8 +22,11 @@
 (function () {
   "use strict";
 
+  // Socket.io client for real-time order updates (set by socket.js)
+  window.socketClient = window.socketClient || (typeof window.ScosSocketBridge !== "undefined" ? window.ScosSocketBridge : null);
+
   var PICKUP_FLOW = ["PENDING", "PREPARING", "READY", "SERVED", "COMPLETED"];
-  var DELIVERY_FLOW = ["PENDING", "PREPARING", "READY", "PICKED_UP", "OUT_FOR_DELIVERY", "DELIVERED"];
+  var DELIVERY_FLOW = ["PENDING", "PREPARING", "READY", "PICKED_UP", "OUT_FOR_DELIVERY", "ARRIVED", "DELIVERED"];
 
   function getFlow(order) {
     return String((order && order.orderType) || "").toLowerCase() === "delivery"
@@ -25,16 +35,26 @@
   }
 
   var STATUS_LABELS = {
-    PENDING: "Pending",
-    PREPARING: "Preparing",
-    READY: "Ready",
-    PICKED_UP: "Picked Up",
-    SERVED: "Served",
-    OUT_FOR_DELIVERY: "Out for Delivery",
-    DELIVERED: "Delivered",
-    COMPLETED: "Completed",
-    CANCELLED: "Cancelled"
+    PENDING: "status_pending",
+    PREPARING: "status_preparing",
+    READY: "status_ready",
+    PICKED_UP: "status_picked_up",
+    SERVED: "status_served",
+    OUT_FOR_DELIVERY: "status_out_for_delivery",
+    ARRIVED: "status_arrived",
+    DELIVERED: "status_delivered",
+    COMPLETED: "status_completed",
+    CANCELLED: "status_cancelled"
   };
+
+  function tr(key, fallback, vars) {
+    if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+    if (typeof window.getText === "function") {
+      var v = window.getText(key);
+      if (v && v !== key) return v;
+    }
+    return fallback != null ? fallback : key;
+  }
 
   var state = {
     page: 1,
@@ -58,6 +78,15 @@
     return window.esc(value);
   }
 
+  function statusLabel(status) {
+    var s = String(status || "").toUpperCase();
+    var localized = window.translateStatus ? window.translateStatus(s) : "";
+    if (localized && String(localized).toUpperCase() !== s) return localized;
+    var key = STATUS_LABELS[s];
+    if (key) return tr(key, s);
+    return s;
+  }
+
   function statusBadge(status) {
     var cls = "order-badge";
     var s = String(status || "").toUpperCase();
@@ -68,25 +97,27 @@
       case "PICKED_UP": cls += " pu"; break;
       case "SERVED": cls += " svd"; break;
       case "OUT_FOR_DELIVERY": cls += " od"; break;
+      case "ARRIVED": cls += " del"; break;
       case "DELIVERED": cls += " del"; break;
       case "COMPLETED": cls += " cmp"; break;
       case "CANCELLED": cls += " cxl"; break;
       default: cls += " pend"; break;
     }
-    var label = STATUS_LABELS[s] || (s.charAt(0) + s.slice(1).toLowerCase());
-    return '<span class="' + cls + '">' + label + "</span>";
+    return '<span class="' + cls + '">' + statusLabel(s) + "</span>";
   }
 
   function paymentBadge(paymentStatus) {
     var cls = "order-badge";
-    switch (String(paymentStatus || "").toUpperCase()) {
+    var ps = String(paymentStatus || "PENDING").toUpperCase();
+    switch (ps) {
       case "PAID": cls += " cmp"; break;
       case "FAILED": cls += " cxl"; break;
       case "CANCELLED": cls += " cxl"; break;
       case "REFUNDED": cls += " rfnd"; break;
       default: cls += " pend"; break;
     }
-    return '<span class="' + cls + '">' + String(paymentStatus || "PENDING") + "</span>";
+    var label = window.translateStatus ? window.translateStatus(ps) : ps;
+    return '<span class="' + cls + '">' + label + "</span>";
   }
 
   function getNextStatus(current, order) {
@@ -155,7 +186,7 @@ function canCancel(current, order) {
     var tbody = document.getElementById("ordersTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading orders...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('loading_orders','Loading orders...')+'</td></tr>';
 
     try {
       var params = {
@@ -178,18 +209,30 @@ function canCancel(current, order) {
       var total = data.total || 0;
       var pages = Math.max(data.pages || 1, 1);
       var info = document.getElementById("orderPaginationInfo");
-      if (info) info.textContent = "Page " + (data.page || state.page) + " of " + pages + " (" + total + " orders)";
+      if (info) info.textContent = tr('page_of_orders', 'Page {page} of {pages} ({total} orders)').replace('{page}', data.page || state.page).replace('{pages}', pages).replace('{total}', total);
       var prevBtn = document.getElementById("orderPrevPageBtn");
       var nextBtn = document.getElementById("orderNextPageBtn");
       if (prevBtn) prevBtn.disabled = (data.page || 1) <= 1;
       if (nextBtn) nextBtn.disabled = (data.page || 1) >= pages;
       state.page = data.page || 1;
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load orders: ' + window.esc(error.message || "Server error") + "</td></tr>";
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">' + window.esc(tr('admin_load_orders_failed', 'Failed to load orders: {error}', { error: error.message || 'Server error' })) + "</td></tr>";
     }
   }
 
   function renderOrders(orders) {
+    // Sort by newest first using the real createdAt timestamp from MongoDB
+    // This is a safety fallback if the backend sort is somehow bypassed.
+    // Falls back to index order if createdAt is missing/invalid.
+    orders.sort(
+      (a, b) => {
+        const ac = new Date(a.createdAt).getTime();
+        const bc = new Date(b.createdAt).getTime();
+        if (Number.isNaN(ac) || Number.isNaN(bc)) return 0;
+        return bc - ac;
+      }
+    );
+
     var tbody = document.getElementById("ordersTableBody");
     if (!tbody) return;
 
@@ -210,11 +253,11 @@ function canCancel(current, order) {
       else type = type.charAt(0).toUpperCase() + type.slice(1);
 
       // Sanitise the stored table number: strip redundant type suffixes such as
-      // "N/A (Takeaway)" / "5 (Dine-in)" and ignore "N/A" placeholders so we
-      // never render "Table N/A".
-      var table = String(order.tableNumber || "").trim().replace(/\s*\(.*\)\s*$/i, "").trim();
+      // "N/A (Takeaway)" / "5 (Dine-in)", a leading "Table " prefix, and ignore
+      // "N/A" placeholders so we never render a bare "N/A".
+      var table = String(order.tableNumber || "").trim().replace(/\s*\(.*\)\s*$/i, "").replace(/^table\s+/i, "").trim();
       if (table && table.toUpperCase() !== "N/A" && table.toUpperCase() !== "NA") {
-        type += " · Table " + escapeHtml(table);
+        type += " · " + escapeHtml(table);
       }
       return type;
     }
@@ -223,11 +266,20 @@ function canCancel(current, order) {
       var status = String(order.status || "PENDING").toUpperCase();
       var showCancel = canCancel(status, order);
       var cancelBtn = showCancel
-        ? '<button class="action-btn danger" data-action="cancel" data-id="' + order.id + '" title="Cancel order"><i class="fa-solid fa-ban"></i></button>'
+        ? '<button class="action-btn danger" data-action="cancel" data-id="' + order.id + '" title="' + tr('cancel_order_title', 'Cancel order') + '"><i class="fa-solid fa-ban"></i></button>'
         : "";
       var showRefund = refundEligible(order);
       var refundBtn = showRefund
-        ? '<button class="action-btn" data-action="refund" data-id="' + order.id + '" title="Process refund"><i class="fa-solid fa-money-bill-transfer"></i></button>'
+        ? '<button class="action-btn" data-action="refund" data-id="' + order.id + '" title="' + tr('process_refund', 'Process refund') + '"><i class="fa-solid fa-money-bill-transfer"></i></button>'
+        : "";
+      // The cancelled + paid orders that still owe the customer money. This is
+      // the badge the Manager/Admin flow is driven by: it appears when the
+      // customer (or an admin) cancels a paid order and disappears the moment
+      // the refund is processed.
+      var refundBadge = showRefund
+        ? ' <span class="order-badge rfnd refund-required" data-refund-required="1" title="' +
+          tr('refund_required_hint', 'Paid order was cancelled - a Manager/Admin must process the refund') +
+          '">' + tr('refund_required', 'Refund Required') + "</span>"
         : "";
 
       var customerLines =
@@ -254,11 +306,11 @@ function canCancel(current, order) {
         "<td>" + typeLine + "</td>" +
         '<td class="amount-col"><strong>' + money(order.totalAmount) + " ETB</strong></td>" +
         "<td>" + paymentLine + "</td>" +
-        "<td>" + statusBadge(status) + "</td>" +
+        "<td>" + statusBadge(status) + refundBadge + "</td>" +
         "<td>" + window.AdminAPI.formatDateTime(order.createdAt || order.orderTime) + "</td>" +
         "<td>" +
           '<div class="table-actions">' +
-            '<button class="action-btn" data-action="view" data-id="' + order.id + '" title="View order details"><i class="fa-solid fa-eye"></i></button>' +
+            '<button class="action-btn" data-action="view" data-id="' + order.id + '" title="' + tr('view_order_details', 'View order details') + '"><i class="fa-solid fa-eye"></i></button>' +
             refundBtn +
             cancelBtn +
           "</div>" +
@@ -312,7 +364,7 @@ function canCancel(current, order) {
     cancelBtn.style.display = canCancel(s, order) ? "inline-flex" : "none";
 
     if (!next) {
-      select.innerHTML = '<option value="">' + (s === "CANCELLED" ? "Order cancelled — no further updates" : "Order " + (STATUS_LABELS[s] || s.toLowerCase()) + " — flow complete") + "</option>";
+      select.innerHTML = '<option value="">' + (s === "CANCELLED" ? (window.translateStatus ? window.translateStatus("CANCELLED") : "") + " — " + tr("admin_status_no_updates", window.getCurrentLanguage && window.getCurrentLanguage() === "am" ? "ተጨማሪ ማዘመን የለም" : "no further updates") : tr("order", "Order") + " " + statusLabel(s) + " — " + tr("admin_status_flow_complete", window.getCurrentLanguage && window.getCurrentLanguage() === "am" ? "ፍሰት ተጠናቋል" : "flow complete")) + "</option>";
       select.disabled = true;
       if (hint) hint.textContent = "";
       return;
@@ -320,10 +372,10 @@ function canCancel(current, order) {
 
     select.disabled = false;
     select.innerHTML =
-      '<option value="">Select next status...</option>' +
-      '<option value="' + next + '">' + (STATUS_LABELS[next] || next) + "</option>";
+      '<option value="">' + tr("select_next_status", "Select next status...") + '</option>' +
+      '<option value="' + next + '">' + statusLabel(next) + "</option>";
     if (hint) {
-      hint.textContent = flow.join(" → ") + ". Current: " + s + ".";
+      hint.textContent = flow.join(" → ") + (window.getCurrentLanguage && window.getCurrentLanguage() === "am" ? ". የአሁኑ: " : ". Current: ") + s + ".";
     }
   }
 
@@ -335,7 +387,7 @@ function canCancel(current, order) {
         order = data.order;
       }
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to load order");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_load_order', 'Failed to load order'));
       return;
     }
     if (!order) return;
@@ -395,17 +447,19 @@ function canCancel(current, order) {
           (order.refundReference ? ' <small>(' + window.esc(order.refundReference) + ")</small>" : "") +
           (order.refundedAt ? " · " + window.AdminAPI.formatDateTime(order.refundedAt) : "")
         : (rfndUp === "REFUND_REQUESTED" || rfndUp === "REFUND_PROCESSING"
-            ? 'Refund Pending <small>(awaiting admin processing)</small>'
+            ? "Refund Required" +
+              (Number(order.refundAmount) > 0 ? " · " + money(order.refundAmount) + " ETB" : "") +
+              " <small>(awaiting Manager/Admin processing)</small>"
             : "—");
     }
     var modalRefundBtn = document.getElementById("refundOrderBtn");
     if (modalRefundBtn) modalRefundBtn.style.display = refundEligible(order) ? "inline-flex" : "none";
 
-    document.getElementById("modalStatusHistory").textContent = "Loading history...";
+    document.getElementById("modalStatusHistory").textContent = tr("loading_history", "Loading history...");
     window.AdminAPI.get("/admin/orders/" + order.id + "/history").then(function(data) {
       var history = data.history || [];
-      document.getElementById("modalStatusHistory").innerHTML = history.length ? history.map(function(entry) { return '<div class="detail-item"><span>' + window.AdminAPI.formatDateTime(entry.createdAt) + '</span><strong>' + escapeHtml(entry.previousStatus) + ' → ' + escapeHtml(entry.newStatus) + (entry.changedBy ? ' · ' + escapeHtml(entry.changedBy.name) : '') + '</strong></div>'; }).join('') : 'No status history available.';
-    }).catch(function() { document.getElementById("modalStatusHistory").textContent = "Status history unavailable."; });
+      document.getElementById("modalStatusHistory").innerHTML = history.length ? history.map(function(entry) { return '<div class="detail-item"><span>' + window.AdminAPI.formatDateTime(entry.createdAt) + '</span><strong>' + escapeHtml(entry.previousStatus) + ' → ' + escapeHtml(entry.newStatus) + (entry.changedBy ? ' · ' + escapeHtml(entry.changedBy.name) : '') + '</strong></div>'; }).join('') : tr('no_status_history', 'No status history available.');
+    }).catch(function() { document.getElementById("modalStatusHistory").textContent = tr("status_history_unavailable", "Status history unavailable."); });
 
     window.__activeOrder = order;
     renderStatusSelect(status, order);
@@ -427,14 +481,14 @@ function canCancel(current, order) {
       loadOrders();
       loadStats();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to update order status");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_update_status', 'Failed to update order status'));
     }
   }
 
   async function processOrderRefund() {
     var order = window.__activeOrder;
     if (!order) return;
-    if (!window.confirm("Process refund for order #" + (order.orderId || "") + "? The payment status will become REFUNDED and the customer will be notified.")) return;
+    if (!window.confirm(tr("admin_confirm_refund", "Process refund for order #{orderId}? The payment status will become REFUNDED and the customer will be notified.", { orderId: order.orderId || "" }))) return;
 
     try {
       await window.AdminAPI.post("/admin/orders/" + order.id + "/refund", {});
@@ -443,7 +497,7 @@ function canCancel(current, order) {
       loadOrders();
       loadStats();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to process refund");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_process_refund', 'Failed to process refund'));
     }
   }
 
@@ -493,7 +547,7 @@ function canCancel(current, order) {
 
       loadStats();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to cancel order");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_cancel_order', 'Failed to cancel order'));
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.innerHTML = '<i class="fa-solid fa-ban"></i> Cancel Order';
@@ -605,7 +659,7 @@ function canCancel(current, order) {
       printWindow.print();
       if (window.AdminToast) window.AdminToast.success("Opening receipt for printing...");
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to print receipt");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_print_receipt', 'Failed to print receipt'));
     }
   }
 
@@ -800,20 +854,89 @@ function canCancel(current, order) {
           document.getElementById("cancelReasonInput").value = "";
           openModal("cancelOrderModal");
         } else if (action === "refund") {
+          // The review step of the refund workflow: open the cancelled order so
+          // the customer, items, total and payment information are on screen
+          // BEFORE any money moves. The modal footer holds the Refund button,
+          // which asks for confirmation and then POSTs the refund.
           var refundOrder = (window.__ordersCache || []).find(function (o) { return o.id === id; });
           if (!refundOrder) return;
           window.__activeOrder = refundOrder;
-          processOrderRefund();
+          viewOrderDetails(id, refundOrder);
         }
       });
     }
   }
 
-  function init() {
+function init() {
     bindEvents();
     loadStats();
     loadOrders();
-  }
+
+    // Initialize socket connection for real-time order updates
+    initSocketUpdates();
+
+    __registerLangChange(function () {
+        try {
+          loadOrders();
+          loadStats();
+          if (window.__activeOrder && document.getElementById("updateOrderStatusSelect")) {
+            renderStatusSelect(String(window.__activeOrder.status || "PENDING").toUpperCase(), window.__activeOrder);
+          }
+        } catch (e) { /* best-effort re-render */ }
+    });
+}
+
+/**
+ * Set up socket.io real-time updates for new orders.
+ * Kitchen staff receive order:new events and the All Orders list
+ * is updated immediately without manual refresh.
+ */
+function initSocketUpdates() {
+    // Connect to socket if not already connected and we have a token
+    var token = localStorage.getItem("auth_token");
+    var sc = window.socketClient || window.ScosSocketBridge || null;
+    if (token && sc && !sc.connected) {
+        sc.connect(token);
+    }
+
+    // Join kitchen room so we receive order:new events
+    if (sc && sc.connected) {
+        sc.socket.emit('join:kitchen');
+    }
+
+    // Listen for new order events from the kitchen
+    if (sc) {
+        sc.on('order:new', function (order) {
+            // When a new order arrives, reload the orders list
+            // The backend sorts by createdAt: -1, so the new order will appear at top
+            loadOrders();
+        });
+
+        // Cancel/refund frames arrive as `order:status` and carry the refund
+        // fields, so this is what drops the "Refund Required" badge the moment
+        // a refund is processed (and raises it when a paid order is cancelled)
+        // instead of waiting for a manual refresh. Debounced because a single
+        // action can emit several frames.
+        var statusReloadTimer = null;
+        sc.on('order:status', function () {
+            if (statusReloadTimer) clearTimeout(statusReloadTimer);
+            statusReloadTimer = setTimeout(function () {
+                loadOrders();
+                loadStats();
+            }, 300);
+        });
+    }
+
+    // Handle disconnection - try to reconnect
+    if (sc && sc.socket) {
+        sc.socket.on('disconnect', function () {
+            var token = localStorage.getItem("auth_token");
+            if (token && sc && !sc.connected) {
+                sc.connect(token);
+            }
+        });
+    }
+}
 
   document.addEventListener("DOMContentLoaded", init);
 })();

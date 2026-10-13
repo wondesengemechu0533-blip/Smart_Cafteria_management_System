@@ -1,3 +1,8 @@
+function csTr(key, fallback) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+  if (typeof getText === "function") { const g = getText(key); if (g && g !== key) return g; }
+  return fallback;
+}
 /**
  * customer-sidebar.js
  * Injects a unified, responsive navigation sidebar into every customer page.
@@ -21,12 +26,12 @@
     (location.pathname.split("/").pop() || "menu.html");
 
   var navItems = [
-    { href: "menu.html", icon: "fa-solid fa-utensils", label: "Menu", current: "menu.html" },
-    { href: "order-tracking.html", icon: "fa-solid fa-location-crosshairs", label: "Track Order", current: "order-tracking.html" },
-    { href: "order-history.html", icon: "fa-solid fa-clock-rotate-left", label: "Order History", current: "order-history.html" },
-    { href: "cart.html", icon: "fa-solid fa-cart-shopping", label: "My Cart", current: "cart.html" },
-    { href: "profile.html", icon: "fa-solid fa-user-gear", label: "Account Settings", current: "profile.html" },
-    { href: "feedback.html", icon: "fa-solid fa-comment-dots", label: "Feedback & Reviews", current: "feedback.html" }
+    { href: "menu.html", icon: "fa-solid fa-utensils", label: csTr('nav_menu', 'Menu'), current: "menu.html" },
+    { href: "order-tracking.html", icon: "fa-solid fa-location-crosshairs", label: csTr('nav_track_order', 'Track Order'), current: "order-tracking.html" },
+    { href: "order-history.html", icon: "fa-solid fa-clock-rotate-left", label: csTr('nav_order_history', 'Order History'), current: "order-history.html" },
+    { href: "cart.html", icon: "fa-solid fa-cart-shopping", label: csTr('nav_cart', 'My Cart'), current: "cart.html" },
+    { href: "profile.html", icon: "fa-solid fa-user-gear", label: csTr('nav_account_settings', 'Account Settings'), current: "profile.html" },
+    { href: "feedback.html", icon: "fa-solid fa-comment-dots", label: csTr('nav_feedback', 'Feedback & Reviews'), current: "feedback.html" }
   ];
 
   var currentFile = page.toLowerCase();

@@ -1,0 +1,143 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Activity Log - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Bootstrap CSS (required for grid + components) -->
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1>Activity Log</h1>
+                    <p class="subtitle">Audit trail of administrative actions. Passwords, tokens, and secret keys are never recorded.</p>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-secondary" id="refreshLogsBtn">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- FILTER TOOLBAR -->
+            <section class="card">
+                <div class="card-header users-toolbar">
+                    <div class="search-wrap">
+                        <i class="fa-solid fa-magnifying-glass"></i>
+                        <input type="text" id="logSearchInput" class="form-control" placeholder="Search admin, description, entity id...">
+                    </div>
+                    <div class="filter-group">
+                        <select id="logRoleFilter" class="form-select">
+                            <option value="all">All Roles</option>
+                            <option value="admin">Admin</option>
+                            <option value="cafeteria_admin">Cafeteria Admin</option>
+                            <option value="manager">Manager</option>
+                            <option value="cashier">Cashier</option>
+                            <option value="kitchen">Kitchen</option>
+                            <option value="delivery">Delivery</option>
+                            <option value="tax_authority">Tax Authority</option>
+                            <option value="customer">Customer</option>
+                            <option value="system">System</option>
+                        </select>
+                        <select id="logActionFilter" class="form-select">
+                            <option value="all">All Actions</option>
+                        </select>
+                        <select id="logEntityFilter" class="form-select">
+                            <option value="">All Entities</option>
+                            <option value="User">User</option>
+                            <option value="MenuItem">Menu Item</option>
+                            <option value="Order">Order</option>
+                            <option value="Category">Category</option>
+                            <option value="Setting">Setting</option>
+                        </select>
+                        <div class="date-filter-field">
+                            <label class="form-date-label"><i class="fa-solid fa-calendar-days"></i> Start Date</label>
+                            <div class="date-input-wrap">
+                                <input type="date" id="logStartDate" class="form-control" placeholder="mm/dd/yyyy" title="Start date">
+                            </div>
+                        </div>
+                        <div class="date-filter-field">
+                            <label class="form-date-label"><i class="fa-solid fa-calendar-days"></i> End Date</label>
+                            <div class="date-input-wrap">
+                                <input type="date" id="logEndDate" class="form-control" placeholder="mm/dd/yyyy" title="End date">
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" id="resetLogFiltersBtn" title="Reset filters">
+                            <i class="fa-solid fa-filter-circle-xmark"></i> Reset
+                        </button>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="admin-table orders-table" id="logsTable">
+                        <thead>
+                            <tr>
+                                <th>Agent / Admin</th>
+                                <th>Role</th>
+                                <th>Action</th>
+                                <th>Entity</th>
+                                <th>Entity ID</th>
+                                <th>Description</th>
+                                <th>Result</th>
+                                <th>Date & Time</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <tr><td colspan="8" class="table-empty">Loading activity logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="pagination">
+                    <span class="pagination-info" id="logsPaginationInfo">Page 1</span>
+                    <div class="pagination-actions">
+                        <button class="btn btn-secondary" id="prevLogsBtn" title="Previous page">
+                            <i class="fa-solid fa-chevron-left"></i> Prev
+                        </button>
+                        <button class="btn btn-secondary" id="nextLogsBtn" title="Next page">
+                            Next <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="alert alert-warning">
+                <i class="fa-solid fa-shield-halved"></i>
+                <span>Privacy: this audit trail records <strong>who</strong> performed each action and <strong>what</strong> changed. It never logs passwords, JWT tokens, payment-provider secrets, or user credentials.</span>
+            </div>
+        </main>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+<script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/admin-activity.js"></script>
+
+    <script>
+        // Page-specific initialization
+        function initPageSpecific() {
+            // admin-activity.js handles initialization via its own DOMContentLoaded
+        }
+    </script>
+</body>
+</html>
+
+

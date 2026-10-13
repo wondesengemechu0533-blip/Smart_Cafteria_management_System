@@ -25,6 +25,10 @@ import { populateUserUI } from '../profile-ui.js';
       if (anchor.dataset.unifiedBound) return;
       anchor.dataset.unifiedBound = '1';
       anchor.addEventListener('click', function () {
+        // Elements with their own inline onclick (e.g. kitchen logout with
+        // confirm()) manage the session themselves — clearing here would
+        // wipe the token even when the user cancels the confirm dialog.
+        if (anchor.getAttribute('onclick')) return;
         try {
           localStorage.removeItem('isLoggedIn');
           localStorage.removeItem('auth_token');
@@ -33,6 +37,8 @@ import { populateUserUI } from '../profile-ui.js';
           localStorage.removeItem('userName');
           localStorage.removeItem('userProfile');
           localStorage.removeItem('adminLoggedIn');
+          localStorage.removeItem('current_user');
+          localStorage.removeItem('name');
         } catch (err) {}
       });
     });

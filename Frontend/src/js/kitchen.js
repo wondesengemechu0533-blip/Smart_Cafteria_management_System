@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - KITCHEN MODULE
@@ -7,7 +12,6 @@
  */
 
 import { getAllOrders, updateOrderStatus, markOrderReady, getKitchenStats } from './orders.js';
-import { addNotification } from './notifications.js';
 import { getCurrentUser } from './auth.js';
 import { showToast } from './main.js';
 const ORDER_STATUS = window.ORDER_STATUS || {};
@@ -59,26 +63,18 @@ export function getKitchenDashboardData() {
  * @returns {Promise<Object>} Updated order or error
  */
 export async function acceptOrder(orderId) {
-    try {
-        const result = await updateOrderStatus(orderId, ORDER_STATUS.PREPARING);
-        if (result.success) {
-            // Notify customer
-            addNotification({
-                userId: result.order.userId,
-                title: '📋 Order Accepted',
-                message: `Your order ${orderId} has been accepted and is being prepared.`,
-                type: 'status_update',
-                orderId: orderId,
-                link: `/src/pages/customer/order-tracking.html?id=${orderId}`,
-            });
-
-            showToast(`Order ${orderId} accepted`, 'success');
-        }
-        return result;
-    } catch (error) {
-        console.error('Accept order error:', error);
-        return { success: false, error: 'Failed to accept order' };
-    }
+    try {
+        const result = await updateOrderStatus(orderId, ORDER_STATUS.PREPARING);
+        if (result.success) {
+            // The customer notification for "order accepted" is created by the
+            // backend (kitchen.controller.js) — do not create a second one here.
+            showToast(tr("kitchen_order_accepted", "Order #{id} accepted").replace("{id}", orderId).replace("#{id}", orderId), 'success');
+        }
+        return result;
+    } catch (error) {
+        console.error('Accept order error:', error);
+        return { success: false, error: tr('kitchen_failed_accept_order', 'Failed to accept order') };
+    }
 }
 
 /**
@@ -96,26 +92,18 @@ export async function startPreparing(orderId) {
  * @returns {Promise<Object>} Updated order or error
  */
 export async function markReady(orderId) {
-    try {
-        const result = await markOrderReady(orderId);
-        if (result.success) {
-            // Notify customer
-            addNotification({
-                userId: result.order.userId,
-                title: '🍽️ Order Ready!',
-                message: `Your order ${orderId} is ready for pickup.`,
-                type: 'ready',
-                orderId: orderId,
-                link: `/src/pages/customer/order-tracking.html?id=${orderId}`,
-            });
-
-            showToast(`Order ${orderId} marked ready`, 'success');
-        }
-        return result;
-    } catch (error) {
-        console.error('Mark ready error:', error);
-        return { success: false, error: 'Failed to mark order ready' };
-    }
+    try {
+        const result = await markOrderReady(orderId);
+        if (result.success) {
+            // "Order ready" customer notification is created by the backend
+            // (kitchen.controller.js) — do not create a second one here.
+            showToast(tr("kitchen_order_marked_ready", "Order #{id} marked ready").replace("{id}", orderId).replace("#{id}", orderId), 'success');
+        }
+        return result;
+    } catch (error) {
+        console.error('Mark ready error:', error);
+        return { success: false, error: tr('kitchen_failed_mark_ready', 'Failed to mark order ready') };
+    }
 }
 /**
  * Mark order as served (Kitchen)
@@ -124,15 +112,15 @@ export async function markReady(orderId) {
  */
 export async function markServed(orderId) {
     try {
-        const result = await updateOrderStatus(orderId, ORDER_STATUS.SERVED);
-        if (result.success) {
-            showToast(Order ${orderId} served, 'info');
-        }
-        return result;
-    } catch (error) {
-        console.error('Mark served error:', error);
-        return { success: false, error: 'Failed to mark order served' };
-    }
+const result = await updateOrderStatus(orderId, ORDER_STATUS.SERVED);
+        if (result.success) {
+            showToast(tr("kitchen_order_served", "Order #{id} served").replace("{id}", orderId).replace("#{id}", orderId), 'info');
+        }
+        return result;
+    } catch (error) {
+        console.error('Mark served error:', error);
+        return { success: false, error: tr('kitchen_failed_mark_served', 'Failed to mark order served') };
+    }
 }
 
 /**

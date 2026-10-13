@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * Feedback Schema - Customer feedback on orders
@@ -11,12 +11,12 @@ const FeedbackSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
+      ref: 'Order',
       default: null,
     },
     rating: {
@@ -27,28 +27,44 @@ const FeedbackSchema = new mongoose.Schema(
     },
     comment: {
       type: String,
-      default: "",
+      default: '',
     },
     category: {
       type: String,
-      default: "Food Quality",
+      default: 'Food Quality',
     },
     dishName: {
       type: String,
-      default: "",
+      default: '',
     },
     status: {
       type: String,
-      enum: ["PENDING", "RESOLVED", "ARCHIVED"],
-      default: "PENDING",
+      enum: ['PENDING', 'RESOLVED', 'ARCHIVED'],
+      default: 'PENDING',
     },
+    isRead: {
+      type: Boolean,
+      default: false,
+    },
+    processedAt: {
+      type: Date,
+      default: null,
+    },
+    processedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    // Staff reply to the customer's feedback (customer can view it on their
+    // feedback list). Previously accepted by the frontend but had no schema
+    // field and no backend route, so it was silently dropped.
     reply: {
       type: String,
-      default: "",
+      default: '',
     },
-    repliedBy: {
+    replyBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       default: null,
     },
     repliedAt: {
@@ -58,7 +74,7 @@ const FeedbackSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("Feedback", FeedbackSchema);
+module.exports = mongoose.model('Feedback', FeedbackSchema);

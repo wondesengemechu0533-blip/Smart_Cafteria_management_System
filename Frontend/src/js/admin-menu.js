@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN MENU MANAGEMENT
@@ -163,7 +167,7 @@
     var tbody = document.getElementById("menuTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading menu items...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">' + tr('loading_menu', 'Loading menu...') + '</td></tr>';
 
     try {
       var data = await window.AdminAPI.get("/admin/menu", {
@@ -181,14 +185,14 @@
       var info = document.getElementById("menuPaginationInfo");
       var total = data.total || 0;
       var pages = Math.max(data.pages || 1, 1);
-      if (info) info.textContent = "Page " + (data.page || state.page) + " of " + pages + " (" + total + " items)";
+      if (info) info.textContent = tr('page_info', 'Page {page} of {pages} ({total} items)').replace('{page}', data.page || state.page).replace('{pages}', pages).replace('{total}', total);
       var prevBtn = document.getElementById("menuPrevPageBtn");
       var nextBtn = document.getElementById("menuNextPageBtn");
       if (prevBtn) prevBtn.disabled = (data.page || 1) <= 1;
       if (nextBtn) nextBtn.disabled = (data.page || 1) >= pages;
       state.page = data.page || 1;
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load menu: ' + window.esc(error.message || "Server error") + "</td></tr>";
+      tbody.innerHTML = tr('failed_load_menu', 'Failed to load menu: {error}', { error: error.message || '' });
     }
   }
 
@@ -197,7 +201,7 @@
     if (!tbody) return;
 
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No menu items found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('no_records','No menu items found.')+'</td></tr>';
       return;
     }
 
@@ -205,7 +209,7 @@
       var available = item.availabilityStatus === "AVAILABLE" || (item.availability && item.isAvailable && Number(item.stockQuantity || 0) > 0);
       var toggleBtn =
         '<button class="action-btn" data-action="toggle" data-id="' + item.id + '" title="' +
-        (available ? "Make unavailable" : "Make available") + '">' +
+        (available ? tr('deactivate', 'Deactivate') : tr('activate', 'Activate')) + '">' +
         '<i class="fa-solid ' + (available ? "fa-circle-xmark" : "fa-circle-check") + '"></i></button>';
 
       return (
@@ -227,11 +231,11 @@
         '<td class="date-cell">' + window.AdminAPI.formatDate(item.updatedAt) + "</td>" +
         "<td>" +
           '<div class="table-actions">' +
-            '<button class="action-btn" data-action="view" data-id="' + item.id + '" title="View details"><i class="fa-solid fa-eye"></i></button>' +
-            '<button class="action-btn" data-action="edit" data-id="' + item.id + '" title="Edit item (price / category / image)"><i class="fa-solid fa-pen"></i></button>' +
-            '<button class="action-btn" data-action="stock" data-id="' + item.id + '" title="Update stock quantity"><i class="fa-solid fa-box"></i></button>' +
+            '<button class="action-btn" data-action="view" data-id="' + item.id + '" title="' + tr('view_details', 'View details') + '"><i class="fa-solid fa-eye"></i></button>' +
+            '<button class="action-btn" data-action="edit" data-id="' + item.id + '" title="' + tr('edit_item', 'Edit item (price / category / image)') + '"><i class="fa-solid fa-pen"></i></button>' +
+            '<button class="action-btn" data-action="stock" data-id="' + item.id + '" title="' + tr('update_stock_quantity', 'Update stock quantity') + '"><i class="fa-solid fa-box"></i></button>' +
             toggleBtn +
-            '<button class="action-btn danger" data-action="delete" data-id="' + item.id + '" title="Delete item"><i class="fa-solid fa-trash"></i></button>' +
+            '<button class="action-btn danger" data-action="delete" data-id="' + item.id + '" title="' + tr('delete_item', 'Delete item') + '"><i class="fa-solid fa-trash"></i></button>' +
           "</div>" +
         "</td>" +
         "</tr>"
@@ -279,9 +283,9 @@
     document.getElementById("itemRecommended").checked = false;
     document.getElementById("itemHomepage").checked = false;
     document.getElementById("itemAvailable").checked = true;
-    document.getElementById("itemAvailableLabel").textContent = "Available for ordering";
-    document.getElementById("menuModalTitle").textContent = "Add New Menu Item";
-    document.getElementById("saveMenuItemBtn").textContent = "Save Item";
+    document.getElementById("itemAvailableLabel").textContent = tr('available_for_ordering', 'Available for ordering');
+    document.getElementById("menuModalTitle").textContent = tr('add_new_menu_item', 'Add New Menu Item');
+    document.getElementById("saveMenuItemBtn").textContent = tr('save_item', 'Save Item');
     openModal("menuItemModal");
   }
 
@@ -340,8 +344,8 @@
       if (error) error.style.display = "none";
     }
 
-    document.getElementById("menuModalTitle").textContent = "Edit Menu Item";
-    document.getElementById("saveMenuItemBtn").textContent = "Update Item";
+    document.getElementById("menuModalTitle").textContent = tr('edit_menu_item', 'Edit Menu Item');
+    document.getElementById("saveMenuItemBtn").textContent = tr('update_item', 'Update Item');
     openModal("menuItemModal");
   }
 
@@ -372,11 +376,11 @@
 
     var payload = buildMenuItemPayload();
     if (!payload.name.en || !payload.name.am) {
-      if (window.AdminToast) window.AdminToast.error("Both English and Amharic names are required");
+      if (window.AdminToast) window.AdminToast.error(tr('both_names_required', 'Both English and Amharic names are required'));
       return;
     }
     if (isNaN(payload.price) || payload.price < 0) {
-      if (window.AdminToast) window.AdminToast.error("Price must be a non-negative number");
+      if (window.AdminToast) window.AdminToast.error(tr('price_non_negative', 'Price must be a non-negative number'));
       return;
     }
 
@@ -401,12 +405,12 @@
       }
 
       closeModal("menuItemModal");
-      if (window.AdminToast) window.AdminToast.success(id ? "Menu item updated" : "Menu item added");
+      if (window.AdminToast) window.AdminToast.success(id ? tr('menu_item_updated', 'Menu item updated') : tr('menu_item_added', 'Menu item added'));
       if (state.page > 1 && !id) state.page = 1;
       loadMenuItems();
       loadStats();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to save menu item");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_save_menu_item', 'Failed to save menu item'));
     }
   }
 
@@ -417,13 +421,13 @@
     if (!file) return;
     if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
       pendingImage = null;
-      if (window.AdminToast) window.AdminToast.error("Invalid image type. Allowed: JPG, JPEG, PNG, WEBP");
+      if (window.AdminToast) window.AdminToast.error(tr('invalid_image_type', 'Invalid image type. Allowed: JPG, JPEG, PNG, WEBP'));
       document.getElementById("itemImageFile").value = "";
       return;
     }
     if (file.size > MAX_IMAGE_SIZE) {
       pendingImage = null;
-      if (window.AdminToast) window.AdminToast.error("Image too large. Maximum size is 2 MB");
+      if (window.AdminToast) window.AdminToast.error(tr('image_too_large', 'Image too large. Maximum size is 2 MB'));
       document.getElementById("itemImageFile").value = "";
       return;
     }
@@ -469,7 +473,7 @@
       if (value && value.trim()) {
         var trimmed = value.trim();
         if (!isValidUrl(trimmed)) {
-          if (feedback) { feedback.textContent = "Please enter a valid URL (http:// or https://)"; feedback.className = "url-feedback invalid"; }
+          if (feedback) { feedback.textContent = tr('valid_url_required', 'Please enter a valid URL (http:// or https://)'); feedback.className = "url-feedback invalid"; }
           if (urlInput) { urlInput.classList.add("url-invalid"); urlInput.classList.remove("url-valid"); }
           pendingImage = null;
           document.getElementById("imagePreviewRow").style.display = "none";
@@ -480,7 +484,7 @@
           return;
         }
         if (urlInput) { urlInput.classList.remove("url-invalid"); urlInput.classList.add("url-valid"); }
-        if (feedback) { feedback.textContent = "Loading preview..."; feedback.className = "url-feedback valid"; }
+        if (feedback) { feedback.textContent = tr('loading_preview', 'Loading preview...'); feedback.className = "url-feedback valid"; }
         pendingImage = { type: "url", value: trimmed };
         document.getElementById("itemImageFile").value = "";
         if (loading) loading.style.display = "flex";
@@ -490,13 +494,13 @@
           if (loading) loading.style.display = "none";
           if (error) error.style.display = "flex";
           preview.style.display = "none";
-          if (feedback) { feedback.textContent = "Preview unavailable here, but the URL will still be saved."; feedback.className = "url-feedback valid"; }
+          if (feedback) { feedback.textContent = tr('preview_unavailable', 'Preview unavailable here, but the URL will still be saved.'); feedback.className = "url-feedback valid"; }
         };
         preview.onload = function () {
           if (loading) loading.style.display = "none";
           if (error) error.style.display = "none";
           preview.style.display = "block";
-          if (feedback) { feedback.textContent = "Image preview loaded"; feedback.className = "url-feedback valid"; }
+          if (feedback) { feedback.textContent = tr('image_preview_loaded', 'Image preview loaded'); feedback.className = "url-feedback valid"; }
         };
         preview.src = trimmed;
         document.getElementById("imagePreviewRow").style.display = "flex";
@@ -544,7 +548,7 @@
   function openToggleAvailModal(item) {
     closeAllModals();
     var available = item.availability && item.isAvailable;
-    document.getElementById("toggleAvailTitle").textContent = available ? "Make Unavailable" : "Make Available";
+    document.getElementById("toggleAvailTitle").textContent = available ? tr("deactivate", "Deactivate") : tr("activate", "Activate");
     document.getElementById("toggleAvailMsg").textContent =
       "Are you sure you want to make \"" + item.name.en + "\" " + (available ? "unavailable" : "available") + "?";
     var iconWrap = document.getElementById("toggleAvailIconWrap");
@@ -552,16 +556,16 @@
     iconWrap.querySelector("i").className = available ? "fa-solid fa-circle-xmark" : "fa-solid fa-circle-check";
     var confirmBtn = document.getElementById("confirmToggleAvailBtn");
     confirmBtn.className = available ? "btn btn-danger" : "btn btn-success";
-    confirmBtn.textContent = available ? "Make Unavailable" : "Make Available";
+    confirmBtn.textContent = available ? tr("deactivate", "Deactivate") : tr("activate", "Activate");
     confirmBtn.onclick = async function () {
       try {
         await window.AdminAPI.patch("/admin/menu/" + item.id + "/availability", { available: !available });
         closeModal("toggleAvailModal");
-        if (window.AdminToast) window.AdminToast.success(!available ? "Item is now available" : "Item is now unavailable");
+        if (window.AdminToast) window.AdminToast.success(!available ? tr('item_now_available', 'Item is now available') : tr('item_now_unavailable', 'Item is now unavailable'));
         loadMenuItems();
         loadStats();
       } catch (error) {
-        if (window.AdminToast) window.AdminToast.error(error.message || "Failed to update availability");
+        if (window.AdminToast) window.AdminToast.error(error.message || tr('error_update_availability', 'Failed to update availability'));
       }
     };
     openModal("toggleAvailModal");
@@ -577,12 +581,12 @@
       try {
         await window.AdminAPI.del("/admin/menu/" + item.id);
         closeModal("deleteItemModal");
-        if (window.AdminToast) window.AdminToast.success("Menu item deleted");
+        if (window.AdminToast) window.AdminToast.success(tr('menu_item_deleted', 'Menu item deleted'));
         if (window.__menuCache && window.__menuCache.length === 1 && state.page > 1) state.page--;
         loadMenuItems();
         loadStats();
       } catch (error) {
-        if (window.AdminToast) window.AdminToast.error(error.message || "Failed to delete menu item");
+        if (window.AdminToast) window.AdminToast.error(error.message || tr('error_delete_menu_item', 'Failed to delete menu item'));
       } finally {
         confirmBtn.disabled = false;
         confirmBtn.innerHTML = '<i class="fa-solid fa-trash"></i> Delete';
@@ -614,7 +618,7 @@
     var newQty = parseInt(document.getElementById("stockNewQty").value, 10);
     var threshold = parseInt(document.getElementById("stockThreshold").value, 10);
     if (isNaN(newQty) || newQty < 0) {
-      if (window.AdminToast) window.AdminToast.error("Stock quantity must be a non-negative number");
+      if (window.AdminToast) window.AdminToast.error(tr('stock_non_negative', 'Stock quantity must be a non-negative number'));
       return;
     }
     var saveBtn = document.getElementById("saveStockBtn");
@@ -625,11 +629,11 @@
         lowStockThreshold: threshold
       });
       closeModal("stockModal");
-      if (window.AdminToast) window.AdminToast.success("Stock updated successfully");
+      if (window.AdminToast) window.AdminToast.success(tr('stock_updated', 'Stock updated successfully'));
       loadMenuItems();
       loadStats();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to update stock");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_update_stock', 'Failed to update stock'));
     } finally {
       saveBtn.disabled = false;
     }
@@ -655,7 +659,7 @@
     if (refreshBtn) refreshBtn.addEventListener("click", function () {
       loadMenuItems();
       loadStats();
-      if (window.AdminToast) window.AdminToast.show("Menu refreshed");
+      if (window.AdminToast) window.AdminToast.show(tr('menu_refreshed', 'Menu refreshed'));
     });
 
     var form = document.getElementById("menuItemForm");
@@ -780,7 +784,7 @@
         var item = (window.__menuCache || []).find(function (i) { return i.id === id; });
         if (!item) item = await findItemById(id);
         if (!item) {
-          if (window.AdminToast) window.AdminToast.error("Menu item not found");
+          if (window.AdminToast) window.AdminToast.error(tr('menu_item_not_found', 'Menu item not found'));
           return;
         }
 

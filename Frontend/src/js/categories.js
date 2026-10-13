@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - CATEGORIES MODULE
@@ -115,12 +120,12 @@ export function clearActiveCategory() {
 
 export function addCategory(categoryData = {}) {
   if (!categoryData.id || !categoryData.name) {
-    return { success: false, error: "Category ID and name are required." };
+    return { success: false, error: tr('category_id_name_required', 'Category ID and name are required.') };
   }
 
   const idExists = categories.some(cat => cat.id === categoryData.id);
   if (idExists) {
-    return { success: false, error: "Category ID already exists." };
+    return { success: false, error: tr('category_id_exists', 'Category ID already exists.') };
   }
 
   const newCategory = {
@@ -137,7 +142,7 @@ export function addCategory(categoryData = {}) {
 export function updateCategory(id, updates = {}) {
   const index = categories.findIndex(cat => cat.id === id);
   if (index === -1) {
-    return { success: false, error: "Category not found." };
+    return { success: false, error: tr('category_not_found_generic', 'Category not found.') };
   }
 
   categories[index] = {
@@ -151,7 +156,7 @@ export function updateCategory(id, updates = {}) {
 export function deleteCategory(id) {
   const index = categories.findIndex(cat => cat.id === id);
   if (index === -1) {
-    return { success: false, error: "Category not found." };
+    return { success: false, error: tr('category_not_found_generic', 'Category not found.') };
   }
 
   // Prevent deletion if items are still assigned to this category
@@ -161,7 +166,7 @@ export function deleteCategory(id) {
   if (hasItems) {
     return {
       success: false,
-      error: "Cannot delete category containing active menu items."
+      error: tr('category_has_active_items', 'Cannot delete category containing active menu items.')
     };
   }
 

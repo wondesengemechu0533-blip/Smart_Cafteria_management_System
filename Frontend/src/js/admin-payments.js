@@ -1,3 +1,14 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN PAYMENT MANAGEMENT
@@ -37,14 +48,16 @@
 
   function paymentBadge(paymentStatus) {
     var cls = "order-badge";
-    switch (String(paymentStatus || "").toUpperCase()) {
+    var ps = String(paymentStatus || "PENDING").toUpperCase();
+    switch (ps) {
       case "PAID": cls += " cmp"; break;
       case "REFUNDED": cls += " cmp"; break;
       case "FAILED": cls += " cxl"; break;
       case "CANCELLED": cls += " cxl"; break;
       default: cls += " pend"; break;
     }
-    return '<span class="' + cls + '">' + String(paymentStatus || "PENDING") + "</span>";
+    var label = window.translateStatus ? window.translateStatus(ps) : ps;
+    return '<span class="' + cls + '">' + label + "</span>";
   }
 
   function methodLabel(method) {
@@ -131,7 +144,7 @@
     var tbody = document.getElementById("paymentsTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading payments...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('loading_payments','Loading payments...')+'</td></tr>';
 
     try {
       var dateRange = getDateRange();
@@ -155,16 +168,14 @@
       var total = data.total || 0;
       var pages = Math.max(data.pages || 1, 1);
       var info = document.getElementById("paymentPaginationInfo");
-      if (info) info.textContent = "Page " + (data.page || state.page) + " of " + pages + " (" + total + " payments)";
+      if (info) info.textContent = tr('page_of_payments', 'Page {page} of {pages} ({total} payments)').replace('{page}', data.page || state.page).replace('{pages}', pages).replace('{total}', total);
       var prevBtn = document.getElementById("paymentPrevPageBtn");
       var nextBtn = document.getElementById("paymentNextPageBtn");
       if (prevBtn) prevBtn.disabled = (data.page || 1) <= 1;
       if (nextBtn) nextBtn.disabled = (data.page || 1) >= pages;
       state.page = data.page || 1;
     } catch (error) {
-      tbody.innerHTML =
-        '<tr><td colspan="8" class="table-empty">Failed to load payments: ' +
-        window.esc(error.message || "Server error") + "</td></tr>";
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">' + window.esc(tr('failed_load_payments', 'Failed to load payments: {error}', { error: error.message || '' })) + "</td></tr>";
     }
   }
 
@@ -173,7 +184,7 @@
     if (!tbody) return;
 
     if (!payments.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No payments found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('no_payments','No payments found.')+'</td></tr>';
       return;
     }
 
@@ -196,7 +207,7 @@
         "<td>" + window.AdminAPI.formatDateTime(payment.paymentDate) + "</td>" +
         "<td>" +
           '<div class="table-actions">' +
-            '<button class="action-btn" data-action="view" data-id="' + payment.id + '" title="View payment details"><i class="fa-solid fa-eye"></i></button>' +
+            '<button class="action-btn" data-action="view" data-id="' + payment.id + '" title="' + tr('view_payment_details', 'View payment details') + '"><i class="fa-solid fa-eye"></i></button>' +
           "</div>" +
         "</td>" +
         "</tr>"
@@ -216,7 +227,7 @@
   function renderPaymentItems(items) {
     var tbody = document.getElementById("modalPaymentItemsBody");
     if (!items || !items.length) {
-      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="table-empty">No items</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="table-empty">'+tr('no_items','No items')+'</td></tr>';
       return;
     }
     if (tbody) {
@@ -238,14 +249,14 @@
     var historyContainer = document.getElementById("modalPaymentHistory");
     if (!historyContainer) return;
 
-    historyContainer.innerHTML = '<p>Loading history...</p>';
+    historyContainer.innerHTML = '<p>'+tr('loading','Loading...')+'</p>';
 
     try {
       var data = await window.AdminAPI.get("/admin/payments/" + paymentId + "/history");
       var history = data.history || [];
 
       if (!history.length) {
-        historyContainer.innerHTML = '<p class="text-muted">No history events found.</p>';
+        historyContainer.innerHTML = '<p class="text-muted">'+tr('no_records','No history events found.')+'</p>';
         return;
       }
 
@@ -261,7 +272,7 @@
         '</div>';
       }).join("") + '</div>';
     } catch (error) {
-      historyContainer.innerHTML = '<p class="text-danger">Failed to load history: ' + window.esc(error.message) + '</p>';
+      historyContainer.innerHTML = '<p class="text-danger">' + window.esc(tr('failed_load', 'Failed: {error}', { error: error.message })) + '</p>';
     }
   }
 
@@ -273,7 +284,7 @@
         payment = data.payment;
       }
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to load payment");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_load_payment', 'Failed to load payment'));
       return;
     }
     if (!payment) return;
@@ -325,12 +336,12 @@
     var reason = reasonInput.value.trim();
 
     if (!amount || amount <= 0) {
-      if (window.AdminToast) window.AdminToast.error("Please enter a valid refund amount");
+      if (window.AdminToast) window.AdminToast.error(tr('enter_valid_refund_amount', 'Please enter a valid refund amount'));
       return;
     }
 
     if (!reason) {
-      if (window.AdminToast) window.AdminToast.error("Please provide a refund reason");
+      if (window.AdminToast) window.AdminToast.error(tr('enter_refund_reason', 'Please provide a refund reason'));
       return;
     }
 
@@ -340,14 +351,14 @@
         reason: reason
       });
 
-      if (window.AdminToast) window.AdminToast.success(response.message || "Refund processed successfully");
+      if (window.AdminToast) window.AdminToast.success(response.message || tr('refund_processed', 'Refund processed successfully'));
       amountInput.value = "";
       reasonInput.value = "";
       
       // Reload payment details
       await viewPaymentDetails(paymentId);
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to process refund");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_process_refund', 'Failed to process refund'));
     }
   }
 
@@ -359,7 +370,7 @@
     if (refreshBtn) refreshBtn.addEventListener("click", function () {
       loadPayments();
       loadStats();
-      if (window.AdminToast) window.AdminToast.show("Payments refreshed");
+      if (window.AdminToast) window.AdminToast.show(tr('payments_refreshed', 'Payments refreshed'));
     });
 
     document.querySelectorAll("[data-close-modal]").forEach(function (btn) {
@@ -485,6 +496,16 @@
     bindEvents();
     loadStats();
     loadPayments();
+
+    __registerLangChange(function () {
+        try {
+          loadPayments();
+          loadStats();
+          if (state.currentPaymentId) {
+            viewPaymentDetails(state.currentPaymentId, (window.__paymentsCache || []).find(function (p) { return String(p.id) === String(state.currentPaymentId); }));
+          }
+        } catch (e) { /* best-effort re-render */ }
+    });
   }
 
   document.addEventListener("DOMContentLoaded", init);

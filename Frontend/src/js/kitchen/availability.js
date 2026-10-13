@@ -2,8 +2,43 @@ const API_BASE = window.__API_URL;
 
 let allItems = [];
 
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     loadMenuAvailability();
+});
+
+function isAmharic() {
+    return typeof window.getCurrentLanguage === 'function' && window.getCurrentLanguage() === 'am';
+}
+
+function tr(key, fallback, vars) {
+    if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+    if (typeof window.getText === 'function') {
+        const v = window.getText(key);
+        if (v && v !== key) return v;
+    }
+    return fallback != null ? fallback : key;
+}
+
+function registerLangChange(fn) {
+    const register = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+    if (typeof register === 'function') register(fn);
+    else window.addEventListener('language:changed', fn);
+}
+
+registerLangChange(() => {
+    try {
+        if (!document.getElementById('itemsGrid')) return;
+        filterItems();
+    } catch (e) { /* best-effort re-render */ }
 });
 
 async function loadMenuAvailability() {
@@ -19,7 +54,7 @@ async function loadMenuAvailability() {
         const data = await response.json();
 
         if (!data.success) {
-            showAlert('Error loading menu items', 'error');
+            showAlert(tr('kitchen_error_loading_menu', 'Error loading menu items'), 'error');
             return;
         }
 
@@ -28,16 +63,17 @@ async function loadMenuAvailability() {
 
     } catch (error) {
         console.error('Error:', error);
-        showAlert('Failed to load menu items', 'error');
+        showAlert(tr('kitchen_failed_loading_menu', 'Failed to load menu items'), 'error');
     }
 }
 
 function renderItems(items) {
     const grid = document.getElementById('itemsGrid');
+    if (!grid) return;
     grid.innerHTML = '';
 
     if (items.length === 0) {
-        grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">No items found</p>';
+        grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">' + escapeHtml(tr('kitchen_no_items', 'No items found')) + '</p>';
         return;
     }
 
@@ -45,49 +81,52 @@ function renderItems(items) {
         const card = document.createElement('div');
         card.className = `item-card ${!item.isAvailable ? 'unavailable' : ''}`;
 
-        const lastUpdate = item.lastUpdate ? new Date(item.lastUpdate).toLocaleDateString() : 'Never';
+        const lastUpdate = item.lastUpdate ? new Date(item.lastUpdate).toLocaleDateString() : tr('kitchen_never', 'Never');
+        const nameObj = item.name && typeof item.name === 'object' ? item.name : { en: item.name };
+        const lang = (typeof window.getCurrentLanguage === 'function' && window.getCurrentLanguage()) || 'en';
+        const itemName = (lang === 'am' && nameObj.am) ? nameObj.am : (nameObj.en || item.name || '');
 
         card.innerHTML = `
             <div class="item-header">
-                <div class="item-name">${item.name.en || item.name}</div>
+                <div class="item-name">${escapeHtml(itemName)}</div>
                 <span class="availability-badge ${item.isAvailable ? 'badge-available' : 'badge-unavailable'}">
-                    ${item.isAvailable ? '<i class="fa-solid fa-check"></i> Available' : '<i class="fa-solid fa-xmark"></i> Unavailable'}
+                    ${item.isAvailable ? '<i class="fa-solid fa-check"></i> ' + escapeHtml(tr('kitchen_available', 'Available')) : '<i class="fa-solid fa-xmark"></i> ' + escapeHtml(tr('kitchen_unavailable', 'Unavailable'))}
                 </span>
             </div>
 
             <div class="item-details">
                 <div class="detail-item">
-                    <span class="detail-label">Category</span>
-                    <span class="detail-value">${item.category}</span>
+                    <span class="detail-label">${escapeHtml(tr('kitchen_category', 'Category'))}</span>
+                    <span class="detail-value">${escapeHtml(item.category)}</span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Price</span>
-                    <span class="detail-value">Br ${item.price}</span>
+                    <span class="detail-label">${escapeHtml(tr('kitchen_price', 'Price'))}</span>
+                    <span class="detail-value">Br ${escapeHtml(String(item.price))}</span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Prep Time</span>
-                    <span class="detail-value">${item.preparationTime} mins</span>
+                    <span class="detail-label">${escapeHtml(tr('kitchen_prep_time', 'Prep Time'))}</span>
+                    <span class="detail-value">${escapeHtml(String(item.preparationTime))} ${escapeHtml(tr('kitchen_mins', 'mins'))}</span>
                 </div>
                 <div class="detail-item">
-                    <span class="detail-label">Last Updated</span>
-                    <span class="detail-value">${lastUpdate}</span>
+                    <span class="detail-label">${escapeHtml(tr('kitchen_last_updated', 'Last Updated'))}</span>
+                    <span class="detail-value">${escapeHtml(lastUpdate)}</span>
                 </div>
             </div>
 
             ${item.outOfStockReason ? `
                 <div class="unavailable-reason">
-                    <strong>Reason:</strong> ${item.outOfStockReason}
+                    <strong>${escapeHtml(tr('kitchen_reason', 'Reason'))}:</strong> ${escapeHtml(item.outOfStockReason)}
                 </div>
             ` : ''}
 
             <div class="action-buttons">
                 ${item.isAvailable ? `
-                    <button class="btn btn-mark-unavailable" onclick="openUnavailableModal('${item.id}')">
-                        Mark Unavailable
+                    <button class="btn btn-mark-unavailable" onclick="openUnavailableModal('${escapeHtml(item.id)}')">
+                        ${escapeHtml(tr('kitchen_mark_unavailable', 'Mark Unavailable'))}
                     </button>
                 ` : `
-                    <button class="btn btn-mark-available" onclick="markAvailable('${item.id}')">
-                        Mark Available
+                    <button class="btn btn-mark-available" onclick="markAvailable('${escapeHtml(item.id)}')">
+                        ${escapeHtml(tr('kitchen_mark_available', 'Mark Available'))}
                     </button>
                 `}
             </div>
@@ -149,22 +188,22 @@ document.getElementById('unavailableForm')?.addEventListener('submit', async (e)
         const data = await response.json();
 
         if (!data.success) {
-            showAlert('Failed to update availability', 'error');
+            showAlert(tr('kitchen_failed_update_availability', 'Failed to update availability'), 'error');
             return;
         }
 
-        showAlert('Item marked as unavailable and customers notified', 'success');
+        showAlert(tr('kitchen_item_marked_unavailable', 'Item marked as unavailable and customers notified'), 'success');
         closeUnavailableModal();
         loadMenuAvailability();
 
     } catch (error) {
         console.error('Error:', error);
-        showAlert('Failed to update availability', 'error');
+        showAlert(tr('kitchen_failed_update_availability', 'Failed to update availability'), 'error');
     }
 });
 
 async function markAvailable(itemId) {
-    if (!confirm('Mark this item as available?')) return;
+    if (!confirm(tr('kitchen_confirm_mark_available', 'Mark this item as available?'))) return;
 
     try {
         const token = localStorage.getItem('auth_token');
@@ -182,16 +221,16 @@ async function markAvailable(itemId) {
         const data = await response.json();
 
         if (!data.success) {
-            showAlert('Failed to update availability', 'error');
+            showAlert(tr('kitchen_failed_update_availability', 'Failed to update availability'), 'error');
             return;
         }
 
-        showAlert('Item marked as available', 'success');
+        showAlert(tr('kitchen_item_marked_available', 'Item marked as available'), 'success');
         loadMenuAvailability();
 
     } catch (error) {
         console.error('Error:', error);
-        showAlert('Failed to update availability', 'error');
+        showAlert(tr('kitchen_failed_update_availability', 'Failed to update availability'), 'error');
     }
 }
 

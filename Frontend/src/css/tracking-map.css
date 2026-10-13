@@ -1,0 +1,521 @@
+/* ============================================================
+   Live Delivery Tracking Map (Leaflet)
+   ============================================================ */
+
+.delivery-map-card {
+  margin-top: 18px;
+}
+
+.delivery-map {
+  width: 100%;
+  height: 40vh;
+  min-height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #e9ecef;
+  z-index: 1;
+}
+
+.delivery-map-status {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: #475569;
+  min-height: 1.1em;
+  text-align: center;
+}
+
+.delivery-map-status.is-waiting {
+  color: #b45309;
+}
+
+/* When the live map cannot initialize (Leaflet failed to load, offline, or a
+   render-time error): replace the blank grey box with a compact message. */
+.delivery-map--error {
+  height: auto !important;
+  min-height: 0 !important;
+  padding: 18px 16px;
+  background: #ffffff !important;
+}
+
+.delivery-map-error-message {
+  color: #b45309;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.delivery-map-status.is-unavailable {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* Leaflet pin markers */
+.map-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  border: 2px solid #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.map-pin i {
+  transform: rotate(45deg);
+}
+
+.map-pin-cafe {
+  background: #22c55e;
+}
+
+.map-pin-dest {
+  background: #ef4444;
+}
+
+.map-pin-courier {
+  width: 30px;
+  height: 30px;
+  background: #2563eb;
+  border-color: #fff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.map-pin-courier i {
+  color: #fff;
+  font-size: 15px;
+}
+
+/* Pin dropped by the place search box (delivery/geocode-search.js). Distinct
+   colour on purpose: it is a question the manager/rider asked, not an order
+   fact like the customer, the cafeteria or the courier. */
+.map-pin-search {
+  background: #7c3aed;
+}
+
+/* Leaflet popup tune-up */
+.leaflet-popup-content {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ---- Map card header + explicit live-connection badge --------------------- */
+/* A customer must never have to guess whether the moving marker is stale. The
+   badge says Reconnecting… the moment the socket drops and Connected when it is
+   back, so a frozen map is never mistaken for a stationary rider. */
+.delivery-map-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.delivery-map-head h3 {
+  margin: 0;
+}
+
+.track-connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.track-connection.is-live {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.track-connection.is-waiting {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.track-connection.is-offline {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+body.dark-theme .track-connection.is-live {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+}
+body.dark-theme .track-connection.is-waiting {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+body.dark-theme .track-connection.is-offline {
+  background: rgba(148, 163, 184, 0.18);
+  color: #cbd5e1;
+}
+
+/* ---- Map dark-mode tile tuning ------------------------------------------- */
+/* OSM tiles are light; dimming them keeps marker colours readable at night
+   without swapping the tile source (and therefore without a second API key). */
+body.dark-theme .delivery-map {
+  filter: brightness(0.82) contrast(1.05);
+}
+
+/* Overview map GPS badge */
+.overview-gps-badge {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .delivery-map {
+    height: 46vh;
+    min-height: 220px;
+  }
+  .overview-gps-badge {
+    font-size: 0.65rem;
+    padding: 3px 8px;
+  }
+}
+
+/* ---- Tracking summary: cafeteria / rider / distance / ETA -------------- */
+/* The four facts a customer opens "Track Order" for. Each item hides itself
+   when the value is unknown, so the strip never shows a blank or a guess. */
+.track-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 107, 0, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 107, 0, 0.06);
+}
+
+.track-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1 1 150px;
+}
+
+.track-summary-item > i {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 107, 0, 0.14);
+  color: #ff6b00;
+  font-size: 12px;
+}
+
+.track-summary-item > div {
+  min-width: 0;
+}
+
+.track-summary-label {
+  display: block;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+}
+
+.track-summary-item strong {
+  display: block;
+  font-size: 0.86rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .track-summary-item {
+    flex: 1 1 100%;
+  }
+}
+
+/* Delivery delay notice. Shown whenever a reported problem is delaying the
+   order. Deliberately independent of the map so it appears even when there is
+   no GPS fix to draw. */
+.track-delay-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  border-left: 4px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+.track-delay-banner > i {
+  margin-top: 3px;
+  color: #f59e0b;
+  font-size: 1.1rem;
+}
+.track-delay-banner strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.track-delay-banner p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+body.dark-theme .track-delay-banner {
+  background: rgba(245, 158, 11, 0.14);
+}
+body.dark-theme .track-delay-banner p {
+  color: #cbd5e1;
+}
+
+/* Refund state banner. Written by order-status.js from the server's refund
+   fields (REFUND_REQUESTED -> REFUNDED) on load and on every live frame, so the
+   customer always sees where their money is without refreshing. Amber while the
+   refund is still owed, green once it has landed. */
+.refund-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  border-left: 4px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+.refund-notice > i {
+  margin-top: 3px;
+  color: #f59e0b;
+  font-size: 1.1rem;
+}
+.refund-notice strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.refund-notice p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.9rem;
+}
+.refund-notice #refund-notice-meta {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+.refund-notice.is-refunded {
+  border-left-color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+}
+.refund-notice.is-refunded > i {
+  color: #16a34a;
+}
+.refund-notice.is-refunded #refund-notice-title {
+  color: #15803d;
+}
+body.dark-theme .refund-notice {
+  background: rgba(245, 158, 11, 0.14);
+}
+body.dark-theme .refund-notice p {
+  color: #cbd5e1;
+}
+body.dark-theme .refund-notice.is-refunded {
+  background: rgba(22, 163, 74, 0.16);
+}
+body.dark-theme .refund-notice.is-refunded #refund-notice-title {
+  color: #4ade80;
+}
+
+/* ---- Place search (delivery/geocode-search.js) --------------------------- */
+/* Shared by the manager's Live Delivery Monitor and the rider's GPS panel:
+   a box that turns "where is that?" into an exact coordinate on the map below
+   it. Rendered as a sibling of the map so Leaflet's panes can never cover it. */
+.geocode-search {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.geocode-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.geocode-search-row > i {
+  color: #64748b;
+  font-size: 0.85rem;
+}
+
+.geocode-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 0.85rem;
+}
+
+.geocode-search-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
+.geocode-search-go {
+  white-space: nowrap;
+}
+
+/* Suggestions stack above the tiles (Leaflet panes sit at z-index 400-1000). */
+.geocode-suggestions {
+  position: absolute;
+  z-index: 1200;
+  left: 0;
+  right: 0;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.18);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.geocode-suggestion {
+  padding: 7px 9px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.geocode-suggestion-title {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.geocode-suggestion small {
+  display: block;
+  color: #64748b;
+  font-size: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.geocode-suggestion:hover,
+.geocode-suggestion.is-active {
+  background: #eff6ff;
+}
+
+.geocode-search-status {
+  min-height: 1.1em;
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  color: #475569;
+}
+
+.geocode-search-status.is-waiting { color: #b45309; }
+.geocode-search-status.is-error { color: #b91c1c; }
+.geocode-search-status.is-ok { color: #15803d; }
+.geocode-search-status.is-empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Resolved address + the exact coordinates, ready to be copied. */
+.geocode-search-result {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 5px 0 0;
+  font-size: 0.78rem;
+  color: #0f172a;
+}
+
+.geocode-search-result[hidden],
+.geocode-search-copy[hidden],
+.geocode-search-clear[hidden],
+.geocode-suggestions[hidden] {
+  display: none;
+}
+
+.geocode-search-result > i {
+  color: #7c3aed;
+  flex: 0 0 auto;
+}
+
+.geocode-search-result-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.geocode-search-copy,
+.geocode-search-clear {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.geocode-search-clear {
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.geocode-search-copy:hover,
+.geocode-search-clear:hover {
+  background: #f1f5f9;
+}
+
+body.dark-theme .geocode-search-input {
+  background: #0f172a;
+  border-color: #334155;
+  color: #e2e8f0;
+}
+
+body.dark-theme .geocode-search-row > i,
+body.dark-theme .geocode-search-status,
+body.dark-theme .geocode-search-result {
+  color: #cbd5e1;
+}
+
+body.dark-theme .geocode-suggestions {
+  background: #0f172a;
+  border-color: #334155;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+
+body.dark-theme .geocode-suggestion-title { color: #e2e8f0; }
+body.dark-theme .geocode-suggestion small { color: #94a3b8; }
+
+body.dark-theme .geocode-suggestion:hover,
+body.dark-theme .geocode-suggestion.is-active {
+  background: #1e293b;
+}
+
+body.dark-theme .geocode-search-copy,
+body.dark-theme .geocode-search-clear {
+  background: #0f172a;
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+body.dark-theme .geocode-search-copy:hover,
+body.dark-theme .geocode-search-clear:hover {
+  background: #1e293b;
+}
+
+body.dark-theme .geocode-search-status.is-error { color: #fca5a5; }
+body.dark-theme .geocode-search-status.is-ok { color: #4ade80; }
+body.dark-theme .geocode-search-status.is-waiting { color: #fbbf24; }

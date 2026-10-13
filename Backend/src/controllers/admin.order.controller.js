@@ -3,7 +3,7 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
-const { PAYMENT_STATUS, ORDER_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
+const { PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
 const { logAction } = require('../utils/audit');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
 const MenuItem = require('../models/MenuItem');
@@ -12,23 +12,23 @@ const Cancellation = require('../models/Cancellation');
 const svc = require('../services/cancellation.service');
 
 const PICKUP_FLOW = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'COMPLETED'];
-const DELIVERY_FLOW = ['PENDING', 'PREPARING', 'READY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
+const DELIVERY_FLOW = ['PENDING', 'PREPARING', 'READY', 'READY_FOR_DELIVERY', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'];
 
 // Pick the allowed status flow based on the order's fulfillment type.
-const getFlow = (order) =>
-  String(order.orderType || '').toLowerCase() === 'delivery' ? DELIVERY_FLOW : PICKUP_FLOW;
+const getFlow = (order) => (String(order.orderType || '').toLowerCase() === 'delivery' ? DELIVERY_FLOW : PICKUP_FLOW);
 
 // Map uppercase flow status -> value allowed in Order.status enum
 const STATUS_TO_LOWERCASE = {
   PENDING: ORDER_STATUS.PENDING,
   PREPARING: ORDER_STATUS.PREPARING,
   READY: ORDER_STATUS.READY,
+  READY_FOR_DELIVERY: 'ready_for_delivery',
   PICKED_UP: ORDER_STATUS.PICKED_UP,
   SERVED: ORDER_STATUS.SERVED,
   OUT_FOR_DELIVERY: ORDER_STATUS.OUT_FOR_DELIVERY,
   DELIVERED: ORDER_STATUS.DELIVERED,
   COMPLETED: 'Completed',
-  CANCELLED: ORDER_STATUS.CANCELLED
+  CANCELLED: ORDER_STATUS.CANCELLED,
 };
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -81,7 +81,7 @@ function serializeOrder(order) {
       categoryNameSnapshot: i.categoryNameSnapshot || '',
       foodImageSnapshot: i.foodImageSnapshot || null,
       subtotal: i.subtotal || (Number(i.price) || 0) * (Number(i.quantity) || 0),
-      notes: i.notes
+      notes: i.notes,
     })),
     subtotal: order.subtotal,
     serviceFee: order.serviceFee,
@@ -95,7 +95,9 @@ function serializeOrder(order) {
     readyTime: order.readyTime,
     completedTime: order.completedTime,
     deliveryInfo: order.deliveryInfo || null,
-    deliveryStaffAssigned: staff ? { id: String(staff._id), name: staff.name, phone: staff.phone, role: staff.role } : null,
+    deliveryStaffAssigned: staff
+      ? { id: String(staff._id), name: staff.name, phone: staff.phone, role: staff.role }
+      : null,
     deliveryAssignedAt: order.deliveryAssignedAt || null,
     deliveryStartedAt: order.deliveryStartedAt || null,
     deliveredAt: order.deliveredAt || null,
@@ -111,7 +113,7 @@ function serializeOrder(order) {
     refundStatus: order.refundStatus,
     refundAmount: order.refundAmount,
     refundReference: order.refundReference,
-    refundedAt: order.refundedAt || null
+    refundedAt: order.refundedAt || null,
   };
 }
 
@@ -119,7 +121,7 @@ function buildStatusFilter(value) {
   const s = normalizeStatus(value);
   if (!s || s === 'ALL') return null;
   return {
-    $or: [{ orderStatus: s }, { status: s.toLowerCase() }, { status: s }]
+    $or: [{ orderStatus: s }, { status: s.toLowerCase() }, { status: s }],
   };
 }
 
@@ -142,7 +144,7 @@ exports.getAllOrders = async (req, res) => {
       to,
       sort = 'newest',
       page = 1,
-      limit = 20
+      limit = 20,
     } = req.query;
 
     const conditions = [];
@@ -163,8 +165,8 @@ exports.getAllOrders = async (req, res) => {
       conditions.push({
         $or: [
           { orderDate: { $regex: day } },
-          { orderTime: { $gte: new Date(`${day}T00:00:00.000Z`), $lte: new Date(`${day}T23:59:59.999Z`) } }
-        ]
+          { orderTime: { $gte: new Date(`${day}T00:00:00.000Z`), $lte: new Date(`${day}T23:59:59.999Z`) } },
+        ],
       });
     } else if (from) {
       conditions.push({ orderTime: { $gte: new Date(from) } });
@@ -179,8 +181,8 @@ exports.getAllOrders = async (req, res) => {
         $or: [
           { orderId: { $regex: s, $options: 'i' } },
           { customerName: { $regex: s, $options: 'i' } },
-          { customerPhone: { $regex: s, $options: 'i' } }
-        ]
+          { customerPhone: { $regex: s, $options: 'i' } },
+        ],
       });
     }
 
@@ -214,7 +216,9 @@ exports.getAllOrders = async (req, res) => {
 
     // Batch-load customer info
     const userIds = [...new Set(orders.map((o) => String(o.userId)).filter(Boolean))];
-    const customers = await User.find({ _id: { $in: userIds } }).select('name email phone role').lean();
+    const customers = await User.find({ _id: { $in: userIds } })
+      .select('name email phone role')
+      .lean();
     const customerMap = {};
     customers.forEach((c) => (customerMap[String(c._id)] = c));
 
@@ -231,7 +235,7 @@ exports.getAllOrders = async (req, res) => {
           ? { id: customer._id, name: customer.name, email: customer.email, phone: customer.phone, role: customer.role }
           : null;
         return record;
-      })
+      }),
     });
   } catch (error) {
     console.error('❌ Admin Get All Orders Error:', error);
@@ -271,7 +275,7 @@ exports.getOrderById = async (req, res) => {
           reference: payment.reference,
           providerReference: payment.providerReference,
           paidAt: payment.paidAt,
-          paymentDate: payment.paymentDate
+          paymentDate: payment.paymentDate,
         }
       : null;
     record.cancellation = {
@@ -284,7 +288,7 @@ exports.getOrderById = async (req, res) => {
       inventoryRestored: order.inventoryRestored,
       refundStatus: order.refundStatus,
       refundAmount: order.refundAmount,
-      refundReference: order.refundReference
+      refundReference: order.refundReference,
     };
     record.notes = order.notes;
 
@@ -381,15 +385,22 @@ exports.updateOrderStatus = async (req, res) => {
       order.deliveryStartedAt = new Date();
     }
     if (next === 'DELIVERED') {
+      // Handover only. The order is finalised by the courier's close-out
+      // (delivery COMPLETED), which is also what sets completedTime - writing it
+      // here would mark the order finished before the delivery actually is.
       order.deliveredAt = new Date();
-      order.completedTime = new Date();
     }
     if (next === 'SERVED' || next === 'COMPLETED') {
       order.completedTime = new Date();
     }
 
     await order.save();
-    await OrderStatusHistory.create({ orderId: order._id, previousStatus: current, newStatus: next, changedBy: req.user.id });
+    await OrderStatusHistory.create({
+      orderId: order._id,
+      previousStatus: current,
+      newStatus: next,
+      changedBy: req.user.id,
+    });
 
     await logAction({
       req,
@@ -400,14 +411,30 @@ exports.updateOrderStatus = async (req, res) => {
     });
 
     try {
-      await Notification.create({
+      const notification = await Notification.create({
         userId: order.userId,
         title: next === 'READY' ? 'Order Ready!' : `Order ${next}`,
         message: `Your order #${order.orderId} is now ${next.replace(/_/g, ' ').toLowerCase()}.`,
         type: 'status_update',
         orderId: order.orderId,
-        isRead: false
+        isRead: false,
       });
+      // Emit real-time notification to the customer
+      try {
+        const { emitSocketEvent } = require('../utils/socket');
+        emitSocketEvent(`user:${order.userId}`, 'notification:new', {
+          id: notification._id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          orderId: notification.orderId,
+          link: `/src/pages/customer/order-tracking.html?orderId=${order.orderId}`,
+          isRead: notification.isRead,
+          createdAt: notification.createdAt,
+        });
+      } catch (e) {
+        console.warn('Socket emit failed for notification:new:', e.message);
+      }
     } catch (notifError) {
       // notifications are best effort
     }
@@ -415,7 +442,7 @@ exports.updateOrderStatus = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: `Order #${order.orderId} status updated to ${next}`,
-      order: serializeOrder(order)
+      order: serializeOrder(order),
     });
   } catch (error) {
     console.error('❌ Admin Update Order Status Error:', error);
@@ -445,14 +472,14 @@ exports.cancelOrder = async (req, res) => {
     if (['CANCELLED', 'COMPLETED', 'SERVED', 'DELIVERED'].includes(current)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `Order cannot be cancelled (status: ${current})`
+        error: `Order cannot be cancelled (status: ${current})`,
       });
     }
     const FLOW = getFlow(order);
     if (FLOW.indexOf(current) > FLOW.indexOf('PREPARING')) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `Order can only be cancelled while PENDING or PREPARING (current: ${current})`
+        error: `Order can only be cancelled while PENDING or PREPARING (current: ${current})`,
       });
     }
 
@@ -466,22 +493,41 @@ exports.cancelOrder = async (req, res) => {
     order.cancellationProcessedBy = req.user.id;
     if (!order.inventoryRestored) {
       for (const orderItem of order.items) {
-        const food = await MenuItem.findByIdAndUpdate(orderItem.itemId, { $inc: { stockQuantity: orderItem.quantity } }, { new: true });
+        const food = await MenuItem.findByIdAndUpdate(
+          orderItem.itemId,
+          { $inc: { stockQuantity: orderItem.quantity } },
+          { new: true }
+        );
         if (food) {
           food.availabilityStatus = food.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
           await food.save();
-          await StockTransaction.create({ foodId: food._id, previousQuantity: food.stockQuantity - orderItem.quantity, quantityChanged: orderItem.quantity, newQuantity: food.stockQuantity, action: 'CANCELLATION_RESTORE', performedBy: req.user.id, orderId: order._id });
+          await StockTransaction.create({
+            foodId: food._id,
+            previousQuantity: food.stockQuantity - orderItem.quantity,
+            quantityChanged: orderItem.quantity,
+            newQuantity: food.stockQuantity,
+            action: 'CANCELLATION_RESTORE',
+            performedBy: req.user.id,
+            orderId: order._id,
+          });
         }
       }
       order.inventoryRestored = true;
     }
     const previousStatus = current;
     await order.save();
-    await OrderStatusHistory.create({ orderId: order._id, previousStatus, newStatus: 'CANCELLED', changedBy: req.user.id, reason: reason || 'Cancelled by admin' });
+    await OrderStatusHistory.create({
+      orderId: order._id,
+      previousStatus,
+      newStatus: 'CANCELLED',
+      changedBy: req.user.id,
+      reason: reason || 'Cancelled by admin',
+    });
 
     // Keep the standalone Cancellation record in sync (create one if missing).
+    let cancellation = null;
     try {
-      let cancellation = await Cancellation.findOne({ orderId: order._id, isActive: true });
+      cancellation = await Cancellation.findOne({ orderId: order._id, isActive: true });
       if (!cancellation) {
         const created = await svc.createCancellation(order, req.user, {
           reason: (reason || 'Cancelled by admin').toUpperCase().replace(/\s+/g, '_').slice(0, 40) || 'OTHER',
@@ -510,31 +556,82 @@ exports.cancelOrder = async (req, res) => {
       console.error('⚠️ Cancellation record sync failed (admin cancel):', syncError.message);
     }
 
+    // ================================================================
+    // A cancelled PAID order queues a refund for Manager/Admin review -
+    // it is NEVER refunded here (no auto-refund). This mirrors the
+    // customer cancellation path, so an admin-initiated cancel still
+    // lands on the dashboard with the "Refund Required" badge.
+    // ================================================================
+    const paidForCancel = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
+    const refundAlreadyQueued = ['REFUND_REQUESTED', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED'].includes(
+      String(order.refundStatus || '').toUpperCase()
+    );
+    if (paidForCancel && !refundAlreadyQueued && Number(order.totalAmount) > 0) {
+      order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+      order.refundAmount = order.totalAmount;
+      await order.save();
+      if (cancellation) {
+        cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
+        cancellation.refundAmount = order.totalAmount;
+        await cancellation.save();
+      }
+      try {
+        await Payment.findOneAndUpdate(
+          { orderId: order._id },
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount }
+        );
+      } catch (_) {
+        /* best effort */
+      }
+      await svc.emitRefundStatus(order, 'admin');
+    }
+    const refundQueued = String(order.refundStatus || '').toUpperCase() === REFUND_STATUS.REFUND_REQUESTED;
+
     try {
-      await Notification.create({
+      const notification = await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
-        message: `Your order #${order.orderId} has been cancelled${adminNote ? ': ' + adminNote : '.'}`,
-        type: 'cancellation',
+        message: refundQueued
+          ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB will be processed by an administrator.`
+          : `Your order #${order.orderId} has been cancelled${adminNote ? ': ' + adminNote : '.'}`,
+        type: 'order',
         orderId: order.orderId,
-        isRead: false
+        isRead: false,
       });
+      // Emit real-time notification to the customer
+      try {
+        const { emitSocketEvent } = require('../utils/socket');
+        emitSocketEvent(`user:${order.userId}`, 'notification:new', {
+          id: notification._id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          orderId: notification.orderId,
+          link: `/src/pages/customer/order-tracking.html?orderId=${order.orderId}`,
+          isRead: notification.isRead,
+          createdAt: notification.createdAt,
+        });
+      } catch (e) {
+        console.warn('Socket emit failed for notification:new:', e.message);
+      }
     } catch (notifError) {
       // best effort
     }
+
+    await svc.emitCancellationStatus(order, 'admin', order.cancellationProcessedAt);
 
     await logAction({
       req,
       action: 'ORDER_CANCELLED',
       entityType: 'Order',
       entityId: String(order.orderId || order._id),
-      description: `Admin cancelled order #${order.orderId}${reason ? ' - reason: ' + reason : ''}`
+      description: `Admin cancelled order #${order.orderId}${reason ? ' - reason: ' + reason : ''}`,
     });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: `Order #${order.orderId} cancelled successfully`,
-      order: serializeOrder(order)
+      order: serializeOrder(order),
     });
   } catch (error) {
     console.error('❌ Admin Cancel Order Error:', error);
@@ -587,8 +684,8 @@ exports.getOrderStats = async (req, res) => {
         completedOrders,
         cancelledOrders,
         totalRevenue,
-        todayOrders
-      }
+        todayOrders,
+      },
     });
   } catch (error) {
     console.error('❌ Admin Get Order Stats Error:', error);
@@ -618,71 +715,68 @@ exports.refundOrder = async (req, res) => {
     const current = effectiveStatus(order);
     const isCancelled = current === 'CANCELLED' || String(order.status || '').toLowerCase() === 'cancelled';
     if (!isCancelled) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Only cancelled orders can be refunded (current: ${current})` });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: `Only cancelled orders can be refunded (current: ${current})` });
     }
 
     // Check payment eligibility: both the top-level paymentStatus and the
     // embedded payment.status must indicate the payment was completed.
     const topPaymentStatus = String(order.paymentStatus || '').toUpperCase();
-    const embeddedPaymentStatus = order.payment && order.payment.status
-      ? String(order.payment.status).toUpperCase()
-      : topPaymentStatus;
+    const embeddedPaymentStatus =
+      order.payment && order.payment.status ? String(order.payment.status).toUpperCase() : topPaymentStatus;
     const isPaid = topPaymentStatus === 'PAID' || embeddedPaymentStatus === 'PAID';
     if (!isPaid) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Order is not eligible for a refund (payment was not completed)' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Order is not eligible for a refund (payment was not completed)' });
     }
     if (String(order.refundStatus || '').toUpperCase() === 'REFUNDED') {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Refund already processed for this order' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Refund already processed for this order' });
     }
 
-    // Process the refund through the shared cancellation service (single source of truth):
-    // request -> mark processing -> confirm (simulated provider confirmation).
-    let cancellation = await svc.findActiveCancellation(order);
-    if (!cancellation) {
-      const created = await svc.createCancellation(order, req.user, {
-        reason: 'ADMIN_REFUND',
-        description: 'Cancellation refunded by admin',
-        adminNote: 'Refunded by admin',
-      });
-      cancellation = created.cancellation;
-      order = created.order;
-      cancellation.status = 'CANCELLED';
-      cancellation.approvedAt = new Date();
-      cancellation.processedBy = req.user.id;
-      cancellation.isActive = true;
-      await cancellation.save();
-      order.orderStatus = 'CANCELLED';
-      order.status = STATUS_TO_LOWERCASE.CANCELLED;
-      order.cancellationStatus = 'approved';
-      order.cancellationProcessedAt = new Date();
-      order.cancellationProcessedBy = req.user.id;
-      await order.save();
-    }
-
-    await svc.requestRefund({ order, cancellation, amount: order.totalAmount, actorId: req.user.id });
-    await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
-    await svc.confirmRefund({ cancellation, order, providerReference: cancellation.refundReference, actorId: req.user.id });
+    // Process the refund through the shared cancellation service (single source
+    // of truth for every "process refund" button): request -> mark processing ->
+    // confirm (provider confirmation). It re-checks the cancelled/paid/not-already-
+    // refunded guards and notifies + broadcasts the refund to the customer.
+    const cancellation = await svc.completeOrderRefund({
+      order,
+      actorId: req.user.id,
+      amount: order.totalAmount,
+    });
 
     // Keep the standalone Payment record in sync (best effort).
     try {
       await Payment.findOneAndUpdate(
         { orderId: order._id },
-        { status: 'REFUNDED', refundStatus: 'REFUNDED', refundedAt: new Date(), refundAmount: cancellation.refundAmount, refundReference: cancellation.refundReference }
+        {
+          status: 'REFUNDED',
+          refundStatus: 'REFUNDED',
+          refundedAt: new Date(),
+          refundAmount: cancellation.refundAmount,
+          refundReference: cancellation.refundReference,
+        }
       );
-    } catch (_) { /* best effort */ }
+    } catch (_) {
+      /* best effort */
+    }
 
     // Also update the embedded payment.status on the order document.
     try {
       order.payment.status = 'REFUNDED';
       await order.save();
-    } catch (_) { /* best effort */ }
+    } catch (_) {
+      /* best effort */
+    }
 
     await logAction({
       req,
       action: 'ORDER_REFUNDED',
       entityType: 'Order',
       entityId: String(order.orderId || order._id),
-      description: `Admin refunded cancelled order #${order.orderId} (${cancellation.refundAmount} ETB)`
+      description: `Admin refunded cancelled order #${order.orderId} (${cancellation.refundAmount} ETB)`,
     });
 
     res.status(HTTP_STATUS.OK).json({

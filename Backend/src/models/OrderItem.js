@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * OrderItem Schema - Embedded in Order
@@ -11,7 +11,7 @@ const OrderItemSchema = new mongoose.Schema(
   {
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "MenuItem",
+      ref: 'MenuItem',
       required: true,
     },
     name: {
@@ -30,12 +30,12 @@ const OrderItemSchema = new mongoose.Schema(
     },
     notes: {
       type: String,
-      default: "",
+      default: '',
     },
   },
   {
     _id: true,
-  },
+  }
 );
 
 // Calculate subtotal for this item

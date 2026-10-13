@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ==========================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN CATEGORIES
@@ -51,11 +55,11 @@
   }
 
   function formatTimeRange(availTime) {
-    if (!availTime || !availTime.enabled) return "Always available";
+    if (!availTime || !availTime.enabled) return tr('always_available', 'Always available');
     if (availTime.startTime && availTime.endTime) {
       return availTime.startTime + " — " + availTime.endTime;
     }
-    return "Enabled (no times set)";
+    return tr('enabled_no_times', 'Enabled (no times set)');
   }
 
   /* ============================================================
@@ -95,13 +99,13 @@
     if (!file) return;
     if (ALLOWED_IMAGE_TYPES.indexOf(file.type) === -1) {
       pendingImage = null;
-      if (window.AdminToast) window.AdminToast.error("Invalid image type. Allowed: JPG, JPEG, PNG, WEBP");
+      if (window.AdminToast) window.AdminToast.error(tr('invalid_image_type', 'Invalid image type. Allowed: JPG, JPEG, PNG, WEBP'));
       document.getElementById("categoryImageFile").value = "";
       return;
     }
     if (file.size > MAX_IMAGE_SIZE) {
       pendingImage = null;
-      if (window.AdminToast) window.AdminToast.error("Image too large. Maximum size is 2 MB");
+      if (window.AdminToast) window.AdminToast.error(tr('image_too_large', 'Image too large. Maximum size is 2 MB'));
       document.getElementById("categoryImageFile").value = "";
       return;
     }
@@ -135,7 +139,7 @@
       if (value && value.trim()) {
         var trimmed = value.trim();
         if (!catIsValidUrl(trimmed)) {
-          if (feedback) { feedback.textContent = "Please enter a valid URL (http:// or https://)"; feedback.className = "url-feedback invalid"; }
+          if (feedback) { feedback.textContent = tr('valid_url_required', 'Please enter a valid URL (http:// or https://)'); feedback.className = "url-feedback invalid"; }
           if (urlInput) { urlInput.classList.add("url-invalid"); urlInput.classList.remove("url-valid"); }
           pendingImage = null;
           document.getElementById("categoryImagePreviewRow").style.display = "none";
@@ -146,7 +150,7 @@
           return;
         }
         if (urlInput) { urlInput.classList.remove("url-invalid"); urlInput.classList.add("url-valid"); }
-        if (feedback) { feedback.textContent = "Loading preview..."; feedback.className = "url-feedback valid"; }
+        if (feedback) { feedback.textContent = tr('loading_preview', 'Loading preview...'); feedback.className = "url-feedback valid"; }
         pendingImage = { type: "url", value: trimmed };
         document.getElementById("categoryImageFile").value = "";
         if (loading) loading.style.display = "flex";
@@ -156,13 +160,13 @@
           if (loading) loading.style.display = "none";
           if (error) error.style.display = "flex";
           preview.style.display = "none";
-          if (feedback) { feedback.textContent = "Preview unavailable here, but the URL will still be saved."; feedback.className = "url-feedback valid"; }
+          if (feedback) { feedback.textContent = tr('preview_unavailable', 'Preview unavailable here, but the URL will still be saved.'); feedback.className = "url-feedback valid"; }
         };
         preview.onload = function () {
           if (loading) loading.style.display = "none";
           if (error) error.style.display = "none";
           preview.style.display = "block";
-          if (feedback) { feedback.textContent = "Image preview loaded"; feedback.className = "url-feedback valid"; }
+          if (feedback) { feedback.textContent = tr('image_preview_loaded', 'Image preview loaded'); feedback.className = "url-feedback valid"; }
         };
         preview.src = trimmed;
         document.getElementById("categoryImagePreviewRow").style.display = "flex";
@@ -185,7 +189,7 @@
     var tbody = document.getElementById("categoriesTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Loading categories...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" class="table-empty">'+tr('loading_categories','Loading categories...')+'</td></tr>';
 
     try {
       var data = await window.AdminAPI.get("/admin/categories", {
@@ -202,7 +206,7 @@
       renderCategories(window.__categoriesCache);
       renderPagination();
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">Failed to load categories: ' + window.esc(error.message || "Server error") + '</td></tr>';
+      tbody.innerHTML = tr('failed_load_categories', 'Failed to load categories: {error}', { error: error.message || '' });
     }
   }
 
@@ -211,7 +215,7 @@
     if (!tbody) return;
 
     if (!categories.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">No categories found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="table-empty">'+tr('no_categories','No categories found.')+'</td></tr>';
       return;
     }
 
@@ -225,15 +229,15 @@
         "<tr>" +
         '<td><strong>' + window.esc(categoryName(cat)) + '</strong><br><small class="table-muted">' + window.esc(icon) + badges + '</small></td>' +
         '<td><strong>' + Number(cat.itemCount || 0) + '</strong>' + (Number(cat.itemCount || 0) === 0 ? '<br><small class="table-muted">No foods yet</small>' : '') + '</td>' +
-        '<td>' + (isActive ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-danger">Inactive</span>') + '</td>' +
+        '<td>' + (isActive ? '<span class="badge badge-success">' + tr('active', 'Active') + '</span>' : '<span class="badge badge-danger">' + tr('inactive', 'Inactive') + '</span>') + '</td>' +
         '<td>' + window.esc(categoryDescription(cat) || "-") + '</td>' +
         '<td>' + window.AdminAPI.formatDate(cat.createdAt) + '</td>' +
         '<td>' +
         '<div class="table-actions">' +
-          '<button class="action-btn" data-action="view" data-id="' + window.esc(cat.id) + '" title="View category"><i class="fa-solid fa-eye"></i></button>' +
-          '<button class="action-btn" data-action="edit" data-id="' + window.esc(cat.id) + '" title="Edit category"><i class="fa-solid fa-pen"></i></button>' +
-          '<button class="action-btn" data-action="toggle" data-id="' + window.esc(cat.id) + '" title="' + (isActive ? "Deactivate" : "Activate") + '"><i class="fa-solid ' + (isActive ? "fa-toggle-on" : "fa-toggle-off") + '"></i></button>' +
-          '<button class="action-btn danger" data-action="delete" data-id="' + window.esc(cat.id) + '" title="Delete category"><i class="fa-solid fa-trash"></i></button>' +
+          '<button class="action-btn" data-action="view" data-id="' + window.esc(cat.id) + '" title="' + tr('view_details', 'View details') + '"><i class="fa-solid fa-eye"></i></button>' +
+          '<button class="action-btn" data-action="edit" data-id="' + window.esc(cat.id) + '" title="' + tr('edit_category', 'Edit category') + '"><i class="fa-solid fa-pen"></i></button>' +
+          '<button class="action-btn" data-action="toggle" data-id="' + window.esc(cat.id) + '" title="' + (isActive ? tr('deactivate', 'Deactivate') : tr('activate', 'Activate')) + '"><i class="fa-solid ' + (isActive ? "fa-toggle-on" : "fa-toggle-off") + '"></i></button>' +
+          '<button class="action-btn danger" data-action="delete" data-id="' + window.esc(cat.id) + '" title="' + tr('delete_category', 'Delete category') + '"><i class="fa-solid fa-trash"></i></button>' +
         '</div>' +
         '</td>' +
         '</tr>'
@@ -246,7 +250,7 @@
     var prevBtn = document.getElementById("prevPageBtn");
     var nextBtn = document.getElementById("nextPageBtn");
 
-    if (info) info.textContent = "Page " + state.page + " of " + Math.max(state.pages, 1) + " (" + state.total + " categories)";
+    if (info) info.textContent = tr('page_of_categories', 'Page {page} of {pages} ({total} categories)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prevBtn) prevBtn.disabled = state.page <= 1;
     if (nextBtn) nextBtn.disabled = state.page >= state.pages;
   }
@@ -263,8 +267,8 @@
     var form = document.getElementById("categoryForm");
     if (form) form.reset();
     document.getElementById("categoryId").value = "";
-    document.getElementById("categoryModalTitle").textContent = "Add New Category";
-    document.getElementById("saveCategoryBtn").textContent = "Save Category";
+    document.getElementById("categoryModalTitle").textContent = tr('admin_add_new_category', 'Add New Category');
+    document.getElementById("saveCategoryBtn").textContent = tr('admin_save_category', 'Save Category');
     document.getElementById("categoryIsActive").checked = true;
     document.getElementById("categoryIsFeatured").checked = false;
     document.getElementById("categoryShowOnHomepage").checked = false;
@@ -322,8 +326,8 @@
       document.getElementById("categoryImagePreviewRow").style.display = "flex";
     }
 
-    document.getElementById("categoryModalTitle").textContent = "Edit Category";
-    document.getElementById("saveCategoryBtn").textContent = "Update Category";
+    document.getElementById("categoryModalTitle").textContent = tr('admin_edit_category', 'Edit Category');
+    document.getElementById("saveCategoryBtn").textContent = tr('admin_update_category', 'Update Category');
     openModal("categoryModal");
   }
 
@@ -360,7 +364,7 @@
     }
 
     if (!payload.name) {
-      if (window.AdminToast) window.AdminToast.error("Category name is required");
+      if (window.AdminToast) window.AdminToast.error(tr('category_name_required', 'Category name is required'));
       return;
     }
 
@@ -371,10 +375,10 @@
         await window.AdminAPI.put("/admin/categories/" + encodeURIComponent(id), payload);
       }
       closeModal("categoryModal");
-      if (window.AdminToast) window.AdminToast.success("Category saved successfully");
+      if (window.AdminToast) window.AdminToast.success(tr('category_saved', 'Category saved successfully'));
       loadCategories();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to save category");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_save_category', 'Failed to save category'));
     }
   }
 
@@ -387,24 +391,24 @@
 
     try {
       await window.AdminAPI.patch("/admin/categories/" + encodeURIComponent(category.id) + "/status", { isActive: nextStatus });
-      if (window.AdminToast) window.AdminToast.success(nextStatus ? "Category activated" : "Category deactivated");
+      if (window.AdminToast) window.AdminToast.success(nextStatus ? tr('category_activated', 'Category activated') : tr('category_deactivated', 'Category deactivated'));
       loadCategories();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to update category status");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_update_category_status', 'Failed to update category status'));
     }
   }
 
   async function deleteCategory(category) {
     if (!category) return;
-    if (!window.confirm('Delete category "' + categoryName(category) + '"? This action cannot be undone.')) return;
+    if (!window.confirm(tr('admin_delete_category_confirm', 'Delete category "{name}"? This action cannot be undone.', { name: categoryName(category) }))) return;
 
     try {
       await window.AdminAPI.del("/admin/categories/" + encodeURIComponent(category.id));
-      if (window.AdminToast) window.AdminToast.success("Category deleted successfully");
+      if (window.AdminToast) window.AdminToast.success(tr('category_deleted', 'Category deleted successfully'));
       if (state.total === 1 && state.page > 1) state.page--;
       loadCategories();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to delete category");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_delete_category', 'Failed to delete category'));
     }
   }
 
@@ -513,7 +517,7 @@
           category = await findCategoryById(id);
         }
         if (!category) {
-          if (window.AdminToast) window.AdminToast.error("Category not found");
+          if (window.AdminToast) window.AdminToast.error(tr('category_not_found', 'Category not found'));
           return;
         }
 
@@ -522,14 +526,14 @@
           var cat = details.category || category;
           document.getElementById("categoryDetailIcon").textContent = cat.icon || "🍽️";
           document.getElementById("categoryDetailName").textContent = categoryName(cat);
-          document.getElementById("categoryDetailDescription").textContent = categoryDescription(cat) || "No description";
+          document.getElementById("categoryDetailDescription").textContent = categoryDescription(cat) || tr('no_description', 'No description');
           document.getElementById("categoryDetailId").textContent = cat.id || "-";
           document.getElementById("categoryDetailSlug").textContent = cat.slug || cat.id || "-";
-          document.getElementById("categoryDetailStatus").textContent = cat.isActive ? "Active" : "Inactive";
+          document.getElementById("categoryDetailStatus").textContent = cat.isActive ? tr('active', 'Active') : tr('inactive', 'Inactive');
           document.getElementById("categoryDetailCount").textContent = (details.foods || []).length;
           document.getElementById("categoryDetailSortOrder").textContent = cat.sortOrder || 0;
-          document.getElementById("categoryDetailFeatured").textContent = cat.isFeatured ? "Yes" : "No";
-          document.getElementById("categoryDetailHomepage").textContent = cat.showOnHomepage ? "Yes" : "No";
+          document.getElementById("categoryDetailFeatured").textContent = cat.isFeatured ? tr('yes', 'Yes') : tr('no', 'No');
+          document.getElementById("categoryDetailHomepage").textContent = cat.showOnHomepage ? tr('yes', 'Yes') : tr('no', 'No');
           document.getElementById("categoryDetailAvailTime").textContent = formatTimeRange(cat.availabilityTime);
           document.getElementById("categoryDetailNotes").textContent = cat.notes || "—";
           document.getElementById("categoryDetailCreated").textContent = window.AdminAPI.formatDate(cat.createdAt);

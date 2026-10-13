@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="delivery_staff_sidebar">Delivery Staff - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+
+    <!-- Shared Theme -->
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+
+    <style>
+        /* Per-rider delivery orders modal */
+        .staff-orders-meta {
+            font-size: 0.9rem;
+            color: #475569;
+            margin-bottom: 14px;
+        }
+        .staff-orders-filters {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 14px;
+        }
+        .staff-orders-filters label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: #64748b;
+        }
+        .staff-orders-filters .form-control { max-width: 220px; }
+        .staff-orders-meta strong { color: #0f172a; }
+        [data-theme="dark"] .staff-orders-meta { color: #94a3b8; }
+        [data-theme="dark"] .staff-orders-meta strong { color: #f1f5f9; }
+        [data-theme="dark"] .staff-orders-filters label { color: #94a3b8; }
+    </style>
+</head>
+
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="delivery_staff_sidebar">Delivery Staff</h1>
+                    <p class="subtitle">Manage delivery staff for your cafeteria.</p>
+                </div>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-primary" id="addDeliveryStaffBtn" data-i18n="mgr_staff_add">
+                        <i class="fa-solid fa-plus"></i> <span data-i18n="mgr_staff_create">Add Delivery Staff</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Delivery Staff Table -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title" data-i18n="delivery_staff_management">Staff Management</h3>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="admin-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="mgr_staff_col_name">Full Name</th>
+                                    <th data-i18n="mgr_staff_col_phone">Phone</th>
+                                    <th data-i18n="mgr_staff_col_email">Email</th>
+                                    <th data-i18n="mgr_staff_col_username">Username</th>
+                                    <th data-i18n="mgr_staff_col_status">Status</th>
+                                    <th data-i18n="mgr_staff_col_active">Current Delivery</th>
+                                    <th data-i18n="mgr_staff_col_actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deliveryStaffTableBody">
+                                <tr><td colspan="7" class="table-empty" data-i18n="mgr_staff_loading">Loading delivery staff...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Alert for errors -->
+            <div class="alert alert-danger" id="deliveryStaffError" style="display:none;"></div>
+        </main>
+    </div>
+
+    <!-- ADD DELIVERY STAFF MODAL -->
+    <div class="modal-overlay" id="addDeliveryStaffModal">
+        <div class="modal" style="max-width:560px;">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="mgr_staff_modal_title">Add Delivery Staff</h3>
+                <button class="modal-close" data-close-modal="addDeliveryStaffModal" aria-label="Close">&times;</button>
+            </div>
+            <form id="addDeliveryStaffForm" novalidate>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="staffName" class="form-label">
+                                <span data-i18n="mgr_staff_label_name">Full Name</span> <span class="required">*</span>
+                            </label>
+                            <input type="text" name="name" id="staffName" class="form-control" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffPhone" class="form-label">
+                                <span data-i18n="mgr_staff_label_phone">Phone</span> <span class="required">*</span>
+                            </label>
+                            <input type="tel" name="phone" id="staffPhone" class="form-control"
+                                   placeholder="09XXXXXXXX or +2519XXXXXXXX" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffEmail" class="form-label">
+                                <span data-i18n="mgr_staff_label_email">Email</span> <span class="required">*</span>
+                            </label>
+                            <input type="email" name="email" id="staffEmail" class="form-control" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffUsername" class="form-label" data-i18n="mgr_staff_label_username">Username</label>
+                            <input type="text" name="username" id="staffUsername" class="form-control"
+                                   pattern="[a-zA-Z0-9_]+" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="staffPassword" class="form-label">
+                                <span data-i18n="mgr_staff_label_password">Password</span> <span class="required">*</span>
+                            </label>
+                            <div class="input-wrapper">
+                                <input type="password" name="password" id="staffPassword" class="form-control password-input"
+                                       autocomplete="new-password" required>
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="staffPassword" title="Show password"></i>
+                            </div>
+                            <small class="form-text" data-i18n="mgr_staff_password_hint">
+                                At least 8 characters, with upper and lower case letters, a number and a symbol.
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffConfirmPassword" class="form-label">
+                                <span data-i18n="mgr_staff_label_confirm">Confirm Password</span> <span class="required">*</span>
+                            </label>
+                            <div class="input-wrapper">
+                                <input type="password" name="confirmPassword" id="staffConfirmPassword"
+                                       class="form-control password-input" autocomplete="new-password" required>
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="staffConfirmPassword" title="Show password"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="alert alert-danger" id="addDeliveryStaffError" style="display:none;margin-top:12px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="addDeliveryStaffModal"
+                        data-i18n="mgr_staff_cancel">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="createDeliveryStaffBtn" data-i18n="mgr_staff_create">
+                    <i class="fa-solid fa-check"></i> <span data-i18n="mgr_staff_create">Create Delivery Staff</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- STAFF DELIVERY ORDERS MODAL -->
+    <div class="modal-overlay" id="staffOrdersModal">
+        <div class="modal modal-lg">
+            <div class="modal-header">
+                <h3 class="modal-title">
+                    <i class="fa-solid fa-boxes-stacked"></i>
+                    <span data-i18n="mgr_staff_orders_title">Delivery Orders</span>
+                </h3>
+                <button class="modal-close" data-close-modal="staffOrdersModal" aria-label="Close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="staff-orders-meta" id="staffOrdersMeta"></div>
+
+                <div class="staff-orders-filters">
+                    <label for="staffOrdersStatus" data-i18n="order_status">Status</label>
+                    <select id="staffOrdersStatus" class="form-control">
+                        <option value="active" data-i18n="delivery_filter_all_active">All Active</option>
+                        <option value="all" data-i18n="delivery_filter_all">All</option>
+                        <option value="completed" data-i18n="status_completed">Completed</option>
+                        <option value="failed" data-i18n="status_failed">Failed</option>
+                        <option value="cancelled" data-i18n="status_cancelled">Cancelled</option>
+                    </select>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="admin-table mb-0">
+                        <thead>
+                            <tr>
+                                <th data-i18n="manager_col_order_id">Order ID</th>
+                                <th data-i18n="manager_col_customer">Customer</th>
+                                <th data-i18n="admin_order_items">Items</th>
+                                <th data-i18n="manager_col_amount">Amount</th>
+                                <th data-i18n="manager_col_status">Status</th>
+                                <th data-i18n="manager_col_date">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="staffOrdersTableBody">
+                            <tr><td colspan="6" class="table-empty" data-i18n="mgr_staff_orders_loading">Loading delivery orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="staffOrdersModal"
+                        data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <!-- Socket.IO client: lets the Delivery Staff page receive live updates -->
+    <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/manager-delivery-staff.js"></script>
+    <script src="../../js/dashboard-deliveries.js"></script>
+</body>
+</html>

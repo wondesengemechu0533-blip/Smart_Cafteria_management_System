@@ -36,7 +36,7 @@ exports.getAllCategories = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: categoriesWithCount.length,
-      categories: categoriesWithCount
+      categories: categoriesWithCount,
     });
   } catch (error) {
     console.error('❌ Get All Categories Error:', error);
@@ -77,7 +77,7 @@ exports.getCategoryById = async (req, res) => {
         notes: category.notes,
         createdAt: category.createdAt,
         updatedAt: category.updatedAt,
-      }
+      },
     });
   } catch (error) {
     console.error('❌ Get Category By ID Error:', error);
@@ -93,7 +93,20 @@ exports.getCategoryById = async (req, res) => {
  */
 exports.createCategory = async (req, res) => {
   try {
-    const { id, name, slug, icon, imageUrl, description, isActive, sortOrder, isFeatured, showOnHomepage, availabilityTime, notes } = req.body;
+    const {
+      id,
+      name,
+      slug,
+      icon,
+      imageUrl,
+      description,
+      isActive,
+      sortOrder,
+      isFeatured,
+      showOnHomepage,
+      availabilityTime,
+      notes,
+    } = req.body;
     if (!id || !name) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Category ID and name are required' });
     }
@@ -133,7 +146,7 @@ exports.createCategory = async (req, res) => {
         showOnHomepage: category.showOnHomepage,
         availabilityTime: category.availabilityTime,
         notes: category.notes,
-      }
+      },
     });
   } catch (error) {
     console.error('❌ Create Category Error:', error);
@@ -149,7 +162,19 @@ exports.createCategory = async (req, res) => {
  */
 exports.updateCategory = async (req, res) => {
   try {
-    const { name, slug, icon, imageUrl, description, isActive, sortOrder, isFeatured, showOnHomepage, availabilityTime, notes } = req.body;
+    const {
+      name,
+      slug,
+      icon,
+      imageUrl,
+      description,
+      isActive,
+      sortOrder,
+      isFeatured,
+      showOnHomepage,
+      availabilityTime,
+      notes,
+    } = req.body;
     const category = await Category.findOne({ id: req.params.id });
     if (!category) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Category not found' });
@@ -161,7 +186,10 @@ exports.updateCategory = async (req, res) => {
     if (icon) category.icon = icon;
     if (imageUrl !== undefined) category.imageUrl = imageUrl;
     if (description) {
-      category.description = { en: description.en || category.description.en, am: description.am || category.description.am };
+      category.description = {
+        en: description.en || category.description.en,
+        am: description.am || category.description.am,
+      };
     }
     if (isActive !== undefined) category.isActive = isActive;
     if (sortOrder !== undefined) category.sortOrder = sortOrder;
@@ -186,7 +214,7 @@ exports.updateCategory = async (req, res) => {
         showOnHomepage: category.showOnHomepage,
         availabilityTime: category.availabilityTime,
         notes: category.notes,
-      }
+      },
     });
   } catch (error) {
     console.error('❌ Update Category Error:', error);
@@ -209,7 +237,7 @@ exports.deleteCategory = async (req, res) => {
     if (itemCount > 0) {
       return res.status(HTTP_STATUS.CONFLICT).json({
         success: false,
-        error: `Cannot delete category with ${itemCount} menu items. Remove items first.`
+        error: `Cannot delete category with ${itemCount} menu items. Remove items first.`,
       });
     }
     await Category.findOneAndDelete({ id: req.params.id });
@@ -232,17 +260,13 @@ exports.toggleCategoryStatus = async (req, res) => {
     if (isActive === undefined) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Status is required' });
     }
-    const category = await Category.findOneAndUpdate(
-      { id: req.params.id },
-      { isActive },
-      { new: true }
-    );
+    const category = await Category.findOneAndUpdate({ id: req.params.id }, { isActive }, { new: true });
     if (!category) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Category not found' });
     }
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      category: { id: category.id, name: category.name, icon: category.icon, isActive: category.isActive }
+      category: { id: category.id, name: category.name, icon: category.icon, isActive: category.isActive },
     });
   } catch (error) {
     console.error('❌ Toggle Category Status Error:', error);

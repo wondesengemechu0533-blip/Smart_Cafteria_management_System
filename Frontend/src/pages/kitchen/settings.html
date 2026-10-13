@@ -172,6 +172,7 @@
         [data-theme="dark"] .dropdown-divider { background-color: #334155; }
     </style>
     <script src="../../js/config.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
     <script src="../../js/theme.js?v=20260907"></script>
 </head>
 <body class="admin-body">
@@ -183,7 +184,7 @@
             </button>
             <div class="kds-header-title">
                 <i class="fa-solid fa-fire-burner fa-xl"></i>
-                <h1>Kitchen Display System</h1>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
                 <span class="kds-badge" id="stationBadge">Station 1</span>
             </div>
         </div>
@@ -197,10 +198,10 @@
             <div class="user-dropdown">
                 <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
                     <i class="fa-solid fa-user-circle"></i>
-                    <span id="userName">Profile</span>
+                    <span data-i18n="profile" id="userName">Profile</span>
                 </button>
                 <div class="dropdown-menu-custom" id="userDropdownMenu">
-                    <a href="#" onclick="viewProfile()"><i class="fa-solid fa-id-card"></i> My Profile</a>
+                    <a data-i18n="nav_profile" href="#" onclick="viewProfile()"><i class="fa-solid fa-id-card"></i> My Profile</a>
                     <a href="#" onclick="viewCurrentShift()"><i class="fa-solid fa-clock"></i> Current Shift</a>
                 </div>
             </div>
@@ -213,30 +214,33 @@
         <aside class="kds-sidebar" id="kdsSidebar">
             <div class="kds-sidebar-brand">
                 <i class="fa-solid fa-fire-burner"></i>
-                <span>Kitchen Menu</span>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-group">
                     <span class="sidebar-group-title">Navigation</span>
-                    <a href="dashboard.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/dashboard.html" class="sidebar-link">
                         <i class="fa-solid fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="orders.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link">
                         <i class="fa-solid fa-list-check"></i> Full Queue
                     </a>
-                    <a href="availability.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link">
                         <i class="fa-solid fa-burger"></i> Availability
                     </a>
-                    <a href="stock-alerts.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
                     </a>
-                    <a href="notifications.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
+                    </a>
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
-                    <a href="schedule.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
                         <i class="fa-solid fa-clock"></i> Preparation Schedule
                     </a>
-                    <a href="settings.html" class="sidebar-link active">
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link active">
                         <i class="fa-solid fa-gear"></i> Settings
                     </a>
                 </div>
@@ -253,7 +257,7 @@
 
     <div class="toast" id="toast"></div>
 
-    <script type="module" src="../../js/utils/i18n.js?v=20260907"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261013b"></script>
     <script type="module" src="../../js/api.js?v=20260907"></script>
     <script type="module" src="../../js/auth.js?v=20260907"></script>
     <script type="module" src="./settings.js"></script>
@@ -296,7 +300,7 @@
             }).then(r => r.json()).then(d => {
                 if (d.shift) {
                     const s = d.shift;
-                    alert(`Current Shift:\nType: ${s.shiftType}\nStart: ${new Date(s.startTime).toLocaleString()}\nEnd: ${new Date(s.endTime).toLocaleString()}\nStatus: ${s.status.toUpperCase()}\n${s.clockInTime ? 'Clocked In: ' + new Date(s.clockInTime).toLocaleTimeString() : 'Not clocked in'}`);
+                    alert(`Current Shift:\nType: ${s.shiftType}\nStart: ${new Date(s.startTime).toLocaleString()}\nEnd: ${new Date(s.endTime).toLocaleString()}\nStatus: ${(window.translateStatus || (v => String(v).toUpperCase()))(s.status)}\n${s.clockInTime ? 'Clocked In: ' + new Date(s.clockInTime).toLocaleTimeString() : 'Not clocked in'}`);
                 } else { alert('No active shift scheduled'); }
             }).catch(() => alert('Could not load shift information'));
             document.getElementById('userDropdownMenu').classList.remove('active');

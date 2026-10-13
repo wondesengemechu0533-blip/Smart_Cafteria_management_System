@@ -1,35 +1,56 @@
 {
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "app.js",
-  "directories": {
-    "test": "tests"
-  },
-  "scripts": {
-    "test": "node --check src/controllers/chapa.controller.js",
-    "start": "node server.js",
-    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1",
-    "dev:nowatch": "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1 -NoWatch",
-    "seed": "node src/utils/seeder.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
-  "dependencies": {
-    "bcryptjs": "^3.0.3",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
-    "express-rate-limit": "^7.5.1",
-    "helmet": "^7.2.0",
-    "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.9.3",
-    "socket.io": "^4.8.3"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.14",
-    "socket.io-client": "^4.8.3"
-  }
+    "name":  "backend",
+    "version":  "1.0.0",
+    "description":  "",
+    "main":  "app.js",
+    "directories":  {
+                        "test":  "tests"
+                    },
+    "scripts":  {
+                    "test":  "node verify-delivery-domain.js \u0026\u0026 node verify-delivery-issues.js \u0026\u0026 node verify-tracking-display.js \u0026\u0026 node verify-delivery-issue-routes.js && node verify-delivery-stage-gating.js \u0026\u0026 node verify-delivery-filter-tabs.js \u0026\u0026 node verify-delivery-notification-filters.js \u0026\u0026 node verify-staff-orders-display.js \u0026\u0026 node verify-db-resilience.js \u0026\u0026 node verify-cashier-payment.js \u0026\u0026 node verify-delivery-status-labels.js \u0026\u0026 node verify-manager-stage-actions.js && node verify-kitchen-send-to-delivery.js && node tests/kitchen-queue-render.test.js && node tests/delivery-gps-routes.smoke.js && node tests/delivery-tracking-i18n.smoke.js && node tests/kitchen-dashboard-cancelled.test.js",
+                    "start":  "node server.js",
+                    "verify:delivery":  "node verify-delivery-domain.js",
+                    "verify:issues":  "node verify-delivery-issues.js",
+                    "verify:tracking":  "node verify-tracking-display.js",
+                    "verify:routes":  "node verify-delivery-issue-routes.js",
+                    "verify:resilience":  "node verify-db-resilience.js",
+                    "verify:cashier":  "node verify-cashier-payment.js",
+                    "verify:status-labels":  "node verify-delivery-status-labels.js",
+                    "verify:manager-actions":  "node verify-manager-stage-actions.js",
+                    "verify:stage-gating":  "node verify-delivery-stage-gating.js \u0026\u0026 node verify-delivery-filter-tabs.js \u0026\u0026 node verify-delivery-notification-filters.js",
+                    "verify:staff-orders":  "node verify-staff-orders-display.js",
+                    "dev":  "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1",
+                    "dev:nowatch":  "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1 -NoWatch",
+                    "seed":  "node src/utils/seeder.js",
+                    "verify:assign-flow":  "node verify-assignment-flow.js",
+                    "verify:kitchen-flow":  "node verify-kitchen-to-manager.js",
+                    "verify:lifecycle":  "node verify-order-lifecycle.js",
+                    "verify:manager-http":  "node verify-manager-http.js",
+                    "verify:assign-socket":  "node verify-assign-socket.js",
+                    "verify:dashboard-assign":  "node verify-dashboard-assign.js",
+                    "verify:dashboard-ui":  "node verify-dashboard-deliveries-ui.js",
+                    "verify:send-to-delivery":  "node verify-kitchen-send-to-delivery.js"
+                },
+    "keywords":  [
+
+                 ],
+    "author":  "",
+    "license":  "ISC",
+    "type":  "commonjs",
+    "dependencies":  {
+                         "bcryptjs":  "^3.0.3",
+                         "cors":  "^2.8.6",
+                         "dotenv":  "^17.4.2",
+                         "express":  "^5.2.1",
+                         "express-rate-limit":  "^7.5.1",
+                         "helmet":  "^7.2.0",
+                         "jsonwebtoken":  "^9.0.3",
+                         "mongoose":  "^9.9.3",
+                         "multer":  "^2.4.0",
+                         "socket.io":  "^4.8.3"
+                     },
+    "devDependencies":  {
+                            "nodemon":  "^3.1.14",
+                            "socket.io-client":  "^4.8.3"
+                        }
 }

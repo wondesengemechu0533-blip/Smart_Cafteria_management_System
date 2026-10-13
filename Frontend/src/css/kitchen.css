@@ -673,3 +673,174 @@ display: flex;
   75% { content: '...'; }
   100% { content: ''; }
 }
+
+
+/* ===== Persistent unread order-event panel (server-backed) =====
+/* Shared by dashboard.html and orders.html so both kitchen pages show the
+   same newest-first, server-backed list of unacknowledged order events. */
+        /* ===== Persistent unread order-event panel (server-backed) ===== */
+        .kds-notif-panel {
+            margin: 0 0 20px;
+            border: 1px solid #e2e8f0;
+            border-left: 6px solid #0ea5e9;
+            border-radius: 12px;
+            background: #f0f9ff;
+            padding: 12px 16px;
+        }
+        .kds-notif-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .kds-notif-heading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+            font-size: 0.98rem;
+            font-weight: 800;
+            color: #075985;
+        }
+        .kds-notif-count {
+            background: #dc2626;
+            color: #fff;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            min-width: 22px;
+            text-align: center;
+            padding: 2px 8px;
+        }
+        .kds-notif-count[hidden] { display: none !important; }
+        .kds-notif-all {
+            margin-left: auto;
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: #0369a1;
+            text-decoration: none;
+        }
+        .kds-notif-all:hover { text-decoration: underline; }
+        .kds-notif-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .kds-notif-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #fff;
+            border: 1px solid #bae6fd;
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+        }
+        .kds-notif-row:hover { border-color: #38bdf8; background: #f8fdff; }
+        .kds-notif-row:focus-visible {
+            outline: 2px solid #0ea5e9;
+            outline-offset: 2px;
+        }
+        .kds-notif-row-cancelled {
+            border-color: #fecaca;
+            background: #fef2f2;
+        }
+        .kds-notif-row-cancelled:hover { background: #fee2e2; }
+        .kds-notif-icon {
+            margin-top: 2px;
+            color: #0284c7;
+        }
+        .kds-notif-row-cancelled .kds-notif-icon { color: #dc2626; }
+        .kds-notif-body { flex: 1 1 240px; min-width: 0; }
+        .kds-notif-title {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+            font-weight: 800;
+            font-size: 0.92rem;
+            color: #0c4a6e;
+        }
+        .kds-notif-row-cancelled .kds-notif-title { color: #991b1b; }
+        .kds-notif-order { font-weight: 700; color: #0369a1; }
+        .kds-notif-when {
+            font-weight: 600;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+        .kds-notif-message {
+            font-size: 0.86rem;
+            color: #334155;
+            overflow-wrap: anywhere;
+        }
+        .kds-notif-reason {
+            margin-top: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #991b1b;
+        }
+        .kds-notif-actions {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .kds-notif-btn {
+            border: 1px solid #7dd3fc;
+            background: #f0f9ff;
+            color: #0369a1;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            padding: 5px 13px;
+            cursor: pointer;
+        }
+        .kds-notif-btn:hover { background: #e0f2fe; }
+        .kds-notif-btn-ack {
+            border-color: #fdba74;
+            background: #fff7ed;
+            color: #c2410c;
+        }
+        .kds-notif-btn-ack:hover { background: #ffedd5; }
+        .kds-notif-empty {
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            padding: 6px 2px;
+        }
+        .kds-new-order-reason {
+            margin-left: 10px;
+            font-weight: 700;
+            color: #b91c1c;
+        }
+        .kds-new-order-item-cancelled {
+            background: #fef2f2;
+            border-color: #fecaca;
+        }
+        [data-theme="dark"] .kds-notif-panel {
+            background: #0c2233;
+            border-color: #1e3a5f;
+            border-left-color: #0ea5e9;
+        }
+        [data-theme="dark"] .kds-notif-heading { color: #7dd3fc; }
+        [data-theme="dark"] .kds-notif-row {
+            background: #1e293b;
+            border-color: #1e3a5f;
+        }
+        [data-theme="dark"] .kds-notif-row-cancelled {
+            background: #2a1216;
+            border-color: #7f1d1d;
+        }
+        [data-theme="dark"] .kds-notif-title { color: #bae6fd; }
+        [data-theme="dark"] .kds-notif-message { color: #cbd5e1; }
+        [data-theme="dark"] .kds-notif-btn {
+            background: #0c2233;
+            color: #7dd3fc;
+            border-color: #1e3a5f;
+        }
+        [data-theme="dark"] .kds-notif-order { color: #38bdf8; }
+

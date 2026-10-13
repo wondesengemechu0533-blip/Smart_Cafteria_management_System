@@ -35,7 +35,7 @@
                title="Back to Home Page">
 
                 <i class="fa-solid fa-arrow-left"></i>
-                <span>Home</span>
+                <span data-i18n="home">Home</span>
 
             </a>
 
@@ -57,6 +57,7 @@
             <input
                 type="text"
                 id="menu-search-input"
+                data-i18n-placeholder="search_placeholder_menu"
                 placeholder="Search food, coffee, cakes..."
             >
 
@@ -139,9 +140,9 @@
             </div>
 
             <!-- Logout (top-right) -->
-            <a href="../common/login.html" class="nav-link-item nav-logout logout-link" title="Logout">
+            <a href="../common/login.html" class="nav-link-item nav-logout logout-link" data-i18n-title="nav_logout">
                 <i class="fa-solid fa-right-from-bracket"></i>
-                <span>Logout</span>
+                <span data-i18n="logout">Logout</span>
             </a>
 
         </div>
@@ -164,11 +165,11 @@
 
         <div class="hero-content">
 
-            <h1>
+            <h1 data-i18n="menu_hero_title">
                 Ethiopian Food, Coffee & Pastry
             </h1> 
 
-            <p>
+            <p data-i18n="menu_hero_subtitle">
                 Authentic traditional meals, freshly brewed Ethiopian coffee,
                 and delicious bakery cakes.
             </p>
@@ -192,6 +193,7 @@
             <input
                 type="text"
                 id="mobile-search-input"
+                data-i18n-placeholder="search_placeholder_mobile"
                 placeholder="Search menu items..."
             >
 
@@ -247,6 +249,8 @@
 
                 <i class="fa-solid fa-leaf"></i>
                 Fasting Meals
+
+            </button>
 
             <!-- BEVERAGES -->
             <button
@@ -351,18 +355,19 @@
 
         <i class="fa-solid fa-utensils-slash"></i>
 
-        <h3>
+        <h3 data-i18n="no_results_title">
             No Food or Drink Items Found
         </h3>
 
-        <p>
+        <p data-i18n="no_results_subtitle">
             We couldn't find anything matching your search.
             Try searching for food, beverages, or snacks!
         </p>
 
         <button
             class="btn btn-secondary"
-            id="reset-search-btn">
+            id="reset-search-btn"
+            data-i18n="reset_filters">
 
             Reset Filters
 
@@ -405,15 +410,15 @@
 
         <div class="footer-links">
 
-            <a href="#">
+            <a href="#" data-i18n="footer_privacy">
                 Privacy Policy
             </a>
 
-            <a href="#">
+            <a href="#" data-i18n="footer_terms">
                 Terms of Service
             </a>
 
-            <a href="feedback.html">
+            <a href="feedback.html" data-i18n="feedback">
                 Feedback
             </a>
 
@@ -429,6 +434,7 @@
 ========================================================= -->
 <script src="../../js/config.js"></script>
 <script type="module" src="../../js/utils/i18n.js"></script>
+
 <script src="../../js/config.js"></script>
 <script type="module" src="../../js/customer-menu.js"></script>
 <script src="../../js/config.js"></script>

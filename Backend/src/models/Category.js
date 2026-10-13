@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * Category Schema - For menu categorization
@@ -27,12 +27,12 @@ const CategorySchema = new mongoose.Schema(
     },
     icon: {
       type: String,
-      default: "🍽️",
+      default: '🍽️',
     },
     imageUrl: { type: String, default: null },
     description: {
-      en: { type: String, default: "" },
-      am: { type: String, default: "" },
+      en: { type: String, default: '' },
+      am: { type: String, default: '' },
     },
     isActive: {
       type: Boolean,
@@ -52,12 +52,18 @@ const CategorySchema = new mongoose.Schema(
     },
     availabilityTime: {
       enabled: { type: Boolean, default: false },
-      startTime: { type: String, default: "" },
-      endTime: { type: String, default: "" },
+      startTime: { type: String, default: '' },
+      endTime: { type: String, default: '' },
     },
     notes: {
       type: String,
-      default: "",
+      default: '',
+    },
+    // Owning cafeteria (tenant). Stamped server-side on creation.
+    cafeteriaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cafeteria',
+      default: null,
     },
   },
   {
@@ -65,9 +71,11 @@ const CategorySchema = new mongoose.Schema(
   }
 );
 
+CategorySchema.index({ cafeteriaId: 1, sortOrder: 1 });
+
 // Get localized category name
-CategorySchema.methods.getLocalizedName = function (lang = "en") {
+CategorySchema.methods.getLocalizedName = function (lang = 'en') {
   return this.name[lang] || this.name.en || this.id;
 };
 
-module.exports = mongoose.model("Category", CategorySchema);
+module.exports = mongoose.model('Category', CategorySchema);

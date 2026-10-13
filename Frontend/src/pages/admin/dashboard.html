@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="admin_dashboard_page_title">Admin Dashboard - Smart Cafeteria</title>
+    <title data-i18n="admin_dashboard_page_title">System Admin Dashboard - Smart Cafeteria</title>
 
     <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
@@ -254,6 +254,75 @@
                     </div>
                 </div>
             </div>
+
+            <!-- DELIVERY ASSIGNMENT -->
+            <!-- Real data only: GET /api/v1/deliveries + /deliveries/staff, and
+                 PATCH /api/v1/deliveries/:id/assign. No mock rows, no second
+                 assignment system. -->
+            <div class="card mt-4" id="dashDeliveryCard">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h3 class="card-title" data-i18n="dash_delivery_assignment_title">
+                        <i class="fa-solid fa-truck-fast"></i> Delivery Assignment
+                    </h3>
+                    <div class="d-flex gap-2 align-items-center">
+                        <a href="deliveries.html" class="btn btn-sm btn-outline-primary" data-i18n="dash_delivery_all_orders">All Deliveries</a>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="dashDeliveryRefreshBtn">
+                            <i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <div class="row g-3 mb-3">
+                        <div class="col-6 col-md-3">
+                            <div class="metric-card">
+                                <span class="metric-label" data-i18n="dash_delivery_unassigned">Unassigned</span>
+                                <h2 class="metric-value" id="dashDeliveryUnassigned">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="metric-card">
+                                <span class="metric-label" data-i18n="dash_delivery_assigned_count">Assigned</span>
+                                <h2 class="metric-value" id="dashDeliveryAssigned">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="metric-card">
+                                <span class="metric-label" data-i18n="dash_delivery_active_count">Active Deliveries</span>
+                                <h2 class="metric-value" id="dashDeliveryActive">0</h2>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="metric-card">
+                                <span class="metric-label" data-i18n="dash_delivery_staff_count">Available Staff</span>
+                                <h2 class="metric-value" id="dashDeliveryStaff">0</h2>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger" id="dashDeliveryError" style="display:none;"></div>
+
+                    <div class="table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="admin_col_order_id">Order ID</th>
+                                    <th data-i18n="admin_col_customer">Customer</th>
+                                    <th data-i18n="dash_delivery_col_address">Delivery Address</th>
+                                    <th data-i18n="dash_delivery_col_items">Items</th>
+                                    <th data-i18n="admin_col_amount">Amount</th>
+                                    <th data-i18n="dash_delivery_col_status">Delivery Status</th>
+                                    <th data-i18n="dash_delivery_col_staff">Delivery Staff</th>
+                                    <th data-i18n="dash_delivery_col_actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashDeliveryTableBody">
+                                <tr><td colspan="8" class="table-empty" data-i18n="dash_delivery_loading">Loading delivery orders...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
@@ -264,11 +333,12 @@
 
     <!-- JavaScript Files -->
     <script src="../../js/config.js"></script>
-<script src="../../js/admin-api.js"></script>
+    <script src="../../js/admin-api.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/admin-layout.js"></script>
     <script src="../../js/admin-ui.js"></script>
     <script src="../../js/dashboard.js"></script>
+    <script src="../../js/dashboard-deliveries.js"></script>
 
     <script>
         // Page-specific initialization

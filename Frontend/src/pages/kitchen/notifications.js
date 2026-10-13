@@ -1,167 +1,97 @@
-import api from '../../js/api.js';
+/**
+ * Kitchen notification panel bootstrap.
+ *
+ * The panel itself is implemented once in ../../js/notification-center.js so the
+ * kitchen, admin and manager pages cannot drift apart. This file only wires the
+ * kitchen page's DOM (filters, toolbar buttons, toast) to that engine.
+ *
+ * The kitchen new-order alert/toast/banner/repeating-sound system is owned by
+ * ./kitchen.js and is intentionally untouched here.
+ */
+(function (window, document) {
+  'use strict';
 
-let allNotifications = [];
-let currentFilter = 'all';
-let pollInterval = null;
+  function tr(key, fallback) {
+    if (typeof window.tr === 'function') return window.tr(key, fallback);
+    return fallback;
+  }
 
-const notifList = document.getElementById('notifList');
-const emptyState = document.getElementById('emptyState');
-const markAllBtn = document.getElementById('markAllBtn');
-const sidebarBadge = document.getElementById('sidebarNotifBadge');
-const toastEl = document.getElementById('toast');
+  function showToast(message) {
+    var toast = document.getElementById('toast');
+    if (!toast) return;
+    toast.textContent = message;
+    toast.classList.add('show');
+    window.setTimeout(function () {
+      toast.classList.remove('show');
+    }, 3000);
+  }
 
-function showToast(msg) {
-    toastEl.textContent = msg;
-    toastEl.classList.add('show');
-    setTimeout(() => toastEl.classList.remove('show'), 3000);
-}
-
-function getTypeInfo(type) {
-    const map = {
-        order: { icon: 'fa-receipt', cls: 'order' },
-        preparation: { icon: 'fa-fire-burner', cls: 'preparation' },
-        stock: { icon: 'fa-triangle-exclamation', cls: 'stock' },
-        system: { icon: 'fa-cog', cls: 'system' },
-    };
-    return map[type] || { icon: 'fa-info-circle', cls: 'general' };
-}
-
-function timeAgo(dateStr) {
-    const seconds = Math.floor((Date.now() - new Date(dateStr)) / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return minutes + 'm ago';
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours + 'h ago';
-    const days = Math.floor(hours / 24);
-    return days + 'd ago';
-}
-
-function renderNotifications() {
-    let filtered = allNotifications;
-    if (currentFilter === 'unread') {
-        filtered = allNotifications.filter(n => !n.read);
+  function start() {
+    var NC = window.ScosNotifications;
+    if (!NC) {
+      console.error('notification-center.js failed to load');
+      return;
     }
 
-    if (filtered.length === 0) {
-        notifList.innerHTML = '';
-        emptyState.style.display = 'block';
-        return;
+    var panel = NC.mount({
+      list: 'notifList',
+      empty: 'emptyState',
+      filter: 'notifFilterTabs',
+      count: 'unreadCount',
+      onToast: showToast,
+      // Requirement: opening the panel must NOT change read state. Only a click
+      // on a single notification marks that one (and only that one) as read.
+      markViewedAsRead: false,
+      // New kitchen orders arrive over the `notification:new` socket event ...
+      realtime: true,
+      // ... and a 30s poll is the fallback when a socket frame is missed.
+      poll: true,
+      pollMs: 30000,
+      // Clicking a notification that has an order id opens that kitchen ticket.
+      ordersUrl: '/src/pages/kitchen/orders.html',
+    });
+
+    // Keep the sidebar badge current even outside the panel.
+    window.refreshNotificationBadge = NC.refreshBadge;
+    document.addEventListener('notification:refresh', NC.refreshBadge);
+    NC.refreshBadge();
+    NC.poll(30000);
+
+    // Toolbar
+    var markAllBtn = document.getElementById('markAllBtn');
+    if (markAllBtn) {
+      markAllBtn.addEventListener('click', function () {
+        panel.markAllRead();
+      });
     }
-    emptyState.style.display = 'none';
 
-    notifList.innerHTML = filtered.map(n => {
-        const info = getTypeInfo(n.type);
-        const readCls = n.read ? '' : ' unread';
-        const badgeCls = n.read ? 'read' : 'unread';
-        const badgeText = n.read ? 'Read' : 'Unread';
-        return `
-            <div class="notif-card${readCls}" data-id="${n._id}" onclick="window.handleNotifClick('${n._id}', event)">
-                <div class="notif-icon ${info.cls}">
-                    <i class="fa-solid ${info.icon}"></i>
-                </div>
-                <div class="notif-body">
-                    <div class="notif-title">${escapeHtml(n.title)}</div>
-                    <div class="notif-message">${escapeHtml(n.message)}</div>
-                    <div class="notif-meta">
-                        <span class="notif-time">${timeAgo(n.createdAt)}</span>
-                        <span class="notif-badge ${badgeCls}">${badgeText}</span>
-                    </div>
-                </div>
-                <button class="notif-delete" onclick="window.handleDeleteNotif('${n._id}', event)" title="Delete">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            </div>
-        `;
-    }).join('');
-}
-
-function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text || '';
-    return div.innerHTML;
-}
-
-async function fetchNotifications() {
-    try {
-        const data = await api.get('/notifications');
-        if (data.success) {
-            allNotifications = data.notifications || [];
-            renderNotifications();
-            updateBadge();
-        }
-    } catch (err) {
-        console.error('Failed to load notifications:', err);
+    var clearAllBtn = document.getElementById('clearAllBtn');
+    if (clearAllBtn) {
+      clearAllBtn.addEventListener('click', function () {
+        if (!window.confirm(tr('notif_clear_confirm', 'Clear all notifications?'))) return;
+        panel.clearAll();
+      });
     }
-}
 
-async function updateBadge() {
-    try {
-        const data = await api.get('/notifications/unread');
-        if (data.success) {
-            const count = data.count || 0;
-            if (count > 0) {
-                sidebarBadge.textContent = count > 99 ? '99+' : count;
-                sidebarBadge.style.display = 'inline';
-            } else {
-                sidebarBadge.style.display = 'none';
-            }
-        }
-    } catch (err) {
-        console.error('Failed to fetch unread count:', err);
+    // Filter tabs (delegated so re-renders cannot drop the handlers)
+    var tabs = document.getElementById('notifFilterTabs');
+    if (tabs) {
+      tabs.addEventListener('click', function (e) {
+        var tab = e.target.closest('[data-filter]');
+        if (!tab || !tabs.contains(tab)) return;
+        panel.setFilter(tab.getAttribute('data-filter'));
+      });
     }
-}
 
-window.handleNotifClick = async function (id, event) {
-    if (event.target.closest('.notif-delete')) return;
-    const notif = allNotifications.find(n => n._id === id);
-    if (notif && !notif.read) {
-        try {
-            await api.patch(`/notifications/${id}/read`);
-            notif.read = true;
-            renderNotifications();
-            updateBadge();
-        } catch (err) {
-            console.error('Failed to mark as read:', err);
-        }
-    }
-};
+    // Keep the relative timestamps ("2 min ago") fresh.
+    window.setInterval(function () {
+      panel.render();
+    }, 60000);
+  }
 
-window.handleDeleteNotif = async function (id, event) {
-    event.stopPropagation();
-    try {
-        await api.delete(`/notifications/${id}`);
-        allNotifications = allNotifications.filter(n => n._id !== id);
-        renderNotifications();
-        updateBadge();
-        showToast('Notification deleted');
-    } catch (err) {
-        console.error('Failed to delete notification:', err);
-    }
-};
-
-window.markAllRead = async function () {
-    try {
-        await api.patch('/notifications/read-all');
-        allNotifications.forEach(n => n.read = true);
-        renderNotifications();
-        updateBadge();
-        showToast('All notifications marked as read');
-    } catch (err) {
-        console.error('Failed to mark all read:', err);
-    }
-};
-
-window.setFilter = function (filter, btn) {
-    currentFilter = filter;
-    document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    renderNotifications();
-};
-
-fetchNotifications();
-updateBadge();
-pollInterval = setInterval(() => {
-    fetchNotifications();
-    updateBadge();
-}, 30000);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})(window, document);

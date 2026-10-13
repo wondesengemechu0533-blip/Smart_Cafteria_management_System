@@ -120,6 +120,50 @@ function persistStatus(orderId, status) {
 }
 
 /**
+ * Localized customer-facing delivery message with the exact spec wording as
+ * the fallback, so the tracker is correct in both languages even before the
+ * i18n bundle loads the new keys.
+ */
+function trackText(key, fallback) {
+    try {
+        if (typeof window.getText === "function") {
+            const s = window.getText(key);
+            if (s && s !== key) return s;
+        }
+    } catch (e) {}
+    return fallback;
+}
+
+function trackReadyForDeliveryMsg() {
+    return trackText("track_ready_for_delivery", "🚚 Your order is ready and has been sent for delivery.");
+}
+
+function trackAssignedMsg() {
+    return trackText("track_assigned_rider", "🚚 Delivery staff has been assigned to your order.");
+}
+
+function trackOutForDeliveryMsg() {
+    return trackText("track_out_for_delivery", "🛵 Your order is out for delivery.");
+}
+
+/**
+ * Name of the rider currently assigned to the tracked order (if any).
+ * Fed by full order snapshots and by assignment socket frames; it lets the
+ * tracker show "delivery staff assigned" after a refresh too, not just on
+ * the live event.
+ */
+let assignedRiderName = null;
+
+function rememberAssignee(order) {
+    if (!order) return;
+    const staff = order.deliveryStaffAssigned;
+    const name = staff && (staff.name || staff.id || staff);
+    const id = typeof staff === "string" ? staff : (staff && (staff.id || staff._id));
+    if (name && typeof name === "string") assignedRiderName = name;
+    else if (id) assignedRiderName = assignedRiderName || "assigned";
+}
+
+/**
  * Update the status heading/badge/subtext based on the order status.
  */
 function setStatusText(status) {
@@ -134,8 +178,10 @@ function setStatusText(status) {
         pending: ["Order Received", "We have sent your order directly to the kitchen counter."],
         preparing: ["Preparing", "The kitchen is preparing your order. Please wait."],
         ready: ["Ready", "Your order is " + (currentOrderType === "delivery" ? "ready for delivery!" : "ready for pickup!")],
-        picked_up: ["Picked Up", "Your order has been picked up by our delivery rider."],
-        out_for_delivery: ["Out for Delivery", "Your order is out for delivery. Our delivery person is on the way!"],
+        ready_for_delivery: ["Sent for Delivery", trackReadyForDeliveryMsg()],
+        picked_up: ["Picked Up", "🚚 Your order has been picked up and is on its way to you."],
+        out_for_delivery: ["Out for Delivery", trackOutForDeliveryMsg()],
+        arrived: ["Arrived", "Driver has arrived near your location."],
         delivered: ["Delivered", "Your order has been delivered. Enjoy your meal!"],
         served: ["Served", "Your order has been served."],
         completed: ["Completed", "Your order has been completed."],
@@ -147,7 +193,15 @@ function setStatusText(status) {
     const entry = map[s] || (s === "received" ? map.received : undefined) || ["Order Tracker", "We are processing your order."];
 
     if (heading) heading.textContent = entry[0];
-    if (subtext) subtext.textContent = entry[1];
+    if (subtext) {
+        // Once a rider owns the job, the tracker says so alongside the stage
+        // message - from the live assignment event AND after a refresh (the
+        // assignee is remembered from the last full snapshot).
+        const prePickup = s === "ready" || s === "ready_for_delivery";
+        subtext.textContent = (prePickup && assignedRiderName)
+            ? entry[1] + " " + trackAssignedMsg()
+            : entry[1];
+    }
 
     if (icon) {
         const icons = {
@@ -155,9 +209,11 @@ function setStatusText(status) {
             pending: 'fa-circle-check',
             preparing: 'fa-fire-burner',
             ready: 'fa-bell-concierge',
+            ready_for_delivery: 'fa-truck-pickup',
             picked_up: 'fa-handshake',
             out_for_delivery: 'fa-truck-fast',
-            delivered: 'fa-circle-check',
+            arrived: 'fa-location-dot',
+            delivered: 'fa-house-circle-check',
             served: 'fa-circle-check',
             completed: 'fa-circle-check',
             cancelled: 'fa-circle-xmark'
@@ -167,8 +223,10 @@ function setStatusText(status) {
             pending: '#16a34a',
             preparing: '#16a34a',
             ready: '#16a34a',
+            ready_for_delivery: '#ff6b00',
             picked_up: '#7c3aed',
             out_for_delivery: '#ff6b00',
+            arrived: '#16a34a',
             delivered: '#16a34a',
             served: '#16a34a',
             completed: '#16a34a',
@@ -224,6 +282,78 @@ function statusLabel(s) {
     return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/* ================================================================
+ * REFUND STATE
+ *
+ * Rendered straight from the backend's refund fields. The manager/admin
+ * workflow is: customer cancels a PAID order -> CANCELLED ->
+ * REFUND_REQUESTED ("Refund Required" on the dashboard) -> Manager/Admin
+ * processes it -> REFUNDED. The tracker has to show each of those states,
+ * live, without ever caching them locally.
+ * ================================================================ */
+
+const REFUND_COPY = {
+    REFUND_REQUESTED: {
+        title: "Refund requested",
+        message: "Your order was cancelled and your refund is waiting for approval by our team. We will notify you as soon as it is processed."
+    },
+    REFUND_APPROVED: {
+        title: "Refund approved",
+        message: "Your refund has been approved and is being processed."
+    },
+    REFUND_PROCESSING: {
+        title: "Refund in progress",
+        message: "Your refund is being processed. This usually takes a short while."
+    },
+    REFUNDED: {
+        title: "Refund complete",
+        message: "Your payment has been refunded successfully."
+    },
+    REFUND_FAILED: {
+        title: "Refund failed",
+        message: "We could not complete your refund. Our team has been notified and will follow up with you."
+    }
+};
+
+/**
+ * Paint the refund banner from the server's refund fields.
+ * Hides itself entirely when the order has no refund workflow attached, so an
+ * active order never shows a refund message.
+ */
+function renderRefundNotice(orderData) {
+    const notice = document.getElementById("refund-notice");
+    if (!notice || !orderData) return;
+
+    const refundStatus = String(orderData.refundStatus || "").toUpperCase();
+    const copy = REFUND_COPY[refundStatus];
+    if (!copy) {
+        notice.style.display = "none";
+        return;
+    }
+
+    const titleEl = document.getElementById("refund-notice-title");
+    const messageEl = document.getElementById("refund-notice-message");
+    const metaEl = document.getElementById("refund-notice-meta");
+    if (titleEl) titleEl.textContent = copy.title;
+    if (messageEl) messageEl.textContent = copy.message;
+
+    const metaParts = [];
+    const amount = Number(orderData.refundAmount) || 0;
+    if (amount > 0) metaParts.push(`${amount.toFixed(0)} ETB`);
+    if (orderData.refundReference) metaParts.push(`Reference: ${orderData.refundReference}`);
+    if (refundStatus === "REFUNDED" && orderData.refundedAt) {
+        const when = new Date(orderData.refundedAt);
+        if (!Number.isNaN(when.getTime())) metaParts.push(when.toLocaleString());
+    }
+    if (metaEl) {
+        metaEl.textContent = metaParts.join(" · ");
+        metaEl.style.display = metaParts.length ? "block" : "none";
+    }
+
+    notice.style.display = "flex";
+    notice.classList.toggle("is-refunded", refundStatus === "REFUNDED");
+}
+
 /**
  * The order type currently being tracked (used by status text / timeline).
  * Updated by renderOrder() and by live socket/poll updates.
@@ -239,9 +369,15 @@ let latestActiveIndex = -1;
 
 /**
  * Build the timeline steps. Pickup orders get 3 steps; delivery orders get all
- * 7 steps (Received -> Preparing -> Ready -> Picked Up -> Out for Delivery ->
- * Delivered -> Completed).
+ * 8 steps (Received -> Preparing -> Ready -> Picked Up -> Out for Delivery ->
+ * Arrived -> Delivered -> Completed).
  * Returns an array of { stepId, lineId, key, strong, small, icon }.
+ *
+ * ARRIVED matters here: the backend delivery state machine has a real ARRIVED
+ * stage (courier is at the door), and it was missing from this list. renderTimeline
+ * resolves a status by `stepKeys.indexOf(status)`, so an "arrived" frame scored -1
+ * and the tracker reset every step to neutral - the customer saw the whole
+ * timeline blank out exactly when the rider reached them.
  */
 function getTimelineConfig() {
     const pickup = [
@@ -253,8 +389,10 @@ function getTimelineConfig() {
         { key: "pending", strong: "Order Received", small: "Kitchen notified", icon: "fa-clipboard-check" },
         { key: "preparing", strong: "Preparing", small: "Chef is cooking", icon: "fa-fire-burner" },
         { key: "ready", strong: "Ready", small: "Handing to rider", icon: "fa-bell-concierge" },
+        { key: "ready_for_delivery", strong: "Sent for Delivery", small: "Rider notified", icon: "fa-truck-pickup" },
         { key: "picked_up", strong: "Picked Up", small: "Driver has the order", icon: "fa-handshake" },
         { key: "out_for_delivery", strong: "Out for Delivery", small: "Rider on the way", icon: "fa-truck-fast" },
+        { key: "arrived", strong: "Arrived", small: "Driver at your location", icon: "fa-location-dot" },
         { key: "delivered", strong: "Delivered", small: "At your doorstep", icon: "fa-house-circle-check" },
         { key: "completed", strong: "Completed", small: "Enjoy your meal", icon: "fa-circle-check" }
     ];
@@ -469,9 +607,31 @@ function renderEmptyState() {
 
 function renderOrder(orderData) {
     populateReceipt(orderData);
+    rememberAssignee(orderData);
     const status = orderData.status || "Pending";
     renderTimeline(status, { regressible: true });
     setStatusText(status);
+    renderRefundNotice(orderData);
+    announceLiveOrder(orderData);
+}
+
+/**
+ * Announce the authoritative order snapshot to the rest of the page.
+ *
+ * This module owns the order's live state (initial backend fetch, `order:status`
+ * frames and the 5s polling fallback all converge here), so the live GPS map
+ * (customer-tracking-map.js) listens to this one announcement instead of running
+ * a second fetch + poll of its own. That is what keeps the map, the timeline and
+ * the receipt showing the SAME status and the same coordinates - they cannot
+ * drift because there is only one source.
+ */
+function announceLiveOrder(orderData) {
+    if (!orderData) return;
+    try {
+        window.dispatchEvent(new CustomEvent("scos:order-live", { detail: { order: orderData } }));
+    } catch (e) {
+        /* non-browser context */
+    }
 }
 
 async function loadLiveOrder(orderId, fallbackOrderData) {
@@ -542,27 +702,62 @@ function renderReceiptFromLive(order) {
     }
 }
 
+/**
+ * Shared handler for every live status frame (generic `order:status` plus the
+ * named `order:ready-for-delivery` / `delivery:*` lifecycle events).
+ */
+function handleStatusFrame(order, orderId) {
+    const liveId = (order?.orderId || order?.id || "").replace(/^#/, "");
+    const currentId = String(orderId).replace(/^#/, "");
+    if (liveId && currentId && liveId !== currentId) return; // not our order
+
+    // The assignee travels on assignment frames; remembering it here is what
+    // puts "delivery staff assigned" on screen even when the status itself
+    // has not advanced past ready-for-delivery.
+    rememberAssignee(order);
+
+    // Refund frames (REFUND_REQUESTED -> REFUNDED) must render even if a
+    // payload carries no `status`, so paint the banner first.
+    renderRefundNotice(order);
+
+    // A delivery frame carries the order-facing status in `status`; some
+    // legacy payloads only have `orderStatus` / `deliveryStatus`. Read them
+    // in that order of preference instead of treating the frame as statusless,
+    // which used to blank the timeline.
+    const newStatus = order?.status || order?.orderStatus || order?.deliveryStatus;
+    if (!newStatus) return;
+
+    if (order?.orderType) {
+        currentOrderType = order.orderType;
+        buildTimelineDOM(true);
+    }
+
+    // Only advance the timeline forward; ignore stale/older events.
+    if (applyLiveStatus(newStatus)) {
+        persistStatus(currentId, newStatus);
+    }
+    renderReceiptFromLive(order);
+    announceLiveOrder({ ...order, orderType: order.orderType || currentOrderType });
+}
+
 function setupRealtime(orderId) {
     if (!orderId) return;
 
-socketClient.on("order:status", (order) => {
-        const liveId = (order?.orderId || order?.id || "").replace(/^#/, "");
-        const currentId = String(orderId).replace(/^#/, "");
-        if (liveId && currentId && liveId !== currentId) return; // not our order
+// Render a live update from a `order:status` / `delivery:status` frame.
+    socketClient.on("order:status", (order) => {
+        handleStatusFrame(order, orderId);
+    });
 
-        const newStatus = order?.status;
-        if (!newStatus) return;
-
-        if (order?.orderType) {
-            currentOrderType = order.orderType;
-            buildTimelineDOM(true);
-        }
-
-        // Only advance the timeline forward; ignore stale/older events.
-        if (applyLiveStatus(newStatus)) {
-            persistStatus(currentId, newStatus);
-        }
-        renderReceiptFromLive(order);
+    // Named lifecycle frames carry the same payload shape. They arrive on the
+    // order room (scoped, never broadcast), and each one re-renders through
+    // the exact same forward-only path as `order:status` - so the tracker
+    // cannot show a stage the backend did not persist, and duplicates collapse
+    // into the same idempotent repaint.
+    ["order:ready-for-delivery", "delivery:assigned", "delivery:accepted", "delivery:started",
+     "delivery:completed", "delivery:status"].forEach((event) => {
+        socketClient.on(event, (order) => {
+            handleStatusFrame(order, orderId);
+        });
     });
 
     // Fallback: poll the backend periodically so the timeline advances even if
@@ -616,8 +811,23 @@ function startStatusPolling(orderId) {
                 persistStatus(orderId, live.status);
             }
             renderReceiptFromLive(live);
+            renderRefundNotice(live);
+            // Same single announcement the initial render makes, so the live GPS
+            // map follows the poll too (it must not need its own polling loop).
+            announceLiveOrder(live);
 
-            const terminal = s === "served" || s === "delivered" || s === "completed" || s === "cancelled";
+            // Terminal for the timeline, but a cancelled PAID order still has
+            // the refund to follow (REFUND_REQUESTED -> REFUNDED): keep polling
+            // until the refund settles too, so a refresh-less tracker still
+            // shows the refund landing.
+            const refundState = String(live.refundStatus || "").toUpperCase();
+            const refundSettled =
+                !refundState ||
+                refundState === "REFUNDED" ||
+                refundState === "REFUND_FAILED" ||
+                refundState === "NOT_REQUIRED";
+            const terminal =
+                (s === "served" || s === "delivered" || s === "completed" || s === "cancelled") && refundSettled;
             if (terminal) {
                 try { clearInterval(statusPollTimer); statusPollTimer = null; } catch (e) {}
             }

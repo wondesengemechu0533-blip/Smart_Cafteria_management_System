@@ -32,21 +32,18 @@ exports.getKitchenShifts = async (req, res) => {
       filter.startTime = { $gte: startDate, $lte: endDate };
     }
 
-    const shifts = await KitchenShift.find(filter)
-      .populate('staffId', 'name email phone')
-      .sort({ startTime: -1 });
+    const shifts = await KitchenShift.find(filter).populate('staffId', 'name email phone').sort({ startTime: -1 });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: shifts.length,
-      shifts: shifts.map(shift => formatShift(shift))
+      shifts: shifts.map((shift) => formatShift(shift)),
     });
-
   } catch (error) {
     console.error('❌ Get Kitchen Shifts Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -68,14 +65,14 @@ exports.createKitchenShift = async (req, res) => {
     if (!staff) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Staff member not found'
+        error: 'Staff member not found',
       });
     }
 
     if (staff.role !== 'kitchen' && staff.role !== 'KITCHEN_STAFF') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'User is not a kitchen staff member'
+        error: 'User is not a kitchen staff member',
       });
     }
 
@@ -85,14 +82,14 @@ exports.createKitchenShift = async (req, res) => {
       status: { $in: ['scheduled', 'active'] },
       $or: [
         { startTime: { $lt: new Date(endTime), $gte: new Date(startTime) } },
-        { endTime: { $lt: new Date(endTime), $gte: new Date(startTime) } }
-      ]
+        { endTime: { $lt: new Date(endTime), $gte: new Date(startTime) } },
+      ],
     });
 
     if (existingShift) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Staff member has a conflicting shift at this time'
+        error: 'Staff member has a conflicting shift at this time',
       });
     }
 
@@ -102,7 +99,7 @@ exports.createKitchenShift = async (req, res) => {
       shiftType: shiftType || 'custom',
       startTime: new Date(startTime),
       endTime: new Date(endTime),
-      status: 'scheduled'
+      status: 'scheduled',
     });
 
     await shift.populate('staffId', 'name email phone');
@@ -113,20 +110,19 @@ exports.createKitchenShift = async (req, res) => {
       title: 'Shift Scheduled',
       message: `Your ${shiftType} shift has been scheduled from ${new Date(startTime).toLocaleTimeString()} to ${new Date(endTime).toLocaleTimeString()}`,
       type: 'shift',
-      isRead: false
+      isRead: false,
     });
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
       message: 'Kitchen shift created successfully',
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ Create Kitchen Shift Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -146,22 +142,23 @@ exports.clockInShift = async (req, res) => {
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Shift not found'
+        error: 'Shift not found',
       });
     }
 
-    // Verify staff member
-    if (shift.staffId.toString() !== req.user._id.toString()) {
+    // Verify staff member. `protect` sets `req.user.id`; there is no `_id` here,
+    // so `req.user._id` would throw and lock the staff member out of their shift.
+    if (shift.staffId.toString() !== req.user.id.toString()) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        error: 'You can only clock in for your own shift'
+        error: 'You can only clock in for your own shift',
       });
     }
 
     if (shift.status !== 'scheduled') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `Cannot clock in for a shift with status: ${shift.status}`
+        error: `Cannot clock in for a shift with status: ${shift.status}`,
       });
     }
 
@@ -172,14 +169,13 @@ exports.clockInShift = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Clocked in successfully',
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ Clock In Shift Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -199,22 +195,23 @@ exports.clockOutShift = async (req, res) => {
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Shift not found'
+        error: 'Shift not found',
       });
     }
 
-    // Verify staff member
-    if (shift.staffId.toString() !== req.user._id.toString()) {
+    // Verify staff member. `protect` sets `req.user.id`; there is no `_id` here,
+    // so `req.user._id` would throw and lock the staff member out of their shift.
+    if (shift.staffId.toString() !== req.user.id.toString()) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        error: 'You can only clock out from your own shift'
+        error: 'You can only clock out from your own shift',
       });
     }
 
     if (shift.status !== 'active') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Cannot clock out from an inactive shift'
+        error: 'Cannot clock out from an inactive shift',
       });
     }
 
@@ -226,8 +223,8 @@ exports.clockOutShift = async (req, res) => {
       kitchenStaffAssigned: shift.staffId,
       completedTime: {
         $gte: shift.clockInTime,
-        $lte: shift.clockOutTime
-      }
+        $lte: shift.clockOutTime,
+      },
     });
 
     shift.ordersCompleted = ordersCompleted;
@@ -237,8 +234,8 @@ exports.clockOutShift = async (req, res) => {
       kitchenStaffAssigned: shift.staffId,
       completedTime: {
         $gte: shift.clockInTime,
-        $lte: shift.clockOutTime
-      }
+        $lte: shift.clockOutTime,
+      },
     });
 
     if (completedOrders.length > 0) {
@@ -254,14 +251,13 @@ exports.clockOutShift = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Clocked out successfully',
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ Clock Out Shift Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -283,14 +279,14 @@ exports.startBreak = async (req, res) => {
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Shift not found'
+        error: 'Shift not found',
       });
     }
 
     if (shift.status !== 'active') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Can only take breaks during active shifts'
+        error: 'Can only take breaks during active shifts',
       });
     }
 
@@ -298,7 +294,7 @@ exports.startBreak = async (req, res) => {
     shift.breaksStarted.push({
       startTime: new Date(),
       endTime: null,
-      reason: reason || 'Break'
+      reason: reason || 'Break',
     });
 
     await shift.save();
@@ -306,14 +302,13 @@ exports.startBreak = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Break started',
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ Start Break Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -333,16 +328,16 @@ exports.endBreak = async (req, res) => {
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Shift not found'
+        error: 'Shift not found',
       });
     }
 
     // Find the last break without an end time
-    const lastBreak = shift.breaksStarted.find(b => !b.endTime);
+    const lastBreak = shift.breaksStarted.find((b) => !b.endTime);
     if (!lastBreak) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'No active break found'
+        error: 'No active break found',
       });
     }
 
@@ -352,14 +347,13 @@ exports.endBreak = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Break ended',
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ End Break Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -374,28 +368,27 @@ exports.endBreak = async (req, res) => {
 exports.getCurrentShift = async (req, res) => {
   try {
     const shift = await KitchenShift.findOne({
-      staffId: req.user._id,
-      status: { $in: ['scheduled', 'active'] }
+      staffId: req.user.id,
+      status: { $in: ['scheduled', 'active'] },
     }).populate('staffId', 'name email phone');
 
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: true,
         shift: null,
-        message: 'No active shift scheduled'
+        message: 'No active shift scheduled',
       });
     }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      shift: formatShift(shift)
+      shift: formatShift(shift),
     });
-
   } catch (error) {
     console.error('❌ Get Current Shift Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -410,20 +403,19 @@ exports.getCurrentShift = async (req, res) => {
 exports.getKitchenStaffMembers = async (req, res) => {
   try {
     const staffMembers = await User.find({
-      role: { $in: ['kitchen', 'KITCHEN_STAFF'] }
+      role: { $in: ['kitchen', 'KITCHEN_STAFF'] },
     }).select('-password');
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: staffMembers.length,
-      staff: staffMembers
+      staff: staffMembers,
     });
-
   } catch (error) {
     console.error('❌ Get Kitchen Staff Members Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -439,7 +431,7 @@ function formatShift(shift) {
       id: shift.staffId?._id,
       name: shift.staffId?.name,
       email: shift.staffId?.email,
-      phone: shift.staffId?.phone
+      phone: shift.staffId?.phone,
     },
     shiftType: shift.shiftType,
     startTime: shift.startTime,
@@ -452,7 +444,7 @@ function formatShift(shift) {
     ordersCompleted: shift.ordersCompleted,
     averagePreparationTime: shift.averagePreparationTime,
     notes: shift.notes,
-    createdAt: shift.createdAt
+    createdAt: shift.createdAt,
   };
 }
 

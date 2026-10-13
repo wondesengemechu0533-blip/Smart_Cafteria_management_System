@@ -19,17 +19,17 @@ const kitchenRoutes = require('./kitchen.routes');
 const kitchenSettingsRoutes = require('./kitchen-settings.routes');
 
 module.exports = {
-    authRoutes,
-    userRoutes,
-    menuRoutes,
-    cartRoutes,
-    orderRoutes,
-    paymentRoutes,
-    notificationRoutes,
-    reportRoutes,
-    feedbackRoutes,
+  authRoutes,
+  userRoutes,
+  menuRoutes,
+  cartRoutes,
+  orderRoutes,
+  paymentRoutes,
+  notificationRoutes,
+  reportRoutes,
+  feedbackRoutes,
 
-    cancellationRoutes,
-    kitchenRoutes,
-    kitchenSettingsRoutes
+  cancellationRoutes,
+  kitchenRoutes,
+  kitchenSettingsRoutes,
 };

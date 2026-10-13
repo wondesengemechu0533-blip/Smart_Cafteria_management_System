@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * KitchenSetting Schema - Per-user kitchen preferences
@@ -13,13 +13,13 @@ const KitchenSettingSchema = new mongoose.Schema(
   {
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
       unique: true,
     },
     station: {
       type: String,
-      default: "Station 1",
+      default: 'Station 1',
       trim: true,
     },
     notificationSound: {
@@ -54,7 +54,4 @@ const KitchenSettingSchema = new mongoose.Schema(
   }
 );
 
-// Index for quick lookups by user
-KitchenSettingSchema.index({ userId: 1 });
-
-module.exports = mongoose.model("KitchenSetting", KitchenSettingSchema);
+module.exports = mongoose.model('KitchenSetting', KitchenSettingSchema);

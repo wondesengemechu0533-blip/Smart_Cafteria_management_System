@@ -18,9 +18,7 @@ function serializePayment(payment, order, user) {
     orderId: order ? order.orderId : null,
     customerName: order ? order.customerName : null,
     customerPhone: order ? order.customerPhone : null,
-    customer: user
-      ? { name: user.name, email: user.email, phone: user.phone }
-      : null,
+    customer: user ? { name: user.name, email: user.email, phone: user.phone } : null,
     method: payment.method || payment.provider,
     amount: payment.amount,
     currency: payment.currency || 'ETB',
@@ -29,7 +27,7 @@ function serializePayment(payment, order, user) {
     providerReference: payment.providerReference || payment.chapaReference || payment.reference,
     paymentDate: payment.paymentDate,
     paidAt: payment.paidAt,
-    createdAt: payment.createdAt
+    createdAt: payment.createdAt,
   };
 }
 
@@ -42,8 +40,8 @@ async function buildPaymentSearchFilter(search) {
       { providerReference: { $regex: s, $options: 'i' } },
       { chapaReference: { $regex: s, $options: 'i' } },
       { reference: { $regex: s, $options: 'i' } },
-      { phone: { $regex: s, $options: 'i' } }
-    ]
+      { phone: { $regex: s, $options: 'i' } },
+    ],
   };
 
   // Matches against data living on the linked Order (orderId / customer)
@@ -51,8 +49,8 @@ async function buildPaymentSearchFilter(search) {
     $or: [
       { orderId: { $regex: s, $options: 'i' } },
       { customerName: { $regex: s, $options: 'i' } },
-      { customerPhone: { $regex: s, $options: 'i' } }
-    ]
+      { customerPhone: { $regex: s, $options: 'i' } },
+    ],
   })
     .select('_id')
     .lean();
@@ -60,10 +58,7 @@ async function buildPaymentSearchFilter(search) {
   if (orders.length) {
     const ids = orders.map((o) => o._id);
     return {
-      $or: [
-        ...paymentFieldMatch.$or,
-        { orderId: { $in: ids } }
-      ]
+      $or: [...paymentFieldMatch.$or, { orderId: { $in: ids } }],
     };
   }
 
@@ -80,15 +75,7 @@ async function buildPaymentSearchFilter(search) {
  */
 exports.getAllPayments = async (req, res) => {
   try {
-    const {
-      method,
-      status,
-      date,
-      search,
-      sort = 'newest',
-      page = 1,
-      limit = 20
-    } = req.query;
+    const { method, status, date, search, sort = 'newest', page = 1, limit = 20 } = req.query;
 
     const conditions = [];
 
@@ -159,7 +146,9 @@ exports.getAllPayments = async (req, res) => {
     orders.forEach((o) => (orderMap[String(o._id)] = o));
 
     const userIds = [...new Set(payments.map((p) => String(p.userId)).filter(Boolean))];
-    const users = await User.find({ _id: { $in: userIds } }).select('name email phone').lean();
+    const users = await User.find({ _id: { $in: userIds } })
+      .select('name email phone')
+      .lean();
     const userMap = {};
     users.forEach((u) => (userMap[String(u._id)] = u));
 
@@ -170,12 +159,8 @@ exports.getAllPayments = async (req, res) => {
       page: pageNum,
       pages: Math.ceil(total / limitNum),
       payments: payments.map((payment) =>
-        serializePayment(
-          payment,
-          orderMap[String(payment.orderId)],
-          userMap[String(payment.userId)]
-        )
-      )
+        serializePayment(payment, orderMap[String(payment.orderId)], userMap[String(payment.userId)])
+      ),
     });
   } catch (error) {
     console.error('❌ Admin Get All Payments Error:', error);
@@ -194,7 +179,7 @@ exports.getPaymentStats = async (req, res) => {
       Payment.countDocuments({ status: PAYMENT_STATUS.PAID }),
       Payment.countDocuments({ status: PAYMENT_STATUS.PENDING }),
       Payment.countDocuments({ status: PAYMENT_STATUS.FAILED }),
-      Payment.countDocuments({ status: PAYMENT_STATUS.CANCELLED })
+      Payment.countDocuments({ status: PAYMENT_STATUS.CANCELLED }),
     ]);
 
     const paidPayments = await Payment.find({ status: PAYMENT_STATUS.PAID }).select('amount').lean();
@@ -212,8 +197,8 @@ exports.getPaymentStats = async (req, res) => {
         failedPayments,
         cancelledPayments,
         totalRevenue,
-        methods: { telebirr, chapa }
-      }
+        methods: { telebirr, chapa },
+      },
     });
   } catch (error) {
     console.error('❌ Admin Get Payment Stats Error:', error);
@@ -253,7 +238,7 @@ exports.getPaymentById = async (req, res) => {
           orderStatus: order.orderStatus || String(order.status || '').toUpperCase(),
           paymentStatus: order.paymentStatus,
           orderDate: order.orderDate,
-          orderTime: order.orderTime
+          orderTime: order.orderTime,
         }
       : null;
 
@@ -277,9 +262,7 @@ exports.getPaymentHistory = async (req, res) => {
     }
 
     const PaymentEventLog = require('../models/PaymentEventLog');
-    const history = await PaymentEventLog.find({ paymentId: id })
-      .sort({ createdAt: -1 })
-      .lean();
+    const history = await PaymentEventLog.find({ paymentId: id }).sort({ createdAt: -1 }).lean();
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -350,8 +333,8 @@ exports.refundPayment = async (req, res) => {
     // refunded (PENDING paid order → customer cancels → admin refund).
     const linkedOrder = await Order.findById(payment.orderId).lean();
     const orderCancelled = linkedOrder
-      ? (String(linkedOrder.orderStatus || '').toUpperCase() === 'CANCELLED' ||
-         String(linkedOrder.status || '').toLowerCase() === 'cancelled')
+      ? String(linkedOrder.orderStatus || '').toUpperCase() === 'CANCELLED' ||
+        String(linkedOrder.status || '').toLowerCase() === 'cancelled'
       : false;
     const paymentPaid = payment.status === 'PAID';
     if (!orderCancelled) {
@@ -378,14 +361,37 @@ exports.refundPayment = async (req, res) => {
 
     // Update payment
     payment.refundAmount = (payment.refundAmount || 0) + amount;
-    if (payment.refundAmount >= payment.amount) {
+    const fullyRefunded = payment.refundAmount >= payment.amount;
+    if (fullyRefunded) {
       payment.status = 'REFUNDED';
       payment.refundedAt = new Date();
     }
-    payment.refundStatus = 'PENDING';
+    payment.refundStatus = fullyRefunded ? 'REFUNDED' : 'PENDING';
     payment.refundReason = reason || 'Refund requested';
     payment.refundReference = `REF-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     await payment.save();
+
+    // Keep the ORDER in step with a fully refunded payment. Without this the
+    // payments page could read REFUNDED while the order (and its
+    // "Refund Required" badge on the Manager/Admin dashboard) stayed PAID
+    // forever. Delegates to the shared refund flow so the order gets
+    // refundedAt / refundAmount / refundReference, the customer notification
+    // and the real-time frames exactly as the orders page does.
+    if (fullyRefunded) {
+      try {
+        const orderDoc = await Order.findById(payment.orderId);
+        if (orderDoc) {
+          await require('../services/cancellation.service').completeOrderRefund({
+            order: orderDoc,
+            actorId: req.user ? req.user.id : null,
+            amount: payment.refundAmount,
+            providerReference: payment.refundReference,
+          });
+        }
+      } catch (refundError) {
+        console.error('⚠️ Order refund sync failed (payment refund):', refundError.message);
+      }
+    }
 
     // Log refund event
     const PaymentEventLog = require('../models/PaymentEventLog');

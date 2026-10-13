@@ -30,7 +30,7 @@ function sanitize(item) {
     isRecommended: item.isRecommended,
     showOnHomepage: item.showOnHomepage,
     createdAt: item.createdAt,
-    updatedAt: item.updatedAt
+    updatedAt: item.updatedAt,
   };
 }
 
@@ -71,9 +71,7 @@ exports.getAllMenuItems = async (req, res) => {
     const availabilityValue = String(availability || '').toLowerCase();
     if (availabilityValue && availabilityValue !== 'all') {
       const isAvailable =
-        availabilityValue === 'available' ||
-        availabilityValue === '1' ||
-        availabilityValue === 'true';
+        availabilityValue === 'available' || availabilityValue === '1' || availabilityValue === 'true';
       const isOut =
         availabilityValue === 'out_of_stock' ||
         availabilityValue === 'unavailable' ||
@@ -92,8 +90,8 @@ exports.getAllMenuItems = async (req, res) => {
           { 'name.en': { $regex: search, $options: 'i' } },
           { 'name.am': { $regex: search, $options: 'i' } },
           { 'description.en': { $regex: search, $options: 'i' } },
-          { 'description.am': { $regex: search, $options: 'i' } }
-        ]
+          { 'description.am': { $regex: search, $options: 'i' } },
+        ],
       };
       filter.$and = filter.$and ? filter.$and.concat(searchFilter) : [searchFilter];
     }
@@ -131,7 +129,7 @@ exports.getAllMenuItems = async (req, res) => {
       total,
       page: pageNum,
       pages: Math.ceil(total / limitNum),
-      items: items.map(sanitize)
+      items: items.map(sanitize),
     });
   } catch (error) {
     console.error('❌ Admin Get Menu Items Error:', error);
@@ -185,7 +183,7 @@ exports.createMenuItem = async (req, res) => {
       isActive = true,
       isPopular = false,
       isRecommended = false,
-      showOnHomepage = false
+      showOnHomepage = false,
     } = req.body;
 
     const nameEn = name && (name.en !== undefined ? name.en : name);
@@ -193,7 +191,7 @@ exports.createMenuItem = async (req, res) => {
     if (!nameEn || !String(nameEn).trim() || !nameAm || !String(nameAm).trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Both English and Amharic names are required'
+        error: 'Both English and Amharic names are required',
       });
     }
 
@@ -201,7 +199,10 @@ exports.createMenuItem = async (req, res) => {
     try {
       assertValidCategory(category);
       const categoryRecord = await Category.findOne({ id: String(category).toLowerCase(), isActive: true });
-      if (!categoryRecord) throw Object.assign(new Error('Category does not exist or is inactive'), { statusCode: HTTP_STATUS.BAD_REQUEST });
+      if (!categoryRecord)
+        throw Object.assign(new Error('Category does not exist or is inactive'), {
+          statusCode: HTTP_STATUS.BAD_REQUEST,
+        });
       categoryValue = category;
     } catch (e) {
       return res.status(e.statusCode || HTTP_STATUS.BAD_REQUEST).json({ success: false, error: e.message });
@@ -225,32 +226,46 @@ exports.createMenuItem = async (req, res) => {
       available !== undefined ? Boolean(available) : isAvailable !== undefined ? Boolean(isAvailable) : true;
 
     const stock = Math.max(0, Number(stockQuantity) || 0);
+    const itemCafeteriaId = req.user.cafeteriaId || (await require('../utils/cafeteria').getDefaultCafeteriaId());
     const item = await MenuItem.create({
+      cafeteriaId: itemCafeteriaId,
       name: { en: String(nameEn).trim(), am: String(nameAm).trim() },
       category: categoryValue,
       price: priceValue,
       description: {
         en: description && description.en ? String(description.en).trim() : '',
-        am: description && description.am ? String(description.am).trim() : ''
+        am: description && description.am ? String(description.am).trim() : '',
       },
       icon: icon || '🍽️',
       image: imageValue,
       preparationTime: preparationTime || 10,
       availability: avail,
-      isAvailable: avail
-      , isActive: Boolean(isActive), stockQuantity: stock, lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0),
+      isAvailable: avail,
+      isActive: Boolean(isActive),
+      stockQuantity: stock,
+      lowStockThreshold: Math.max(0, Number(lowStockThreshold) || 0),
       availabilityStatus: !Boolean(isActive) || !avail ? 'UNAVAILABLE' : stock > 0 ? 'AVAILABLE' : 'OUT_OF_STOCK',
-      isPopular: Boolean(isPopular), isRecommended: Boolean(isRecommended), showOnHomepage: Boolean(showOnHomepage)
+      isPopular: Boolean(isPopular),
+      isRecommended: Boolean(isRecommended),
+      showOnHomepage: Boolean(showOnHomepage),
     });
 
-    if (stock > 0) await StockTransaction.create({ foodId: item._id, previousQuantity: 0, quantityChanged: stock, newQuantity: stock, action: 'ADD', performedBy: req.user.id });
+    if (stock > 0)
+      await StockTransaction.create({
+        foodId: item._id,
+        previousQuantity: 0,
+        quantityChanged: stock,
+        newQuantity: stock,
+        action: 'ADD',
+        performedBy: req.user.id,
+      });
 
     await logAction({
       req,
       action: 'FOOD_CREATED',
       entityType: 'MenuItem',
       entityId: String(item._id),
-      description: `Created menu item "${item.name.en}" - ${item.category} (${item.price} ETB)`
+      description: `Created menu item "${item.name.en}" - ${item.category} (${item.price} ETB)`,
     });
 
     res.status(HTTP_STATUS.CREATED).json({ success: true, item: sanitize(item) });
@@ -289,7 +304,7 @@ exports.updateMenuItem = async (req, res) => {
       isActive,
       isPopular,
       isRecommended,
-      showOnHomepage
+      showOnHomepage,
     } = req.body;
 
     const item = await MenuItem.findById(req.params.id);
@@ -353,7 +368,9 @@ exports.updateMenuItem = async (req, res) => {
     if (preparationTime !== undefined) {
       const parsed = Number(preparationTime);
       if (isNaN(parsed) || parsed < 1) {
-        return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Preparation time must be at least 1 minute' });
+        return res
+          .status(HTTP_STATUS.BAD_REQUEST)
+          .json({ success: false, error: 'Preparation time must be at least 1 minute' });
       }
       item.preparationTime = parsed;
     }
@@ -368,11 +385,23 @@ exports.updateMenuItem = async (req, res) => {
 
     if (stockQuantity !== undefined) {
       const stock = Number(stockQuantity);
-      if (!Number.isInteger(stock) || stock < 0) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Stock quantity must be a non-negative integer' });
+      if (!Number.isInteger(stock) || stock < 0)
+        return res
+          .status(HTTP_STATUS.BAD_REQUEST)
+          .json({ success: false, error: 'Stock quantity must be a non-negative integer' });
       const previous = item.stockQuantity || 0;
       item.stockQuantity = stock;
-      item.availabilityStatus = stock === 0 ? 'OUT_OF_STOCK' : item.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
-      if (stock !== previous) await StockTransaction.create({ foodId: item._id, previousQuantity: previous, quantityChanged: stock - previous, newQuantity: stock, action: 'SET', performedBy: req.user.id });
+      item.availabilityStatus =
+        stock === 0 ? 'OUT_OF_STOCK' : item.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
+      if (stock !== previous)
+        await StockTransaction.create({
+          foodId: item._id,
+          previousQuantity: previous,
+          quantityChanged: stock - previous,
+          newQuantity: stock,
+          action: 'SET',
+          performedBy: req.user.id,
+        });
     }
     if (lowStockThreshold !== undefined) item.lowStockThreshold = Math.max(0, Number(lowStockThreshold) || 0);
     if (isActive !== undefined) item.isActive = Boolean(isActive);
@@ -387,7 +416,7 @@ exports.updateMenuItem = async (req, res) => {
       action: 'FOOD_UPDATED',
       entityType: 'MenuItem',
       entityId: String(item._id),
-      description: `Updated menu item "${item.name.en}"`
+      description: `Updated menu item "${item.name.en}"`,
     });
 
     res.status(HTTP_STATUS.OK).json({ success: true, item: sanitize(item) });
@@ -421,7 +450,8 @@ exports.toggleAvailability = async (req, res) => {
 
     item.availability = boolAvailable;
     item.isAvailable = boolAvailable;
-    item.availabilityStatus = boolAvailable && (item.stockQuantity || 0) > 0 ? 'AVAILABLE' : boolAvailable ? 'OUT_OF_STOCK' : 'UNAVAILABLE';
+    item.availabilityStatus =
+      boolAvailable && (item.stockQuantity || 0) > 0 ? 'AVAILABLE' : boolAvailable ? 'OUT_OF_STOCK' : 'UNAVAILABLE';
     await item.save();
 
     await logAction({
@@ -429,13 +459,13 @@ exports.toggleAvailability = async (req, res) => {
       action: 'FOOD_AVAILABILITY_CHANGED',
       entityType: 'MenuItem',
       entityId: String(item._id),
-      description: `Marked "${item.name.en}" as ${boolAvailable ? 'available' : 'unavailable'}`
+      description: `Marked "${item.name.en}" as ${boolAvailable ? 'available' : 'unavailable'}`,
     });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: boolAvailable ? `"${item.name.en}" is now available` : `"${item.name.en}" is now unavailable`,
-      item: sanitize(item)
+      item: sanitize(item),
     });
   } catch (error) {
     console.error('❌ Admin Toggle Availability Error:', error);
@@ -464,7 +494,7 @@ exports.deleteMenuItem = async (req, res) => {
       action: 'FOOD_DELETED',
       entityType: 'MenuItem',
       entityId: String(item._id),
-      description: `Deleted menu item "${item.name.en}" (${item.category})`
+      description: `Deleted menu item "${item.name.en}" (${item.category})`,
     });
 
     res.status(HTTP_STATUS.OK).json({ success: true, message: 'Menu item deleted successfully' });
@@ -485,17 +515,32 @@ exports.getMenuStats = async (req, res) => {
     const activeItems = await MenuItem.countDocuments({ isActive: true });
     const availableItems = await MenuItem.countDocuments({ availability: true, isAvailable: true });
     const outOfStockItems = await MenuItem.countDocuments({
-      $or: [{ availability: false }, { isAvailable: false }]
+      $or: [{ availability: false }, { isAvailable: false }],
     });
     const totalCategories = await Category.countDocuments();
-    const lowStockItems = await MenuItem.countDocuments({ isActive: true, $expr: { $lte: ['$stockQuantity', '$lowStockThreshold'] }, stockQuantity: { $gt: 0 } });
+    const lowStockItems = await MenuItem.countDocuments({
+      isActive: true,
+      $expr: { $lte: ['$stockQuantity', '$lowStockThreshold'] },
+      stockQuantity: { $gt: 0 },
+    });
     const popularItems = await MenuItem.countDocuments({ isPopular: true });
     const recommendedItems = await MenuItem.countDocuments({ isRecommended: true });
     const homepageItems = await MenuItem.countDocuments({ showOnHomepage: true });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      stats: { totalItems, activeItems, inactiveItems: totalItems - activeItems, availableItems, outOfStockItems, lowStockItems, popularItems, recommendedItems, homepageItems, totalCategories }
+      stats: {
+        totalItems,
+        activeItems,
+        inactiveItems: totalItems - activeItems,
+        availableItems,
+        outOfStockItems,
+        lowStockItems,
+        popularItems,
+        recommendedItems,
+        homepageItems,
+        totalCategories,
+      },
     });
   } catch (error) {
     console.error('❌ Admin Get Menu Stats Error:', error);
@@ -507,25 +552,47 @@ exports.updateStock = async (req, res) => {
   try {
     const action = String(req.body.action || 'ADD').toUpperCase();
     const quantity = Number(req.body.quantity);
-    if (!Number.isInteger(quantity) || quantity < 0) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Quantity must be a non-negative integer' });
+    if (!Number.isInteger(quantity) || quantity < 0)
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Quantity must be a non-negative integer' });
     const current = await MenuItem.findById(req.params.id);
     if (!current) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Food not found' });
-    const nextQuantity = action === 'SET' ? quantity : current.stockQuantity + (action === 'REDUCE' || action === 'ORDER' ? -quantity : quantity);
-    if (nextQuantity < 0) return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'Stock cannot become negative' });
+    const nextQuantity =
+      action === 'SET'
+        ? quantity
+        : current.stockQuantity + (action === 'REDUCE' || action === 'ORDER' ? -quantity : quantity);
+    if (nextQuantity < 0)
+      return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'Stock cannot become negative' });
     const item = await MenuItem.findOneAndUpdate(
       { _id: req.params.id, stockQuantity: current.stockQuantity },
-      action === 'SET' ? { $set: { stockQuantity: nextQuantity } } : { $inc: { stockQuantity: action === 'REDUCE' || action === 'ORDER' ? -quantity : quantity } },
+      action === 'SET'
+        ? { $set: { stockQuantity: nextQuantity } }
+        : { $inc: { stockQuantity: action === 'REDUCE' || action === 'ORDER' ? -quantity : quantity } },
       { new: true }
     );
     if (!item) return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'Stock changed; please retry' });
-    item.availabilityStatus = item.stockQuantity === 0 ? 'OUT_OF_STOCK' : item.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
+    item.availabilityStatus =
+      item.stockQuantity === 0 ? 'OUT_OF_STOCK' : item.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
     await item.save();
-    await StockTransaction.create({ foodId: item._id, previousQuantity: current.stockQuantity, quantityChanged: item.stockQuantity - current.stockQuantity, newQuantity: item.stockQuantity, action, performedBy: req.user.id });
+    await StockTransaction.create({
+      foodId: item._id,
+      previousQuantity: current.stockQuantity,
+      quantityChanged: item.stockQuantity - current.stockQuantity,
+      newQuantity: item.stockQuantity,
+      action,
+      performedBy: req.user.id,
+    });
     res.json({ success: true, item: sanitize(item) });
-  } catch (error) { res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR }); }
+  } catch (error) {
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
+  }
 };
 
 exports.getStockHistory = async (req, res) => {
-  const transactions = await StockTransaction.find({ foodId: req.params.id }).sort({ createdAt: -1 }).limit(100).populate('performedBy', 'name email');
+  const transactions = await StockTransaction.find({ foodId: req.params.id })
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .populate('performedBy', 'name email');
   res.json({ success: true, transactions });
 };

@@ -39,10 +39,18 @@ function ensureToastContainer() {
     return container;
 }
 
+function crTr(key, fallback) {
+    if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+    return fallback;
+}
+
 function showToast(notification) {
     const container = ensureToastContainer();
     const toast = document.createElement("div");
     const isReady = notification.type === "ready" || (notification.message && notification.message.includes("ready for pickup"));
+    const am = typeof window.getCurrentLanguage === "function" && window.getCurrentLanguage() === "am";
+    const title = notification.title || crTr('notif_order_ready', am ? "ትዕዛዝ ዝግጁ!" : "Order Ready!");
+    const message = notification.message || crTr('notif_ready_for_pickup', am ? "ትዕዛዝዎ ለመውሰድ ዝግጁ ነው።" : "Your order is ready for pickup.");
     toast.style.cssText = `
         background:#ffffff;
         border-left:4px solid ${isReady ? "#16a34a" : "#2563eb"};
@@ -66,9 +74,9 @@ function showToast(notification) {
             <i class="fa-solid ${icon}" style="color:${iconColor};font-size:18px;"></i>
         </div>
         <div style="flex:1;">
-            <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:4px;">${escapeHtml(notification.title || "Order Ready!")}</div>
-            <div style="font-size:13px;color:#475569;line-height:1.4;">${escapeHtml(notification.message)}</div>
-            ${notification.link ? `<a href="${escapeHtml(notification.link)}" style="display:inline-block;margin-top:8px;font-size:12px;color:${iconColor};font-weight:600;text-decoration:none;">View Order →</a>` : ""}
+            <div style="font-weight:700;font-size:14px;color:#0f172a;margin-bottom:4px;">${escapeHtml(title)}</div>
+            <div style="font-size:13px;color:#475569;line-height:1.4;">${escapeHtml(message)}</div>
+            ${notification.link ? `<a href="${escapeHtml(notification.link)}" style="display:inline-block;margin-top:8px;font-size:12px;color:${iconColor};font-weight:600;text-decoration:none;">${crTr('view_order', am ? "ትዕዛዝ አሳይ →" : "View Order →")}</a>` : ""}
         </div>
         <button aria-label="Close" style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:16px;line-height:1;padding:4px;">×</button>
     `;
@@ -256,12 +264,62 @@ function initCustomerRealtime() {
         });
 
         socketClient.on("order:status", (order) => {
-            // If order becomes ready, also ensure toast (fallback if notification missed)
-            if (order && order.status === "ready") {
-                const msg = `Your order #${order.orderId} is ready for pickup.`;
-                // Avoid duplicate if already notified via notification:new
-                // This is fallback
-                console.log("Order status ready:", order);
+            if (order && order.status) {
+                // Notify about status changes for all delivery statuses
+                const status = order.status.toLowerCase();
+                const orderId = order.orderId || order.id || '';
+                const refundStatus = String(order.refundStatus || "").toUpperCase();
+
+                // Emit custom event for order-status pages to react. The refund
+                // fields travel with it so the tracker can repaint its refund
+                // banner without a second request.
+                try {
+                    window.dispatchEvent(new CustomEvent("order:status:update", {
+                        detail: {
+                            orderId: String(orderId),
+                            status: order.status,
+                            refundStatus: refundStatus,
+                            refundAmount: order.refundAmount || 0,
+                            refundReference: order.refundReference || null,
+                            refundedAt: order.refundedAt || null,
+                            paymentStatus: order.paymentStatus || null
+                        }
+                    }));
+                } catch (e) { /* non-browser context */ }
+
+                // A completed refund is the loudest thing that can happen to a
+                // cancelled paid order - tell the customer immediately.
+                if (refundStatus === "REFUNDED") {
+                    showToast({
+                        title: "Refund",
+                        message: "Your payment has been refunded successfully.",
+                        type: "success",
+                        link: `/order-tracking.html?orderId=${orderId}`
+                    });
+                    return;
+                }
+
+                // Show toast for terminal statuses (completed, delivered, etc.)
+                const terminalStatuses = ["completed", "delivered", "cancelled", "canceled", "failed"];
+                if (terminalStatuses.includes(status)) {
+                    const am = typeof window.getCurrentLanguage === "function" && window.getCurrentLanguage() === "am";
+                    const title = order.status.charAt(0).toUpperCase() + order.status.slice(1);
+                    const message = order.status === "completed"
+                        ? (am ? "ትዕዛዙን ተጠናቋል።" : `Order #${orderId} is completed.`)
+                        : (order.status === "delivered"
+                            ? (am ? "ትዕዛዙን ተላልፋል።" : `Order #${orderId} has been delivered.`)
+                            : (order.status === "cancelled"
+                                ? (am ? "ትዕዛዙ ተሰርዟል።" : `Order #${orderId} has been cancelled.`)
+                                : ""));
+                    if (message) {
+                        showToast({
+                            title: title,
+                            message: message,
+                            type: "info",
+                            link: `/order-tracking.html?orderId=${orderId}`
+                        });
+                    }
+                }
             }
         });
     }

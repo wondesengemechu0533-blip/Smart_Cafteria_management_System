@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ==========================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN CANCELLATIONS
@@ -39,7 +43,7 @@
 
   var REFUND_META = {
     NOT_REQUIRED: { cls: "muted", label: "Not Required" },
-    REFUND_REQUESTED: { cls: "pend", label: "Refund Requested" },
+    REFUND_REQUESTED: { cls: "pend", label: "Refund Required" },
     REFUND_APPROVED: { cls: "info", label: "Refund Approved" },
     REFUND_PROCESSING: { cls: "info", label: "Processing" },
     REFUNDED: { cls: "cmp", label: "Refunded" },
@@ -99,8 +103,11 @@
 
       var sidebarBadge = document.getElementById("sidebarRefundBadge");
       if (sidebarBadge) {
-        sidebarBadge.textContent = s.totalCancellations || 0;
-        sidebarBadge.style.display = (s.totalCancellations || 0) > 0 ? "inline-block" : "none";
+        // Only refunds still waiting on a Manager/Admin decision belong here -
+        // this is the "Refund Required" work queue, not the cancellation total.
+        var pendingRefunds = s.refundsPending || 0;
+        sidebarBadge.textContent = pendingRefunds;
+        sidebarBadge.style.display = pendingRefunds > 0 ? "inline-block" : "none";
       }
     } catch (e) {
       /* stats are non-critical */
@@ -111,7 +118,7 @@
     var tbody = document.getElementById("cancellationsTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Loading cancellations...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">'+tr('loading','Loading...')+'</td></tr>';
 
     try {
       var data = await window.AdminAPI.get("/cancellations", {
@@ -132,7 +139,7 @@
       renderCancellations(items);
       renderPagination();
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="9" class="table-empty">Failed to load cancellations: ' + window.esc(error.message || "Server error") + "</td></tr>";
+      tbody.innerHTML = tr('failed_load_cancellations', 'Failed to load cancellations: {error}', { error: error.message || '' });
     }
   }
 
@@ -141,7 +148,7 @@
     if (!tbody) return;
 
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="9" class="table-empty">No cancellation records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="table-empty">'+tr('no_records','No records found.')+'</td></tr>';
       return;
     }
 
@@ -159,10 +166,10 @@
         '<td>' + window.AdminAPI.formatDateTime(c.requestedAt) + "</td>" +
         '<td>' +
         '<div class="table-actions">' +
-          '<button class="action-btn" data-action="view" data-id="' + window.esc(c.id || c.orderId) + '" title="View details"><i class="fa-solid fa-eye"></i></button>' +
+          '<button class="action-btn" data-action="view" data-id="' + window.esc(c.id || c.orderId) + '" title="' + tr('view_details', 'View details') + '"><i class="fa-solid fa-eye"></i></button>' +
           (c.status === "REQUESTED"
-            ? '<button class="action-btn" data-action="approve" data-id="' + window.esc(c.id || c.orderId) + '" title="Approve"><i class="fa-solid fa-check"></i></button>' +
-              '<button class="action-btn danger" data-action="reject" data-id="' + window.esc(c.id || c.orderId) + '" title="Reject"><i class="fa-solid fa-times"></i></button>'
+            ? '<button class="action-btn" data-action="approve" data-id="' + window.esc(c.id || c.orderId) + '" title="' + tr('approve', 'Approve') + '"><i class="fa-solid fa-check"></i></button>' +
+              '<button class="action-btn danger" data-action="reject" data-id="' + window.esc(c.id || c.orderId) + '" title="' + tr('reject', 'Reject') + '"><i class="fa-solid fa-times"></i></button>'
             : "") +
         "</div>" +
         "</td>" +
@@ -176,7 +183,7 @@
     var prevBtn = document.getElementById("prevPageBtn");
     var nextBtn = document.getElementById("nextPageBtn");
 
-    if (info) info.textContent = "Page " + state.page + " of " + Math.max(state.pages, 1) + " (" + state.total + " cancellations)";
+    if (info) info.textContent = tr('page_of_cancellations', 'Page {page} of {pages} ({total} cancellations)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prevBtn) prevBtn.disabled = state.page <= 1;
     if (nextBtn) nextBtn.disabled = state.page >= state.pages;
   }
@@ -221,7 +228,7 @@
     if (itemsBody) {
       var items = c.items || [];
       if (!items.length) {
-        itemsBody.innerHTML = '<tr><td colspan="4" class="table-empty">No items</td></tr>';
+        itemsBody.innerHTML = '<tr><td colspan="4" class="table-empty">'+tr('no_items','No items')+'</td></tr>';
       } else {
         itemsBody.innerHTML = items.map(function(i) {
           var subtotal = (Number(i.price) || 0) * (Number(i.quantity) || 0);
@@ -240,7 +247,9 @@
     var total = Number(c.orderAmount) || 0;
     setText("modalCancSubtotal", money(subtotal) + " ETB");
     setText("modalCancServiceFee", money(serviceFee) + " ETB");
+    setText("modalCancVat", money(Number(c.orderVatAmount) || 0) + " ETB");
     setText("modalCancTotal", money(total) + " ETB");
+    setText("modalCancRefundNote", money(Number(c.orderSubtotal) || 0) + " ETB");
 
     var noteEl = document.getElementById("cancAdminNote");
     if (noteEl) noteEl.value = "";
@@ -281,15 +290,15 @@
     var isRefundAction = ["request", "confirm", "fail"].indexOf(action) !== -1;
 
     if (action === "approve") {
-      if (!window.confirm("Approve cancellation? The order will be cancelled and a refund will be processed if payment was successful.")) return;
+      if (!window.confirm(tr('approve_cancellation_confirm', 'Approve cancellation? The order will be cancelled and a refund will be processed if payment was successful.'))) return;
     } else if (action === "reject") {
-      if (!window.confirm("Reject cancellation? The order will remain active.")) return;
+      if (!window.confirm(tr('reject_cancellation_confirm', 'Reject cancellation? The order will remain active.'))) return;
     } else if (action === "confirm") {
-      if (!window.confirm("Confirm refund with the payment provider? This permanently marks the refund as completed.")) return;
+      if (!window.confirm(tr('confirm_provider_refund', 'Confirm refund with the payment provider? This permanently marks the refund as completed.'))) return;
     } else if (action === "fail") {
-      if (!window.confirm("Mark refund as failed?")) return;
+      if (!window.confirm(tr('mark_refund_failed_confirm', 'Mark refund as failed?'))) return;
     } else if (action === "request") {
-      if (!window.confirm("Request refund for this order?")) return;
+      if (!window.confirm(tr('request_refund_confirm', 'Request refund for this order?'))) return;
     }
 
     try {
@@ -297,7 +306,7 @@
         // Admin-controlled refund amount (full by default, or 0 for no refund,
         // or a partial amount). Backend honors this value.
         var refundInput = window.prompt(
-          "Refund amount to issue (ETB). Enter 0 for no refund, or leave blank for a full refund:"
+          "Refund amount to issue (ETB). Enter 0 for no refund, or leave blank for the order Subtotal only (VAT is not refunded):"
         );
         var payload = { adminNote: adminNote };
         if (refundInput !== null && refundInput !== "") {
@@ -320,18 +329,18 @@
       }
 
       if (window.AdminToast) {
-        var msg = action === "approve" ? "Cancellation approved" :
-                  action === "reject" ? "Cancellation rejected" :
-                  action === "request" ? "Refund requested" :
-                  action === "confirm" ? "Refund confirmed and completed" :
-                  action === "fail" ? "Refund marked as failed" : "Updated";
+        var msg = action === "approve" ? tr('cancellation_approved', 'Cancellation approved') :
+                  action === "reject" ? tr('cancellation_rejected', 'Cancellation rejected') :
+                  action === "request" ? tr('refund_requested', 'Refund requested') :
+                  action === "confirm" ? tr('refund_confirmed', 'Refund confirmed and completed') :
+                  action === "fail" ? tr('refund_failed_marked', 'Refund marked as failed') : tr('updated', 'Updated');
         window.AdminToast.success(msg);
       }
       closeModal("cancellationDetailsModal");
       loadStats();
       loadCancellations();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to process cancellation");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_process_cancellation', 'Failed to process cancellation'));
     }
   }
 
@@ -431,7 +440,7 @@
 
         var c = findCancellation(id);
         if (!c) {
-          if (window.AdminToast) window.AdminToast.error("Cancellation not found");
+          if (window.AdminToast) window.AdminToast.error(tr('cancellation_not_found', 'Cancellation not found'));
           return;
         }
 
@@ -442,10 +451,34 @@
     }
   }
 
+  // Real-time refresh. A customer cancelling a PAID order moves a row into the
+  // refund queue, and a processed refund moves it out - both arrive as
+  // `order:status` frames, so the table and the stats reload without a manual
+  // refresh. Debounced because one action can emit several frames.
+  function initRealtime() {
+    function bind() {
+      var sc = window.ScosSocketBridge || window.socketClient || null;
+      if (!sc || typeof sc.on !== "function" || sc.__cancellationsBound) return;
+      sc.__cancellationsBound = true;
+      var timer = null;
+      var reload = function () {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(function () {
+          loadStats();
+          loadCancellations();
+        }, 400);
+      };
+      sc.on("order:status", reload);
+    }
+    bind();
+    if (!window.ScosSocketBridge) window.addEventListener("scos:socket-bridge-ready", bind);
+  }
+
   function init() {
     bindEvents();
     loadStats();
     loadCancellations();
+    initRealtime();
   }
 
   document.addEventListener("DOMContentLoaded", init);

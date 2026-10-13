@@ -1,6 +1,8 @@
 const Payment = require('../models/Payment');
 const Order = require('../models/Order');
 const { PAYMENT_STATUS, HTTP_STATUS, MESSAGES } = require('../config/constants');
+const { isAdminRole } = require('../config/roles');
+const { logAction } = require('../utils/audit');
 
 /**
  * @desc    Simulate payment for order
@@ -16,7 +18,7 @@ exports.simulatePayment = async (req, res) => {
     if (!orderId || !method) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Order ID and payment method are required'
+        error: 'Order ID and payment method are required',
       });
     }
 
@@ -24,7 +26,7 @@ exports.simulatePayment = async (req, res) => {
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Order not found'
+        error: 'Order not found',
       });
     }
 
@@ -35,13 +37,14 @@ exports.simulatePayment = async (req, res) => {
       const payment = await Payment.create({
         orderId: order._id,
         userId: req.user.id,
+        cafeteriaId: order.cafeteriaId || null,
         amount: order.totalAmount,
         method,
         provider: method,
         status: PAYMENT_STATUS.PENDING,
         phone: phone || '',
         reference: reference || txRef,
-        paymentDate: new Date()
+        paymentDate: new Date(),
       });
 
       // Build a simulated checkout URL on the SAME host that served the
@@ -50,26 +53,34 @@ exports.simulatePayment = async (req, res) => {
       const base = `${req.protocol}://${req.get('host')}`;
       const checkoutUrl = `${base}/public/simulation-payment.html?orderId=${encodeURIComponent(orderId)}&paymentId=${payment._id}&method=${method}&txRef=${txRef}`;
 
+      await logAction({
+        req,
+        action: 'PAYMENT_CREATED',
+        entityType: 'Payment',
+        entityId: String(payment._id),
+        description: `Payment of ${order.totalAmount} ETB initialized for order ${orderId} via ${method}`,
+      });
+
       return res.status(HTTP_STATUS.OK).json({
         success: true,
         message: 'Simulation payment initialized',
         data: { paymentId: payment._id, checkoutUrl, transactionReference: txRef },
         checkoutUrl,
-        transactionReference: txRef
+        transactionReference: txRef,
       });
     }
 
-    if (order.userId && order.userId.toString() !== String(req.user.id) && req.user.role !== 'admin') {
+    if (order.userId && order.userId.toString() !== String(req.user.id) && !isAdminRole(req.user.role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-        error: 'Unauthorized to pay for this order'
+        error: 'Unauthorized to pay for this order',
       });
     }
 
     if (order.paymentStatus === PAYMENT_STATUS.PAID) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: 'Order already paid'
+        error: 'Order already paid',
       });
     }
 
@@ -78,23 +89,39 @@ exports.simulatePayment = async (req, res) => {
     const payment = await Payment.create({
       orderId: order._id,
       userId: req.user.id,
+      cafeteriaId: order.cafeteriaId || null,
       amount: order.totalAmount,
       method,
       provider: method,
       status: isSuccess ? PAYMENT_STATUS.PAID : PAYMENT_STATUS.FAILED,
       phone: phone || '',
       reference: reference || '',
-      paymentDate: new Date()
+      paymentDate: new Date(),
     });
 
     if (isSuccess) {
       order.paymentStatus = PAYMENT_STATUS.PAID;
       order.transactionId = payment.transactionId;
       await order.save();
+      // Payment successful -> the order now enters the kitchen queue.
+      const { releaseOrderToKitchen } = require('../services/order-queue.service');
+      await releaseOrderToKitchen(order, {
+        actorId: req.user.id,
+        reason: `Payment confirmed (${method})`,
+      });
     } else {
       order.paymentStatus = PAYMENT_STATUS.FAILED;
       await order.save();
     }
+
+    await logAction({
+      req,
+      action: isSuccess ? 'PAYMENT_VERIFIED' : 'PAYMENT_FAILED',
+      entityType: 'Payment',
+      entityId: String(payment._id),
+      description: `Payment ${isSuccess ? 'confirmed' : 'failed'} (${payment.amount} ETB) for order ${orderId} via ${method}`,
+      result: isSuccess ? 'SUCCESS' : 'FAILED',
+    });
 
     res.status(HTTP_STATUS.OK).json({
       success: isSuccess,
@@ -105,14 +132,14 @@ exports.simulatePayment = async (req, res) => {
         amount: payment.amount,
         method: payment.method,
         status: payment.status,
-        paymentDate: payment.paymentDate
-      }
+        paymentDate: payment.paymentDate,
+      },
     });
   } catch (error) {
     console.error('❌ Simulate Payment Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -129,14 +156,14 @@ exports.getPaymentByOrder = async (req, res) => {
     if (!order) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Order not found'
+        error: 'Order not found',
       });
     }
     const payment = await Payment.findOne({ orderId: order._id });
     if (!payment) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: 'Payment not found for this order'
+        error: 'Payment not found for this order',
       });
     }
     res.status(HTTP_STATUS.OK).json({
@@ -149,14 +176,14 @@ exports.getPaymentByOrder = async (req, res) => {
         status: payment.status,
         phone: payment.phone,
         reference: payment.reference,
-        paymentDate: payment.paymentDate
-      }
+        paymentDate: payment.paymentDate,
+      },
     });
   } catch (error) {
     console.error('❌ Get Payment By Order Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -201,14 +228,14 @@ exports.getAllPayments = async (req, res) => {
         status: payment.status,
         phone: payment.phone,
         reference: payment.reference,
-        paymentDate: payment.paymentDate
-      }))
+        paymentDate: payment.paymentDate,
+      })),
     });
   } catch (error) {
     console.error('❌ Get All Payments Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -234,14 +261,14 @@ exports.getMyPayments = async (req, res) => {
         method: payment.method,
         status: payment.status,
         paymentDate: payment.paymentDate,
-        orderTotal: payment.orderId?.totalAmount || 0
-      }))
+        orderTotal: payment.orderId?.totalAmount || 0,
+      })),
     });
   } catch (error) {
     console.error('❌ Get My Payments Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -272,14 +299,14 @@ exports.getPaymentStats = async (req, res) => {
         pendingPayments,
         failedPayments,
         totalRevenue,
-        methods: { telebirr, chapa }
-      }
+        methods: { telebirr, chapa },
+      },
     });
   } catch (error) {
     console.error('❌ Get Payment Stats Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };
@@ -309,13 +336,13 @@ exports.validatePayment = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: Object.keys(errors).length === 0,
       valid: Object.keys(errors).length === 0,
-      errors
+      errors,
     });
   } catch (error) {
     console.error('❌ Validate Payment Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
-      error: MESSAGES.SERVER_ERROR
+      error: MESSAGES.SERVER_ERROR,
     });
   }
 };

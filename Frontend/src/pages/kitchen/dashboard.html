@@ -186,6 +186,39 @@
         .stat-card.pending { border-left-color: #f59e0b; }
         .stat-card.preparing { border-left-color: #3b82f6; }
         .stat-card.ready { border-left-color: #10b981; }
+        .stat-card.cancelled { border-left-color: #ef4444; }
+        .stat-card.filter-trigger {
+            cursor: pointer;
+            transition: box-shadow 0.15s ease, transform 0.15s ease, outline-color 0.15s ease;
+        }
+        .stat-card.filter-trigger:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+            transform: translateY(-2px);
+        }
+        .stat-card.filter-trigger.active { outline: 2px solid #f97316; }
+
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .filter-group .btn {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            color: #374151;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s ease;
+        }
+        .filter-group .btn:hover,
+        .filter-group .btn.active {
+            background: #f97316;
+            border-color: #f97316;
+            color: #fff;
+        }
 
         .stat-label {
             font-size: 0.85rem;
@@ -209,6 +242,52 @@
             font-size: 0.85rem;
             color: #6b7280;
         }
+        .quick-nav-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .quick-nav-card {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 18px 20px;
+            text-decoration: none;
+            color: #111827;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+        .quick-nav-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+            border-color: #f97316;
+            color: #ea580c;
+            text-decoration: none;
+        }
+        .quick-nav-icon {
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            color: #ffffff;
+            flex-shrink: 0;
+        }
+        .quick-nav-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+        .quick-nav-desc {
+            font-size: 0.8rem;
+            color: #6b7280;
+            margin-top: 2px;
+        }
         #kitchenTicketsGrid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -216,6 +295,7 @@
         }
         .ticket-actions-group {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             width: 100%;
             margin-top: 12px;
@@ -245,6 +325,259 @@
             color: #ffffff;
         }
 
+        /* ===== New-order toast notifications ===== */
+        .kds-toast-stack {
+            position: fixed;
+            top: 76px;
+            right: 16px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+        .kds-toast {
+            pointer-events: auto;
+            background: #ffffff;
+            color: #111827;
+            border-left: 5px solid #f97316;
+            border-radius: 10px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+            padding: 12px 14px;
+            animation: kds-toast-in 0.25s ease;
+            font-size: 0.9rem;
+        }
+        .kds-toast.is-error { border-left-color: #ef4444; }
+        .kds-toast.is-success { border-left-color: #10b981; }
+        .kds-toast-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .kds-toast-title .kds-toast-badge {
+            background: #fff7ed;
+            color: #c2410c;
+            border: 1px solid #fed7aa;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            padding: 2px 8px;
+            text-transform: uppercase;
+        }
+        .kds-toast-meta {
+            color: #6b7280;
+            font-size: 0.82rem;
+            margin-bottom: 4px;
+        }
+        .kds-toast-items {
+            color: #374151;
+            font-size: 0.84rem;
+            line-height: 1.35;
+        }
+        .kds-toast-close {
+            border: none;
+            background: transparent;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0 2px;
+        }
+        .kds-toast-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .kds-toast-action {
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            color: #374151;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 6px 12px;
+        }
+        .kds-toast-action:hover { background: #f3f4f6; }
+        .kds-toast-action-stop { border-color: #fecaca; color: #b91c1c; }
+        .kds-toast-action:disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: default;
+        }
+        .ticket-badges {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .kds-unread-badge {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 999px;
+            color: #c2410c;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            text-transform: uppercase;
+        }
+        .kds-ticket-unread { box-shadow: 0 0 0 2px #fdba74 inset; }
+        .kds-ticket-focused {
+            outline: 3px solid #f97316;
+            outline-offset: 3px;
+        }
+        /* Clicking a ticket acknowledges it, so advertise that it is clickable. */
+        #kitchenTicketsGrid .ticket-card { cursor: pointer; }
+        /* Toast stays visually "ringing" until the order is acknowledged. */
+        .kds-toast-alerting {
+            border-left-color: #f97316;
+            animation: kds-toast-alert 1.2s ease-in-out infinite;
+        }
+        @keyframes kds-toast-alert {
+            0%, 100% { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18); }
+            50% { box-shadow: 0 10px 28px rgba(249, 115, 22, 0.55); }
+        }
+        @keyframes kds-toast-in {
+            from { opacity: 0; transform: translateX(16px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        [data-theme="dark"] .kds-toast {
+            background: #1e293b;
+            color: #e2e8f0;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+        }
+        [data-theme="dark"] .kds-toast-meta { color: #94a3b8; }
+        [data-theme="dark"] .kds-toast-items { color: #cbd5e1; }
+
+        /* ===== Persistent new-order alert banner ===== */
+        .kds-new-order-banner {
+            position: sticky;
+            top: 0;
+            z-index: 1900;
+            margin: 0 0 20px;
+            border: 2px solid #f97316;
+            border-left-width: 8px;
+            border-radius: 12px;
+            background: #fff7ed;
+            color: #7c2d12;
+            padding: 14px 18px;
+            box-shadow: 0 10px 24px rgba(249, 115, 22, 0.25);
+        }
+        .kds-new-order-banner[hidden] { display: none !important; }
+        .kds-new-order-headline {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #c2410c;
+            margin-bottom: 10px;
+        }
+        .kds-new-order-pulse {
+            margin-left: auto;
+            background: #f97316;
+            color: #fff;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            padding: 3px 10px;
+            text-transform: uppercase;
+            animation: kds-new-order-pulse 1.1s ease-in-out infinite;
+        }
+        .kds-new-order-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .kds-new-order-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #fff;
+            border: 1px solid #fed7aa;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .kds-new-order-summary { color: #7c2d12; }
+        .kds-new-order-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+        }
+        .kds-new-order-btn {
+            border: 1px solid #fdba74;
+            background: #fff7ed;
+            color: #c2410c;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 5px 14px;
+            cursor: pointer;
+        }
+        .kds-new-order-btn:hover { background: #ffedd5; }
+        .kds-new-order-btn-stop {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
+        }
+        .kds-new-order-btn-stop:hover { background: #fee2e2; }
+        @keyframes kds-new-order-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.55; }
+        }
+        [data-theme="dark"] .kds-new-order-banner {
+            background: #2a1508;
+            color: #fed7aa;
+            border-color: #f97316;
+        }
+        [data-theme="dark"] .kds-new-order-headline { color: #fdba74; }
+        [data-theme="dark"] .kds-new-order-item {
+            background: #1e293b;
+            border-color: #7c2d12;
+        }
+        [data-theme="dark"] .kds-new-order-summary { color: #fed7aa; }
+
+        /* ===== Autoplay / enable-sound CTA ===== */
+        .kds-sound-unlock {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2100;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #111827;
+            color: #ffffff;
+            border: 1px solid #374151;
+            border-radius: 999px;
+            padding: 10px 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            font-size: 0.9rem;
+            max-width: calc(100vw - 32px);
+        }
+        .kds-sound-unlock[hidden] { display: none !important; }
+        .kds-sound-unlock button {
+            border: none;
+            border-radius: 999px;
+            background: #f97316;
+            color: #fff;
+            font-weight: 700;
+            padding: 8px 14px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .kds-sound-unlock button:hover { background: #ea580c; }
+
         /* ===== Dark mode (kept consistent with the rest of the kitchen) ===== */
         [data-theme="dark"] body,
         [data-theme="dark"] .kds-layout,
@@ -263,6 +596,28 @@
         [data-theme="dark"] .refresh-indicator { color: #94a3b8; }
         [data-theme="dark"] .stat-number { color: #f8fafc; }
         [data-theme="dark"] .section-title-bar { color: #e2e8f0; }
+        [data-theme="dark"] .quick-nav-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+        }
+        [data-theme="dark"] .quick-nav-card:hover {
+            border-color: #f97316;
+            color: #f97316;
+        }
+        [data-theme="dark"] .quick-nav-desc { color: #94a3b8; }
+        [data-theme="dark"] .stat-card.cancelled { border-left-color: #ef4444; }
+        [data-theme="dark"] .filter-group .btn {
+            background: #1e293b;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        [data-theme="dark"] .filter-group .btn:hover,
+        [data-theme="dark"] .filter-group .btn.active {
+            background: #f97316;
+            border-color: #f97316;
+            color: #fff;
+        }
         [data-theme="dark"] .dropdown-menu-custom {
             background: #1e293b;
             border: 1px solid #334155;
@@ -275,6 +630,7 @@
         [data-theme="dark"] #kitchenTicketsGrid { color: #e2e8f0; }
     </style>
     <script src="../../js/config.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
     <script src="../../js/theme.js?v=20260907"></script>
 </head>
 <body class="admin-body">
@@ -287,26 +643,30 @@
             </button>
             <div class="kds-header-title">
                 <i class="fa-solid fa-fire-burner fa-xl"></i>
-                <h1>Kitchen Display System</h1>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
                 <span class="kds-badge" id="stationBadge">Station 1</span>
             </div>
         </div>
 
         <!-- User Menu -->
         <div class="user-menu">
-                <button type="button" class="kds-nav-btn theme-toggle" id="kitchenThemeToggle" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode">
+            <button type="button" class="kds-nav-btn" id="soundToggleBtn" title="Toggle notification sound" aria-pressed="true">
+                <i class="fa-solid fa-volume-high" id="soundToggleIcon"></i>
+                <span id="soundToggleLabel">?? Sound ON</span>
+            </button>
+            <button type="button" class="kds-nav-btn theme-toggle" id="kitchenThemeToggle" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode">
                 <i class="fa-solid fa-moon"></i>
-                </button>
+            </button>
             <button type="button" class="kds-nav-btn kds-logout-btn" onclick="logout()" title="Logout">
                 <i class="fa-solid fa-right-from-bracket"></i> Logout
             </button>
             <div class="user-dropdown">
                 <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
                     <i class="fa-solid fa-user-circle"></i>
-                    <span id="userName">Profile</span>
+                    <span data-i18n="profile" id="userName">Profile</span>
                 </button>
                 <div class="dropdown-menu-custom" id="userDropdownMenu">
-                    <a href="#" onclick="viewProfile()">
+                    <a data-i18n="nav_profile" href="#" onclick="viewProfile()">
                         <i class="fa-solid fa-id-card"></i> My Profile
                     </a>
                     <a href="#" onclick="viewCurrentShift()">
@@ -326,31 +686,34 @@
         <aside class="kds-sidebar" id="kdsSidebar">
             <div class="kds-sidebar-brand">
                 <i class="fa-solid fa-fire-burner"></i>
-                <span>Kitchen Menu</span>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-group">
-                    <a href="dashboard.html" class="sidebar-link active">
+                    <a href="/src/pages/kitchen/dashboard.html" class="sidebar-link active">
                         <i class="fa-solid fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="orders.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link">
                         <i class="fa-solid fa-receipt"></i> Orders
                     </a>
-                    <a href="availability.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link">
                         <i class="fa-solid fa-burger"></i> Availability
                     </a>
-                    <a href="stock-alerts.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
+                    </a>
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
                     </a>
                 </div>
                 <div class="sidebar-group" style="margin-top: 16px;">
-                    <a href="notifications.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
-                    <a href="schedule.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
                         <i class="fa-solid fa-clock"></i> Preparation Schedule
                     </a>
-                    <a href="settings.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link">
                         <i class="fa-solid fa-gear"></i> Settings
                     </a>
                 </div>
@@ -360,33 +723,136 @@
         <!-- MAIN DASHBOARD CONTENT -->
         <main class="kds-main">
 
-        <!-- LIVE METRICS ROW -->
+        <!-- PERSISTENT NEW-ORDER ALERT: stays until the kitchen acknowledges -->
+        <div class="kds-new-order-banner" id="kdsNewOrderBanner" hidden role="alert" aria-live="assertive"></div>
+
+        <!-- PERSISTENT UNREAD-NOTIFICATION PANEL
+             Backed by the server (GET /notifications?unread=true), so an order
+             or cancellation the kitchen has not seen yet cannot be lost by a
+             page refresh, a backgrounded tab, or a dropped socket frame. -->
+        <section class="kds-notif-panel" id="kdsNotifPanel" aria-labelledby="kdsNotifPanelTitle">
+            <header class="kds-notif-head">
+                <h2 class="kds-notif-heading" id="kdsNotifPanelTitle">
+                    <i class="fa-solid fa-bell"></i> Unhandled Order Alerts
+                </h2>
+                <span class="kds-notif-count" id="kdsNotifUnreadCount" hidden>0</span>
+                <a class="kds-notif-all" href="/src/pages/kitchen/notifications.html">All notifications</a>
+            </header>
+            <ul class="kds-notif-list" id="kdsNotifList" aria-live="polite"></ul>
+        </section>
+
+        <!-- LIVE METRICS ROW (click a card to filter tickets) -->
         <div class="stats-grid">
-            <div class="stat-card pending">
+            <div class="stat-card pending filter-trigger" data-status="pending">
                 <div class="stat-info">
                     <div class="stat-label">Pending Kitchen</div>
                     <div class="stat-number" id="pendingCount">0</div>
                 </div>
             </div>
-            <div class="stat-card preparing">
+            <div class="stat-card preparing filter-trigger" data-status="preparing">
                 <div class="stat-info">
                     <div class="stat-label">In Preparation</div>
                     <div class="stat-number" id="preparingCount">0</div>
                 </div>
             </div>
-            <div class="stat-card ready">
+            <div class="stat-card ready filter-trigger" data-status="ready">
                 <div class="stat-info">
                     <div class="stat-label">Ready For Pickup</div>
                     <div class="stat-number" id="readyCount">0</div>
                 </div>
             </div>
+            <div class="stat-card cancelled filter-trigger" data-status="cancelled">
+                <div class="stat-info">
+                    <div class="stat-label">Cancelled</div>
+                    <div class="stat-number" id="cancelledCount">0</div>
+                </div>
+            </div>
         </div>
 
-        <!-- SECTION HEADER & REFRESH STATUS -->
-        <div class="section-title-bar">
-            <h2>Live Order Tickets</h2>
+        <!-- STATUS FLOW HINT -->
+        <div class="section-title-bar" style="margin-top:4px;">
             <div class="refresh-indicator">
-                <i class="fa-solid fa-rotate-right fa-spin"></i> Live Sync Active
+                Status flow:
+                <strong>Pending</strong> ? <strong>In Preparation</strong> ? <strong>Ready</strong> ? <strong>Completed</strong>
+            </div>
+            <div class="refresh-indicator" id="kdsLiveIndicator">
+                <i class="fa-solid fa-signal"></i> Live updates
+            </div>
+        </div>
+
+        <!-- QUICK ACCESS: ALL KITCHEN SECTIONS -->
+        <div class="section-title-bar" style="margin-top: 20px;">
+            <h2 data-i18n="kitchen_brand">Kitchen Menu</h2>
+        </div>
+        <div class="quick-nav-grid">
+            <a href="/src/pages/kitchen/dashboard.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #f97316;"><i class="fa-solid fa-tachometer-alt"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_dashboard" class="quick-nav-title">Dashboard</div>
+                    <div class="quick-nav-desc">Live order tickets &amp; stats</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/orders.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #3b82f6;"><i class="fa-solid fa-receipt"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_orders" class="quick-nav-title">Orders</div>
+                    <div class="quick-nav-desc">Manage and prepare orders</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/availability.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #10b981;"><i class="fa-solid fa-burger"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_availability" class="quick-nav-title">Availability</div>
+                    <div class="quick-nav-desc">Toggle menu item availability</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/stock-alerts.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #ef4444;"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_stock_alerts" class="quick-nav-title">Stock Alerts</div>
+                    <div class="quick-nav-desc">Low stock &amp; alert items</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/issues.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #f59e0b;"><i class="fa-solid fa-flag"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_issue_reports" class="quick-nav-title">Issue Reports</div>
+                    <div class="quick-nav-desc">Report issues &amp; view manager solutions</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/notifications.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #8b5cf6;"><i class="fa-solid fa-bell"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_notifications" class="quick-nav-title">Notifications</div>
+                    <div class="quick-nav-desc">View all kitchen alerts</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/schedule.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #06b6d4;"><i class="fa-solid fa-clock"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_schedule" class="quick-nav-title">Preparation Schedule</div>
+                    <div class="quick-nav-desc">Planned prep &amp; shift times</div>
+                </div>
+            </a>
+            <a href="/src/pages/kitchen/settings.html" class="quick-nav-card">
+                <div class="quick-nav-icon" style="background: #64748b;"><i class="fa-solid fa-gear"></i></div>
+                <div>
+                    <div data-i18n="kitchen_nav_settings" class="quick-nav-title">Settings</div>
+                    <div class="quick-nav-desc">Kitchen station preferences</div>
+                </div>
+            </a>
+        </div>
+
+        <!-- STATUS FILTER BAR -->
+        <div class="section-title-bar" style="margin-top: 8px; align-items: center;">
+            <h2>Live Order Tickets</h2>
+            <div class="filter-group">
+                <button class="btn active" data-status="all">All Active</button>
+                <button data-i18n="status_pending" class="btn" data-status="pending">Pending</button>
+                <button class="btn" data-status="preparing">In Preparation</button>
+                <button class="btn" data-status="ready">Ready</button>
+                <button class="btn" data-status="served">Completed</button>
+                <button class="btn" data-status="cancelled">Cancelled</button>
             </div>
         </div>
 
@@ -398,16 +864,31 @@
         </main>
     </div>
 
-    <!-- Audio Element for Order Alerts -->
-    <audio id="orderNotificationSound" src="/assets/sounds/new-order.mp3" preload="auto"></audio>
+    <!-- Visible new-order toasts -->
+    <div class="kds-toast-stack" id="kdsToastStack" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- Autoplay unlock CTA (shown if the browser blocks notification sound) -->
+    <div class="kds-sound-unlock" id="soundUnlockBanner" hidden role="alert">
+        <i class="fa-solid fa-volume-xmark"></i>
+        <span>Browser blocked the notification sound.</span>
+        <button type="button" id="enableSoundBtn">Enable notification sound</button>
+    </div>
+
+    <!-- Audio Element for Order Alerts (real PCM chime; mp3 secondary) -->
+    <audio id="orderNotificationSound" src="/assets/sounds/new-order.wav" preload="auto">
+        <source src="/assets/sounds/new-order.wav" type="audio/wav">
+        <source src="/assets/sounds/new-order.mp3" type="audio/mpeg">
+    </audio>
 
     <!-- JavaScript Dependencies -->
     <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
-    <script type="module" src="../../js/utils/i18n.js?v=20260907"></script>
-    <script type="module" src="../../js/api.js?v=20260907"></script>
-    <script type="module" src="../../js/auth.js?v=20260907"></script>
-    <script type="module" src="../../js/socket.js?v=20260907"></script>
-    <script type="module" src="./kitchen.js?v=20260907"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261004-cancel"></script>
+    <script src="../../js/session-timeout.js?v=20260923"></script>
+    <script src="../../js/notification-sound.js?v=20260926alert"></script>
+    <script type="module" src="../../js/api.js?v=20260923"></script>
+    <script type="module" src="../../js/auth.js?v=20260923"></script>
+    <script type="module" src="../../js/socket.js?v=20260925loop"></script>
+    <script type="module" src="./kitchen.js?v=20261004-par"></script>
 
     <!-- Navigation & User Menu Script -->
     <script>
@@ -486,7 +967,7 @@ Current Shift:
 Type: ${shift.shiftType}
 Start: ${new Date(shift.startTime).toLocaleString()}
 End: ${new Date(shift.endTime).toLocaleString()}
-Status: ${shift.status.toUpperCase()}
+Status: ${(window.translateStatus || (v => String(v).toUpperCase()))(shift.status)}
 ${shift.clockInTime ? `Clocked In: ${new Date(shift.clockInTime).toLocaleTimeString()}` : 'Not clocked in'}
                     `);
                 } else {

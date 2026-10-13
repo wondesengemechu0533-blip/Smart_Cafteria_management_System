@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="cashier_orders">Orders - Smart Cafeteria</title>
+
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="/src/css/delivery.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar cashier-sidebar" id="cashierSidebar"></aside>
+        <main class="admin-main">
+            <div class="delivery-header">
+                <h1><i class="fa-solid fa-receipt"></i> <span data-i18n="cashier_orders">Orders</span></h1>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshOrdersBtn"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <label class="form-label" for="orderSearchInput">Search</label>
+                            <input type="text" id="orderSearchInput" class="form-control" placeholder="Order #, customer..." style="min-width:220px;">
+                        </div>
+                        <div>
+                            <label class="form-label" for="orderStatusFilter">Status</label>
+                            <select id="orderStatusFilter" class="form-select">
+                                <option value="all">All</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="PREPARING">Preparing</option>
+                                <option value="READY">Ready</option>
+                                <option value="SERVED">Served</option>
+                                <option value="COMPLETED">Completed</option>
+                                <option value="CANCELLED">Cancelled</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="orderPaymentFilter">Payment</label>
+                            <select id="orderPaymentFilter" class="form-select">
+                                <option value="all">All</option>
+                                <option value="PAID">Paid</option>
+                                <option value="PENDING">Pending</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-primary" id="applyOrderFiltersBtn"><i class="fa-solid fa-filter"></i> Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+            <div class="card">
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Amount</th>
+                                <th>Payment</th>
+                                <th>Payment Status</th>
+                                <th>Order Status</th>
+                                <th>Created</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ordersTableBody">
+                            <tr><td colspan="8" class="table-empty">Loading orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <span class="pagination-info" id="ordersPaginationInfo">Page 1</span>
+                    <div class="pagination-actions">
+                        <button class="btn btn-secondary" id="prevOrdersPageBtn">Prev</button>
+                        <button class="btn btn-secondary" id="nextOrdersPageBtn">Next</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/cashier-layout.js"></script>
+    <script src="../../js/cashier-orders.js"></script>
+    <script>
+        function initPageSpecific() {}
+    </script>
+</body>
+</html>

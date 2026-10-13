@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * Smart Cafeteria Ordering System
  * File: frontend/src/js/api.js
@@ -12,7 +17,10 @@ class ApiClient {
             (typeof window.__API_BASE === "string"
                 ? window.__API_BASE + "/api/v1"
                 : "");
-        this.baseURL = baseURL || configured || window.location.origin + "/api/v1";
+        this.baseURL =
+            baseURL ||
+            configured ||
+            "http://localhost:5000/api/v1";
         this.defaultTimeout = 15000;
     }
 
@@ -97,14 +105,23 @@ class ApiClient {
             }
 
             if (!response.ok) {
-                const message =
+                const raw =
                     data?.message ||
                     data?.error ||
                     `Request failed with status ${response.status}`;
+                const message =
+                    typeof window.translateErrorMessage === 'function'
+                        ? window.translateErrorMessage(raw, data?.code || data?.errorCode)
+                        : raw;
 
                 const error = new Error(message);
                 error.status = response.status;
                 error.data = data;
+                error.rawMessage = raw;
+                // Preserve the machine-readable code so callers can react to a
+                // specific condition (e.g. DELIVERY_ON_HOLD) instead of
+                // string-matching the human message.
+                error.code = data?.code || data?.errorCode || null;
 
                 if (response.status === 401) {
                     this.removeToken();
@@ -120,14 +137,22 @@ class ApiClient {
             return data;
         } catch (error) {
             if (error.name === "AbortError") {
-                throw new Error("Request timed out. Please try again.");
+                const timeoutMsg = typeof window.translateErrorMessage === 'function'
+                    ? window.translateErrorMessage('timeout')
+                    : tr("error_timeout", "Request timed out. Please try again.");
+                throw new Error(timeoutMsg);
             }
             // Network failure (backend down) - provide actionable message
             if (error instanceof TypeError && error.message === "Failed to fetch") {
                 // Fallback: try alternate host once before failing
                 const altHost = this.baseURL.includes("localhost") ? "http://127.0.0.1:5000/api/v1" : null;
                 if (url.startsWith(this.baseURL) && altHost !== this.baseURL && !options._retriedAltHost) {
-                    if (!altHost) throw new Error("Could not connect to backend server.");
+                    if (!altHost) {
+                        const noHost = typeof window.translateErrorMessage === 'function'
+                            ? window.translateErrorMessage('network')
+                            : tr("error_connect", "Could not connect to backend server.");
+                        throw new Error(noHost);
+                    }
                     try {
                         const altUrl = url.replace(this.baseURL, altHost);
                         const altOptions = { ...options, _retriedAltHost: true };
@@ -142,13 +167,19 @@ class ApiClient {
                         if (ct && ct.includes("application/json")) altData = await altRes.json();
                         else { const t = await altRes.text(); try { altData = t ? JSON.parse(t) : null; } catch { altData = t; } }
                         if (!altRes.ok) {
-                            const msg = altData?.message || altData?.error || `Request failed with status ${altRes.status}`;
-                            const e2 = new Error(msg); e2.status = altRes.status; e2.data = altData; throw e2;
+                            const rawMsg = altData?.message || altData?.error || `Request failed with status ${altRes.status}`;
+                            const localized = typeof window.translateErrorMessage === 'function'
+                                ? window.translateErrorMessage(rawMsg, altData?.code || altData?.errorCode)
+                                : rawMsg;
+                            const e2 = new Error(localized); e2.status = altRes.status; e2.data = altData; e2.rawMessage = rawMsg; throw e2;
                         }
                         return altData;
                     } catch {}
                 }
-                throw new Error("Could not connect to backend server. Please ensure the backend is running on port 5000 (run: cd Backend && npm run dev).");
+                const netMsg = typeof window.translateErrorMessage === 'function'
+                    ? window.translateErrorMessage('network')
+                    : tr("error_connect_dev", "Could not connect to backend server. Please ensure the backend is running on port 5000.");
+                throw new Error(netMsg);
             }
 
             throw error;

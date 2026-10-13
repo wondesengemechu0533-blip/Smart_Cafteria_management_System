@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * Smart Cafeteria Ordering System
  * File: frontend/src/js/auth.js
@@ -66,7 +71,7 @@ async function handleLogin(event) {
     const password = form.querySelector('#password')?.value;
 
     if (!identifier || !password) {
-        showMessage("Phone/Email and password are required.", "danger");
+        showMessage(tr("auth_required_credentials", "Phone/Email and password are required."), "danger");
         return;
     }
 
@@ -78,17 +83,11 @@ async function handleLogin(event) {
             password
         });
 
-        showMessage("Login successful.", "success");
+        showMessage(tr("auth_login_success", "Login successful."), "success");
 
-        const redirectRole = String(result?.user?.role || '').toLowerCase();
-        let redirect = "../customer/menu.html";
-        if (redirectRole === "admin") {
-            redirect = "../admin/dashboard.html";
-        } else if (["kitchen", "kitchen_staff", "staff", "foodmaker"].includes(redirectRole)) {
-            redirect = "../kitchen/dashboard.html";
-        } else if (["delivery", "delivery_staff", "delivery staff", "driver", "rider"].includes(redirectRole)) {
-            redirect = "../delivery/deliveries.html";
-        }
+        const rawRole = String(result?.user?.role || 'customer').trim();
+        const canonical = (window.ScosRoles ? ScosRoles.normalizeRole(rawRole) : rawRole.toLowerCase()) || 'customer';
+        let redirect = window.ScosRoles ? ScosRoles.dashboardForRole(canonical) : "../customer/menu.html";
 
         setTimeout(() => {
             window.location.href = redirect;
@@ -114,17 +113,17 @@ async function handleRegister(event) {
     const agreedToTerms = form.querySelector('#agreeTerms')?.checked;
 
     if (!name || !email || !phone || !password || !confirmPassword) {
-        showMessage("Please fill in all required fields.", "danger");
+        showMessage(tr("auth_fill_required", "Please fill in all required fields."), "danger");
         return;
     }
 
     if (!agreedToTerms) {
-        showMessage("You must agree to the Terms & Conditions.", "danger");
+        showMessage(tr("auth_agree_terms", "You must agree to the Terms & Conditions."), "danger");
         return;
     }
 
     if (password !== confirmPassword) {
-        showMessage("Passwords do not match.", "danger");
+        showMessage(tr("auth_passwords_no_match", "Passwords do not match."), "danger");
         return;
     }
 
@@ -141,7 +140,7 @@ async function handleRegister(event) {
         });
 
         showMessage(
-            "Registration successful. You can now login.",
+            tr("auth_register_success", "Registration successful. You can now login."),
             "success"
         );
 
@@ -186,7 +185,7 @@ function setLoading(form, loading) {
     if (loading) {
         // Save original HTML content to preserve icons/formatting if any exist
         button.dataset.originalHtml = button.innerHTML;
-        button.innerHTML = "Please wait...";
+        button.innerHTML = tr("please_wait", "Please wait...");
     } else {
         button.innerHTML =
             button.dataset.originalHtml || button.innerHTML;

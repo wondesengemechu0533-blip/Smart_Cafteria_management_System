@@ -1,12 +1,9 @@
-const Feedback = require("../models/Feedback");
-const Order = require("../models/Order");
-const User = require("../models/User");
-const Notification = require("../models/Notification");
-const {
-  FEEDBACK_STATUS,
-  MESSAGES,
-  HTTP_STATUS,
-} = require("../config/constants");
+const Feedback = require('../models/Feedback');
+const Order = require('../models/Order');
+const User = require('../models/User');
+const Notification = require('../models/Notification');
+const { FEEDBACK_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
+const { logAction } = require('../utils/audit');
 
 /**
 
@@ -26,7 +23,7 @@ exports.submitFeedback = async (req, res) => {
     if (!rating) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: "Rating is required",
+        error: 'Rating is required',
       });
     }
 
@@ -35,7 +32,7 @@ exports.submitFeedback = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
 
-        error: "Rating must be between 1 and 5",
+        error: 'Rating must be between 1 and 5',
       });
     }
 
@@ -46,7 +43,7 @@ exports.submitFeedback = async (req, res) => {
       if (!order) {
         return res.status(HTTP_STATUS.NOT_FOUND).json({
           success: false,
-          error: "Order not found",
+          error: 'Order not found',
         });
       }
       orderRef = order._id;
@@ -59,7 +56,7 @@ exports.submitFeedback = async (req, res) => {
       if (existingFeedback) {
         return res.status(HTTP_STATUS.CONFLICT).json({
           success: false,
-          error: "Feedback already submitted for this order",
+          error: 'Feedback already submitted for this order',
         });
       }
     }
@@ -69,10 +66,19 @@ exports.submitFeedback = async (req, res) => {
       userId: req.user.id,
       orderId: orderRef,
       rating: rating,
-      comment: comment || "",
-      category: category || "Food Quality",
-      dishName: dishName || "",
+      comment: comment || '',
+      category: category || 'Food Quality',
+      dishName: dishName || '',
       status: FEEDBACK_STATUS.PENDING,
+    });
+
+    // ✅ Audit feedback submission
+    await logAction({
+      req,
+      action: 'FEEDBACK_SUBMITTED',
+      entityType: 'Feedback',
+      entityId: String(feedback._id),
+      description: `${req.user.name || 'Customer'} submitted ${rating}-star feedback (${category || 'Food Quality'})`,
     });
 
     // ✅ Real-time to admin dashboard
@@ -86,7 +92,7 @@ exports.submitFeedback = async (req, res) => {
         category: feedback.category,
         dishName: feedback.dishName,
         status: feedback.status,
-        createdAt: feedback.createdAt
+        createdAt: feedback.createdAt,
       });
     } catch (e) {
       console.warn('Socket emit failed for new feedback:', e.message);
@@ -94,7 +100,7 @@ exports.submitFeedback = async (req, res) => {
 
     res.status(HTTP_STATUS.CREATED).json({
       success: true,
-      message: "Thank you for your feedback!",
+      message: 'Thank you for your feedback!',
 
       feedback: {
         id: feedback._id,
@@ -107,7 +113,7 @@ exports.submitFeedback = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Submit Feedback Error:", error);
+    console.error('❌ Submit Feedback Error:', error);
 
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -117,19 +123,19 @@ exports.submitFeedback = async (req, res) => {
 };
 
 /**
-* @desc    Get user's feedback
-* @route   GET /api/feedback/my
-* @access  Private
-*
-* Frontend: feedback.html → Show user's past feedback
-* Response: { success, count,
+ * @desc    Get user's feedback
+ * @route   GET /api/feedback/my
+ * @access  Private
+ *
+ * Frontend: feedback.html → Show user's past feedback
+ * Response: { success, count,
 
 feedback: [...] }
 */
 exports.getMyFeedback = async (req, res) => {
   try {
     const feedback = await Feedback.find({ userId: req.user.id })
-      .populate("orderId", "orderId customerName items totalAmount")
+      .populate('orderId', 'orderId customerName items totalAmount')
       .sort({ createdAt: -1 });
 
     res.status(HTTP_STATUS.OK).json({
@@ -138,18 +144,18 @@ exports.getMyFeedback = async (req, res) => {
       feedback: feedback.map((fb) => ({
         id: fb._id,
 
-        orderId: fb.orderId?.orderId || "N/A",
+        orderId: fb.orderId?.orderId || 'N/A',
         rating: fb.rating,
         comment: fb.comment,
         category: fb.category,
         dishName: fb.dishName,
         status: fb.status,
-        reply: fb.reply,
+        isRead: fb.isRead,
         createdAt: fb.createdAt,
       })),
     });
   } catch (error) {
-    console.error("❌ Get My Feedback Error:", error);
+    console.error('❌ Get My Feedback Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -173,7 +179,7 @@ exports.getAllFeedback = async (req, res) => {
 
     // ✅ Build filter
     let filter = {};
-    if (status && status !== "all") filter.status = status;
+    if (status && status !== 'all') filter.status = status;
     if (rating) filter.rating = parseInt(rating);
     if (search && String(search).trim()) {
       const term = String(search).trim();
@@ -190,8 +196,8 @@ exports.getAllFeedback = async (req, res) => {
 
     // ✅ Execute query
     const feedback = await Feedback.find(filter)
-      .populate("userId", "name email phone role")
-      .populate("orderId", "orderId customerName")
+      .populate('userId', 'name email phone role')
+      .populate('orderId', 'orderId customerName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -214,20 +220,20 @@ exports.getAllFeedback = async (req, res) => {
               role: fb.userId.role,
             }
           : null,
-        orderId: fb.orderId?.orderId || "N/A",
-        customerName: fb.orderId?.customerName || "N/A",
+        orderId: fb.orderId?.orderId || 'N/A',
+        customerName: fb.orderId?.customerName || 'N/A',
         rating: fb.rating,
         comment: fb.comment,
         category: fb.category,
 
         dishName: fb.dishName,
         status: fb.status,
-        reply: fb.reply,
+        isRead: fb.isRead,
         createdAt: fb.createdAt,
       })),
     });
   } catch (error) {
-    console.error("❌ Get All Feedback Error:", error);
+    console.error('❌ Get All Feedback Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -241,10 +247,10 @@ exports.getAllFeedback = async (req, res) => {
 exports.getFeedbackById = async (req, res) => {
   try {
     const feedback = await Feedback.findById(req.params.id)
-      .populate("userId", "name email phone role")
-      .populate("orderId", "orderId customerName");
+      .populate('userId', 'name email phone role')
+      .populate('orderId', 'orderId customerName');
     if (!feedback) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: "Feedback not found" });
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Feedback not found' });
     }
 
     res.status(HTTP_STATUS.OK).json({
@@ -259,8 +265,8 @@ exports.getFeedbackById = async (req, res) => {
               role: feedback.userId.role,
             }
           : null,
-        orderId: feedback.orderId?.orderId || "N/A",
-        customerName: feedback.orderId?.customerName || "N/A",
+        orderId: feedback.orderId?.orderId || 'N/A',
+        customerName: feedback.orderId?.customerName || 'N/A',
         rating: feedback.rating,
         comment: feedback.comment,
         category: feedback.category,
@@ -271,7 +277,7 @@ exports.getFeedbackById = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Get Feedback By ID Error:", error);
+    console.error('❌ Get Feedback By ID Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -280,22 +286,22 @@ exports.getFeedbackById = async (req, res) => {
 };
 
 /**
- * @desc    Reply to feedback (Admin only)
- * @route   PATCH /api/feedback/:id/reply
+ * @desc    Mark feedback as processed (RESOLVED / ARCHIVED) - Admin only
+ * @route   PATCH /api/feedback/:id/status
  * @access  Private/Admin
  *
- * Frontend: admin/feedback.html → Reply to feedback
- * Expected Body: { reply }
+ * Frontend: admin/feedback.html → Mark processed / archive
+ * Expected Body: { status: 'RESOLVED' | 'ARCHIVED' }
  * Response: { success, feedback }
  */
-exports.replyToFeedback = async (req, res) => {
+exports.updateFeedbackStatus = async (req, res) => {
   try {
-    const { reply, resolved } = req.body;
+    const { status } = req.body;
 
-    if (!reply || reply.trim() === "") {
+    if (!['RESOLVED', 'ARCHIVED'].includes(status)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: "Reply message is required",
+        error: 'status must be RESOLVED or ARCHIVED',
       });
     }
 
@@ -303,61 +309,138 @@ exports.replyToFeedback = async (req, res) => {
     if (!feedback) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-
-        error: "Feedback not found",
+        error: 'Feedback not found',
       });
     }
 
-    // ✅ Update feedback
-    feedback.reply = reply.trim();
-    if (resolved === true) {
-      feedback.status = FEEDBACK_STATUS.APPROVED;
-    } else if (feedback.status !== FEEDBACK_STATUS.PENDING && feedback.status !== FEEDBACK_STATUS.REJECTED) {
-      feedback.status = FEEDBACK_STATUS.APPROVED;
-    } else {
-      feedback.status = FEEDBACK_STATUS.PENDING;
-    }
-    feedback.repliedAt = new Date();
-    feedback.repliedBy = req.user.id;
+    feedback.status = status;
+    feedback.processedAt = new Date();
+    feedback.processedBy = req.user.id;
 
     await feedback.save();
 
-    // ✅ Create notification for user - saved for offline, emitted for online (only to correct customer)
-    const notification = await Notification.create({
-      userId: feedback.userId,
-      title: "Reply to your feedback",
-      message: `Admin replied to your feedback: "${reply.trim()}"`,
-      type: "system",
-      isRead: false,
+    // Audit trail for the resolution action (no PII beyond the id/rating).
+    const { logAction } = require('../utils/audit');
+    await logAction({
+      req,
+      action: 'FEEDBACK_UPDATED',
+      entityType: 'Feedback',
+      entityId: String(feedback._id),
+      description: `Feedback ${status === 'RESOLVED' ? 'marked as resolved' : 'archived'} (rating ${feedback.rating})`,
+      result: 'SUCCESS',
     });
 
-    // ✅ Real-time notification to correct customer only
-    try {
-      const { emitSocketEvent } = require('../utils/socket');
-      emitSocketEvent(`user:${feedback.userId}`, 'notification:new', {
-        id: notification._id,
-        title: notification.title,
-        message: notification.message,
-        type: notification.type,
-        isRead: notification.isRead,
-        createdAt: notification.createdAt
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: status === 'RESOLVED' ? 'Feedback marked as processed' : 'Feedback archived',
+      feedback: {
+        id: feedback._id,
+        status: feedback.status,
+        processedAt: feedback.processedAt,
+        isRead: feedback.isRead,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Update Feedback Status Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Send a reply to customer feedback (manager/admin)
+ * @route   PATCH /api/v1/feedback/:id/reply
+ * @access  Private/Admin or Manager roles
+ *
+ * Without this route the admin/manager reply form (PATCH .../reply) 404'd,
+ * and even if it had succeeded the reply was not persisted because the
+ * Feedback schema had no `reply` field.
+ */
+exports.replyToFeedback = async (req, res) => {
+  try {
+    const { reply } = req.body;
+
+    if (!reply || typeof reply !== 'string' || !reply.trim()) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Reply message is required',
       });
-    } catch (e) {
-      console.warn('Socket emit failed for feedback reply:', e.message);
+    }
+
+    const feedback = await Feedback.findById(req.params.id);
+    if (!feedback) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Feedback not found',
+      });
+    }
+
+    feedback.reply = reply.trim();
+    feedback.replyBy = req.user && (req.user.id || req.user._id) ? (req.user.id || req.user._id) : null;
+    feedback.repliedAt = new Date();
+    feedback.processedAt = new Date();
+    feedback.processedBy = feedback.replyBy;
+    feedback.isRead = true;
+    if (feedback.status === 'PENDING') {
+      feedback.status = 'RESOLVED';
+    }
+
+    await feedback.save();
+
+    const { logAction } = require('../utils/audit');
+    await logAction({
+      req,
+      action: 'FEEDBACK_UPDATED',
+      entityType: 'Feedback',
+      entityId: String(feedback._id),
+      description: `Reply sent to feedback (rating ${feedback.rating})`,
+      result: 'SUCCESS',
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Reply sent successfully',
+      feedback: {
+        id: feedback._id,
+        reply: feedback.reply,
+        repliedAt: feedback.repliedAt,
+        status: feedback.status,
+        isRead: feedback.isRead,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Reply to Feedback Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Mark feedback as read (Admin only)
+ * @route   PATCH /api/feedback/:id/read
+ * @access  Private/Admin
+ * Response: { success, feedback }
+ */
+exports.markFeedbackRead = async (req, res) => {
+  try {
+    const feedback = await Feedback.findByIdAndUpdate(req.params.id, { $set: { isRead: true } }, { new: true });
+    if (!feedback) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Feedback not found',
+      });
     }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: "Reply sent successfully",
-      feedback: {
-        id: feedback._id,
-        reply: feedback.reply,
-        status: feedback.status,
-        repliedAt: feedback.repliedAt,
-      },
+      feedback: { id: feedback._id, isRead: feedback.isRead },
     });
   } catch (error) {
-    console.error("❌ Reply To Feedback Error:", error);
+    console.error('❌ Mark Feedback Read Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -381,16 +464,16 @@ exports.deleteFeedback = async (req, res) => {
     if (!feedback) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: false,
-        error: "Feedback not found",
+        error: 'Feedback not found',
       });
     }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: "Feedback deleted successfully",
+      message: 'Feedback deleted successfully',
     });
   } catch (error) {
-    console.error("❌ Delete Feedback Error:", error);
+    console.error('❌ Delete Feedback Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -423,10 +506,7 @@ exports.getFeedbackStats = async (req, res) => {
     // ✅ Calculate average rating
     const allFeedback = await Feedback.find();
     const ratings = allFeedback.map((fb) => fb.rating);
-    const averageRating =
-      ratings.length > 0
-        ? (ratings.reduce((sum, r) => sum + r, 0) / ratings.length).toFixed(1)
-        : 0;
+    const averageRating = ratings.length > 0 ? (ratings.reduce((sum, r) => sum + r, 0) / ratings.length).toFixed(1) : 0;
 
     // ✅ Rating distribution
     const ratingDistribution = {
@@ -450,7 +530,7 @@ exports.getFeedbackStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("❌ Get Feedback Stats Error:", error);
+    console.error('❌ Get Feedback Stats Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,

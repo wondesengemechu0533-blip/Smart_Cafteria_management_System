@@ -3,7 +3,10 @@ const ActivityLog = require('../models/ActivityLog');
 const MAX_LENGTH = 400;
 
 function cleanText(value) {
-  return String(value === null || value === undefined ? '' : value).replace(/\s+/g, ' ').trim().slice(0, MAX_LENGTH);
+  return String(value === null || value === undefined ? '' : value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_LENGTH);
 }
 
 /**
@@ -18,25 +21,46 @@ function cleanText(value) {
  * @param {string}   [options.entityType]
  * @param {string}   [options.entityId]
  * @param {string}   [options.description]
+ * @param {string}   [options.result]           'SUCCESS' | 'FAILED' | 'PENDING'
  * @param {object}   [options.metadata]
  * @returns {Promise<object|null>} the created ActivityLog, or null on failure
  */
-async function logAction({ req, action, entityType = '', entityId = '', description = '', metadata = {} }) {
+async function logAction({
+  req,
+  action,
+  entityType = '',
+  entityId = '',
+  description = '',
+  result = 'SUCCESS',
+  metadata = {},
+  cafeteriaId = undefined,
+}) {
   try {
-    if (!req || !req.user || !req.user.id) return null;
+    if (!req || !req.user || !req.user.id) {
+      // Allow "system" entries when no actor is available.
+      if (!action) return null;
+    }
 
-    const safeMetadata =
-      metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+    const safeMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+
+    const actorId = req.user ? req.user.id : null;
+    const actorName = req.user ? cleanText(req.user.name) || 'Admin' : 'System';
+    const actorRole = req.user ? cleanText(req.user.role) : 'system';
+    const scopedCafeteriaId =
+      cafeteriaId !== undefined ? cafeteriaId : req.user && req.user.cafeteriaId ? req.user.cafeteriaId : null;
 
     const log = await ActivityLog.create({
-      actorId: req.user.id,
-      actorName: cleanText(req.user.name) || 'Admin',
+      actorId,
+      actorName,
+      actorRole,
+      cafeteriaId: scopedCafeteriaId,
       action: cleanText(action),
       entity: cleanText(entityType),
       entityId: cleanText(entityId),
       description: cleanText(description),
+      result: ['SUCCESS', 'FAILED', 'PENDING'].includes(result) ? result : 'SUCCESS',
       metadata: Object.assign({}, safeMetadata),
-      ip: cleanText(req.ip || '').replace('::ffff:', ''),
+      ip: req && req.ip ? cleanText(String(req.ip)).replace('::ffff:', '') : '',
     });
 
     return log;

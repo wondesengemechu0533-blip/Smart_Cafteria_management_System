@@ -1,10 +1,10 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 const CATEGORY_ALIASES = {
-  mains: "main-meals",
-  lunch: "main-meals",
-  dinner: "main-meals",
-  drinks: "beverages"
+  mains: 'main-meals',
+  lunch: 'main-meals',
+  dinner: 'main-meals',
+  drinks: 'beverages',
 };
 
 /**
@@ -20,38 +20,38 @@ const MenuItemSchema = new mongoose.Schema(
     name: {
       en: {
         type: String,
-        required: [true, "English name is required"],
+        required: [true, 'English name is required'],
         trim: true,
       },
       am: {
         type: String,
-        required: [true, "Amharic name is required"],
+        required: [true, 'Amharic name is required'],
         trim: true,
       },
     },
     category: {
       type: String,
-      required: [true, "Category is required"],
-      set: (value) => CATEGORY_ALIASES[String(value || "").toLowerCase()] || String(value || "").toLowerCase(),
+      required: [true, 'Category is required'],
+      set: (value) => CATEGORY_ALIASES[String(value || '').toLowerCase()] || String(value || '').toLowerCase(),
     },
     price: {
       type: Number,
-      required: [true, "Price is required"],
-      min: [0, "Price cannot be negative"],
+      required: [true, 'Price is required'],
+      min: [0, 'Price cannot be negative'],
     },
     description: {
       en: {
         type: String,
-        default: "",
+        default: '',
       },
       am: {
         type: String,
-        default: "",
+        default: '',
       },
     },
     icon: {
       type: String,
-      default: "🍽️",
+      default: '🍽️',
     },
     image: {
       type: String,
@@ -87,23 +87,28 @@ const MenuItemSchema = new mongoose.Schema(
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
+      default: null,
+    },
+    // Owning cafeteria (tenant). Stamped server-side on creation.
+    cafeteriaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cafeteria',
       default: null,
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 // Get menu item with language support
-MenuItemSchema.methods.getLocalized = function (lang = "en") {
-  return {
+MenuItemSchema.methods.getLocalized = function (lang = 'en') {  return {
     id: this._id,
     name: this.name[lang] || this.name.en,
     category: this.category,
     price: this.price,
-    description: this.description[lang] || this.description.en || "",
+    description: this.description[lang] || this.description.en || '',
     icon: this.icon,
     image: this.image,
     preparationTime: this.preparationTime,
@@ -112,4 +117,7 @@ MenuItemSchema.methods.getLocalized = function (lang = "en") {
   };
 };
 
-module.exports = mongoose.model("MenuItem", MenuItemSchema);
+MenuItemSchema.index({ cafeteriaId: 1, category: 1 });
+MenuItemSchema.index({ cafeteriaId: 1, isActive: 1 });
+
+module.exports = mongoose.model('MenuItem', MenuItemSchema);

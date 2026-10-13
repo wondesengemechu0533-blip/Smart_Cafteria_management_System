@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
@@ -8,13 +8,13 @@ const {
   updateOrderStatus,
   cancelOrder,
   getOrderStats,
-  refundOrder
+  refundOrder,
 } = require('../controllers/admin.order.controller');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
 
 // All routes require admin, staff, or kitchen role
 router.use(protect);
-router.use(authorize('admin', 'ADMIN', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
+router.use(authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
 
 /**
  * @route   GET /api/v1/admin/orders
@@ -60,7 +60,9 @@ router.get('/:id/history', async (req, res) => {
   if (mongoose.Types.ObjectId.isValid(req.params.id)) lookup.push({ _id: req.params.id });
   const order = await Order.findOne({ $or: lookup }).select('_id');
   if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
-  const history = await OrderStatusHistory.find({ orderId: order._id }).sort({ createdAt: 1 }).populate('changedBy', 'name email');
+  const history = await OrderStatusHistory.find({ orderId: order._id })
+    .sort({ createdAt: 1 })
+    .populate('changedBy', 'name email');
   res.json({ success: true, history });
 });
 
@@ -73,21 +75,29 @@ router.get('/:id/receipt', async (req, res) => {
     const order = await Order.findOne({ $or: lookup });
     if (!order) return res.status(404).json({ success: false, error: 'Order not found' });
     const customer = await User.findById(order.userId);
-    res.json({ success: true, receipt: {
-      orderNumber: order.orderId,
-      customerName: order.customerName,
-      customerPhone: order.customerPhone,
-      customerEmail: customer?.email,
-      orderType: order.orderType,
-      items: (order.items || []).map(i => ({ name: i.foodNameSnapshot || i.name, qty: i.quantity, unitPrice: i.price, subtotal: i.subtotal || (i.quantity * i.price) })),
-      subtotal: order.subtotal,
-      serviceFee: order.serviceFee,
-      total: order.totalAmount,
-      paymentMethod: order.paymentMethod,
-      paymentStatus: order.paymentStatus,
-      orderDate: order.orderDate,
-      orderTime: order.orderTime
-    }});
+    res.json({
+      success: true,
+      receipt: {
+        orderNumber: order.orderId,
+        customerName: order.customerName,
+        customerPhone: order.customerPhone,
+        customerEmail: customer?.email,
+        orderType: order.orderType,
+        items: (order.items || []).map((i) => ({
+          name: i.foodNameSnapshot || i.name,
+          qty: i.quantity,
+          unitPrice: i.price,
+          subtotal: i.subtotal || i.quantity * i.price,
+        })),
+        subtotal: order.subtotal,
+        serviceFee: order.serviceFee,
+        total: order.totalAmount,
+        paymentMethod: order.paymentMethod,
+        paymentStatus: order.paymentStatus,
+        orderDate: order.orderDate,
+        orderTime: order.orderTime,
+      },
+    });
   } catch (e) {
     res.status(500).json({ success: false, error: 'Receipt generation failed' });
   }

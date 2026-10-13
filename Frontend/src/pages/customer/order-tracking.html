@@ -8,6 +8,9 @@
     <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="/src/css/style.css">
 <link rel="stylesheet" href="/src/css/themes/dark-theme.css">
+    <!-- Leaflet (OpenStreetMap) for live delivery tracking -->
+    <link rel="stylesheet" href="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/src/css/tracking-map.css">
     
 
     <script src="../../js/config.js"></script>
@@ -25,9 +28,9 @@
             </div>
             <h2><i class="fa-solid fa-receipt"></i> Live Order Tracker</h2>
             <div class="user-nav-links">
-                <button type="button" class="theme-toggle-btn nav-icon-link" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode"><i class="fa-solid fa-moon"></i></button>
-                <a href="order-history.html" class="nav-icon-link" title="Order History"><i class="fa-solid fa-clock-rotate-left"></i></a>
-                <a href="../common/login.html" class="nav-icon-link nav-logout" title="Logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
+                <button type="button" class="theme-toggle-btn nav-icon-link" data-theme-toggle aria-label="Toggle theme" data-i18n-title="title_toggle_theme"><i class="fa-solid fa-moon"></i></button>
+                <a href="order-history.html" class="nav-icon-link" data-i18n-title="orderHistory"><i class="fa-solid fa-clock-rotate-left"></i></a>
+                <a href="../common/login.html" class="nav-icon-link nav-logout" data-i18n-title="nav_logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
             </div>
         </div>
     </header>
@@ -47,6 +50,19 @@
             <p class="status-subtext" id="status-subtext">We have sent your order directly to the kitchen counter.</p>
         </section>
 
+        <!-- Refund status. Rendered by order-status.js from the server's refund
+             fields (refundStatus / refundAmount / refundReference / refundedAt)
+             on load and on every live `order:status` frame - nothing is read
+             from localStorage, so a refresh always shows the real state. -->
+        <section class="status-card refund-notice" id="refund-notice" style="display:none;" role="status" aria-live="polite">
+            <i class="fa-solid fa-money-bill-transfer"></i>
+            <div>
+                <strong id="refund-notice-title"></strong>
+                <p id="refund-notice-message"></p>
+                <p id="refund-notice-meta" style="display:none;"></p>
+            </div>
+        </section>
+
         <!-- Kitchen Status Timeline -->
         <section class="status-card" id="timeline-section">
             <h3><i class="fa-solid fa-fire-burner"></i> Live Order Tracker</h3>
@@ -54,6 +70,68 @@
             <div class="status-timeline" id="status-timeline">
                 <!-- Steps are rendered dynamically by order-status.js -->
             </div>
+        </section>
+
+        <!-- Delivery delay notice. Deliberately OUTSIDE the map card and outside
+             the live map: a delay has to be visible even when the courier has no
+             GPS fix and no map can be drawn. The text is intentionally generic -
+             the customer is never told the cause. -->
+        <section class="status-card track-delay-banner" id="track-delay" style="display:none;" role="status" aria-live="polite">
+            <i class="fa-solid fa-clock"></i>
+            <div>
+                <strong data-i18n="track_delayed_title">Your delivery is delayed</strong>
+                <p id="track-delay-message" data-i18n="track_delayed_message">Your delivery is temporarily delayed. We will update you when delivery continues.</p>
+            </div>
+        </section>
+
+        <!-- Live Delivery Map (visible only for delivery orders with trackable coords) -->
+        <section class="status-card delivery-map-card" id="delivery-map-card" style="display:none;">
+            <div class="delivery-map-head">
+                <h3><i class="fa-solid fa-map-location-dot"></i> <span data-i18n="map_live_delivery">Live Delivery Tracking</span></h3>
+                <!-- Explicit connection state. A customer must never be left
+                     guessing whether the moving marker is stale because the
+                     socket dropped. -->
+                <span class="track-connection" id="track-connection" role="status" aria-live="polite">
+                    <i class="fa-solid fa-spinner fa-spin"></i> <span data-i18n="track_reconnecting">Reconnecting…</span>
+                </span>
+            </div>
+
+            <!-- Who / where / how far / how long: the four facts the customer
+                 actually opens this page for. Every field hides itself when the
+                 value is unknown rather than showing a blank or a guess. -->
+            <div class="track-summary" id="track-summary" style="display:none;">
+                <div class="track-summary-item" id="track-cafeteria-item">
+                    <i class="fa-solid fa-utensils"></i>
+                    <div>
+                        <span class="track-summary-label" data-i18n="track_from">From</span>
+                        <strong id="track-cafeteria">-</strong>
+                    </div>
+                </div>
+                <div class="track-summary-item" id="track-courier-item">
+                    <i class="fa-solid fa-person-biking"></i>
+                    <div>
+                        <span class="track-summary-label" data-i18n="track_courier">Delivery Person</span>
+                        <strong id="track-courier">-</strong>
+                    </div>
+                </div>
+                <div class="track-summary-item" id="track-distance-item" style="display:none;">
+                    <i class="fa-solid fa-road"></i>
+                    <div>
+                        <span class="track-summary-label" data-i18n="track_distance">Distance</span>
+                        <strong id="track-distance">-</strong>
+                    </div>
+                </div>
+                <div class="track-summary-item" id="track-eta-item" style="display:none;">
+                    <i class="fa-solid fa-stopwatch"></i>
+                    <div>
+                        <span class="track-summary-label" data-i18n="track_eta">Estimated arrival</span>
+                        <strong id="track-eta">-</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div id="delivery-map" class="delivery-map"></div>
+            <div class="delivery-map-status" id="delivery-map-status"></div>
         </section>
 
         <!-- Order Receipt Details -->
@@ -64,27 +142,27 @@
             <!-- Customer & Service Information Grid -->
             <div class="receipt-info-grid">
                 <div>
-                    <span class="info-label">Customer Name:</span>
+                    <span class="info-label" data-i18n="customer_name_label">Customer Name:</span>
                     <strong id="receipt-name">-</strong>
                 </div>
                 <div>
-                    <span class="info-label">Phone Number:</span>
+                    <span class="info-label" data-i18n="phone_number_label">Phone Number:</span>
                     <strong id="receipt-phone">-</strong>
                 </div>
                 <div>
-                    <span class="info-label">Dining Option:</span>
+                    <span class="info-label" data-i18n="dining_option_label">Dining Option:</span>
                     <strong id="receipt-dining-type">-</strong>
                 </div>
                 <div>
-                    <span class="info-label">Table Number:</span>
+                    <span class="info-label" data-i18n="table_number_label">Table Number:</span>
                     <strong id="receipt-table">-</strong>
                 </div>
                 <div>
-                    <span class="info-label">Payment Method:</span>
+                    <span class="info-label" data-i18n="payment_method_label">Payment Method:</span>
                     <strong id="receipt-payment">-</strong>
                 </div>
                 <div>
-                    <span class="info-label">Order Date & Time:</span>
+                    <span class="info-label" data-i18n="order_date_time">Order Date & Time:</span>
                     <strong id="receipt-time">-</strong>
                 </div>
             </div>
@@ -99,7 +177,7 @@
             <hr class="divider">
 
             <!-- Ordered Items List -->
-            <h4>Items Ordered</h4>
+            <h4 data-i18n="items_ordered">Items Ordered</h4>
             <div id="receipt-items-list" class="receipt-items-container">
                 <!-- Dynamically rendered -->
             </div>
@@ -108,20 +186,20 @@
 
             <!-- Financial Summary -->
             <div class="summary-row">
-                <span>Subtotal</span>
+                <span data-i18n="subtotal">Subtotal</span>
                 <span><strong id="receipt-subtotal">0</strong> <small>ETB</small></span>
             </div>
             <div class="summary-row">
-                <span>Service Fee</span>
+                <span data-i18n="service_fee">Service Fee</span>
                 <span><strong id="receipt-service-fee">20</strong> <small>ETB</small></span>
             </div>
             <div class="summary-row" id="receipt-delivery-fee-row" style="display:none;">
-                <span>Delivery Fee</span>
+                <span data-i18n="delivery_fee">Delivery Fee</span>
                 <span><strong id="receipt-delivery-fee">0</strong> <small>ETB</small></span>
             </div>
             <hr class="divider">
             <div class="summary-row total-row">
-                <span>Total Amount Paid / Due</span>
+                <span data-i18n="total_amount_paid_due">Total Amount Paid / Due</span>
                 <span><strong id="receipt-total">0</strong> <small>ETB</small></span>
             </div>
 
@@ -139,13 +217,19 @@
     </main>
 
 <!-- Connect Scripts -->
+    <!-- Leaflet (OpenStreetMap). Loaded before customer-tracking-map.js, which
+         degrades to a plain text status if it is unavailable. -->
+    <script src="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.js"></script>
 <script type="module" src="../../js/utils/i18n.js"></script>
 <script type="module" src="../../js/customer-orders-sync.js"></script>
-<script type="module" src="../../js/order-status.js"></script>
+<script type="module" src="../../js/order-status.js?v=20261004-gps"></script>
 <script type="module" src="../../js/order-history.js"></script>
     <script type="module" src="../../js/chapa-verify.js"></script>
     <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
 <script type="module" src="../../js/customer-realtime.js"></script>
+<!-- Live GPS map. Renders the courier marker from `delivery:location` frames and
+     the customer's real saved drop-off point (never a hard-coded coordinate). -->
+<script type="module" src="../../js/customer-tracking-map.js?v=20261004-gps"></script>
 
 <script type="module" src="../../js/components/unified-header.js"></script>
 <script type="module" src="../../js/components/customer-sidebar.js"></script>

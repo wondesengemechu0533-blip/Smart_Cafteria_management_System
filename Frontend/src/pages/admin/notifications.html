@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="admin_notifications_title">Notifications - Smart Cafeteria</title>
+
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+
+    <style>
+        /* Notification cards — shared with the kitchen panel (notification-center.js) */
+        .notif-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .notif-count-pill {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 0.8rem; font-weight: 700; color: #6b7280;
+        }
+        .notif-count-pill .notif-count {
+            background: #ef4444; color: #fff; border-radius: 10px;
+            padding: 1px 8px; font-size: 0.72rem;
+        }
+        .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+        .filter-tab {
+            padding: 8px 16px; border-radius: 6px; border: 1px solid #d1d5db; background: #fff;
+            color: #6b7280; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s;
+        }
+        .filter-tab.active { background: #f97316; color: #fff; border-color: #f97316; }
+        .filter-tab:hover:not(.active) { background: #f3f4f6; }
+
+        .notif-list { display: flex; flex-direction: column; gap: 10px; }
+        .notif-card {
+            display: flex; align-items: flex-start; gap: 14px; padding: 16px 20px;
+            background: #fff; border-radius: 8px; border: 1px solid #e5e7eb;
+            cursor: pointer; transition: background 0.15s, box-shadow 0.15s; position: relative;
+        }
+        .notif-card:hover { background: #f9fafb; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); }
+        .notif-card.unread { border-left: 4px solid #f97316; background: #fff7ed; }
+        .notif-icon {
+            width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center;
+            justify-content: center; font-size: 1.1rem; flex-shrink: 0;
+        }
+        .notif-icon.order { background: #dbeafe; color: #2563eb; }
+        .notif-icon.preparation { background: #fef3c7; color: #d97706; }
+        .notif-icon.stock { background: #fef2f2; color: #dc2626; }
+        .notif-icon.system { background: #f3e8ff; color: #7c3aed; }
+        .notif-icon.promo { background: #fce7f3; color: #be185d; }
+        .notif-icon.general { background: #e0f2fe; color: #0284c7; }
+        .notif-body { flex: 1; min-width: 0; }
+        .notif-title { font-weight: 700; color: #111827; margin-bottom: 2px; font-size: 0.95rem; }
+        .notif-message { color: #6b7280; font-size: 0.85rem; line-height: 1.4; }
+        .notif-meta { display: flex; align-items: center; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
+        .notif-time { font-size: 0.78rem; color: #9ca3af; }
+        .notif-chip {
+            display: inline-flex; align-items: center; gap: 5px;
+            font-size: 0.72rem; font-weight: 600; padding: 2px 8px;
+            border-radius: 10px; background: #f3f4f6; color: #4b5563;
+        }
+        .notif-chip-order { background: #dbeafe; color: #1d4ed8; }
+        .notif-chip-customer { background: #e0f2fe; color: #0369a1; }
+        .notif-chip-type.order { background: #dbeafe; color: #1d4ed8; }
+        .notif-chip-type.preparation { background: #fef3c7; color: #b45309; }
+        .notif-chip-type.stock { background: #fef2f2; color: #dc2626; }
+        .notif-chip-type.system { background: #f3e8ff; color: #7c3aed; }
+        .notif-chip-type.promo { background: #fce7f3; color: #be185d; }
+        .notif-chip-type.general { background: #e0f2fe; color: #0284c7; }
+        .notif-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+        .notif-badge.unread { background: #f97316; color: #fff; }
+        .notif-badge.read { background: #e5e7eb; color: #6b7280; }
+        .notif-delete {
+            background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 1rem;
+            padding: 4px 8px; border-radius: 4px; transition: color 0.15s, background 0.15s; flex-shrink: 0;
+        }
+        .notif-delete:hover { color: #ef4444; background: #fef2f2; }
+        .notif-empty { text-align: center; padding: 60px 20px; color: #9ca3af; }
+        .notif-empty i { font-size: 3rem; margin-bottom: 16px; display: block; }
+        .notif-empty p { font-size: 1.1rem; }
+
+        [data-theme="dark"] .filter-tab { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        [data-theme="dark"] .filter-tab.active { background: #f97316; border-color: #f97316; color: #fff; }
+        [data-theme="dark"] .notif-card { background: #1e293b; border-color: #334155; }
+        [data-theme="dark"] .notif-card:hover { background: #25324a; }
+        [data-theme="dark"] .notif-card.unread { border-left-color: #f97316; background: #2a2438; }
+        [data-theme="dark"] .notif-icon.order { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .notif-icon.preparation { background: #422006; color: #fcd34d; }
+        [data-theme="dark"] .notif-icon.stock { background: #3b0f0f; color: #fecaca; }
+        [data-theme="dark"] .notif-icon.system { background: #2e1065; color: #c4b5fd; }
+        [data-theme="dark"] .notif-icon.promo { background: #500724; color: #fbcfe8; }
+        [data-theme="dark"] .notif-icon.general { background: #0c4a6e; color: #7dd3fc; }
+        [data-theme="dark"] .notif-title { color: #f8fafc; }
+        [data-theme="dark"] .notif-message { color: #cbd5e1; }
+        [data-theme="dark"] .notif-time { color: #64748b; }
+        [data-theme="dark"] .notif-chip { background: #1e293b; color: #cbd5e1; }
+        [data-theme="dark"] .notif-chip-order { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .notif-chip-customer { background: #0c4a6e; color: #7dd3fc; }
+        [data-theme="dark"] .notif-chip-type.order { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .notif-chip-type.preparation { background: #422006; color: #fcd34d; }
+        [data-theme="dark"] .notif-chip-type.stock { background: #3b0f0f; color: #fecaca; }
+        [data-theme="dark"] .notif-chip-type.system { background: #2e1065; color: #c4b5fd; }
+        [data-theme="dark"] .notif-chip-type.promo { background: #500724; color: #fbcfe8; }
+        [data-theme="dark"] .notif-chip-type.general { background: #0c4a6e; color: #7dd3fc; }
+        [data-theme="dark"] .notif-badge.read { background: #334155; color: #cbd5e1; }
+        [data-theme="dark"] .notif-count-pill { color: #94a3b8; }
+        [data-theme="dark"] .notif-delete { color: #94a3b8; }
+        [data-theme="dark"] .notif-delete:hover { color: #ef4444; background: #3b0f0f; }
+        [data-theme="dark"] .notif-empty { color: #94a3b8; }
+    </style>
+</head>
+<body class="admin-body">
+
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="admin_notifications_title">Notifications</h1>
+                    <p class="subtitle" data-i18n="admin_notifications_subtitle">Every alert addressed to you, newest first.</p>
+                </div>
+                <div class="page-actions notif-toolbar">
+                    <span class="notif-count-pill">
+                        <span data-i18n="notif_unread_label">Unread</span>
+                        <span class="notif-count" id="unreadCount">0</span>
+                    </span>
+                    <button class="btn btn-secondary" id="clearAllBtn" type="button">
+                        <i class="fa-solid fa-trash"></i> <span data-i18n="notif_clear_all">Clear All</span>
+                    </button>
+                    <button class="btn btn-primary" id="markAllBtn" type="button">
+                        <i class="fa-solid fa-check-double"></i> <span data-i18n="notif_mark_all_read">Mark All Read</span>
+                    </button>
+                </div>
+            </div>
+
+            <section class="card">
+                <div class="card-header">
+                    <div class="filter-tabs" id="notifFilterTabs">
+                        <button type="button" class="filter-tab active" data-filter="all">All</button>
+                        <button type="button" class="filter-tab" data-filter="unread">Unread</button>
+                        <button type="button" class="filter-tab" data-filter="order">Orders</button>
+                    </div>
+                </div>
+            </section>
+
+            <div class="notif-list" id="notifList"></div>
+            <div class="notif-empty" id="emptyState" style="display:none;">
+                <i class="fa-regular fa-bell-slash"></i>
+                <p data-empty-message>No notifications yet</p>
+            </div>
+        </main>
+    </div>
+
+    <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/admin.js"></script>
+    <script src="./notifications.js?v=20260926nc"></script>
+</body>
+</html>

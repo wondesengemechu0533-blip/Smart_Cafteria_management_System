@@ -11,36 +11,36 @@ const categories = [
     name: { en: 'Breakfast', am: 'ቁርስ' },
     icon: '🍳',
     description: { en: 'Start your day with these delicious breakfast options', am: 'ቀንዎን በእነዚህ ጣፋጭ የቁርስ አማራጮች ይጀምሩ' },
-    sortOrder: 1
+    sortOrder: 1,
   },
   {
     id: 'main-meals',
     name: { en: 'Main Meals', am: 'ዋና ምግቦች' },
     icon: '🍲',
     description: { en: 'Hearty traditional and modern main courses', am: 'ልዩ የሀገር ባህል እና ዘመናዊ ዋና ምግቦች' },
-    sortOrder: 2
+    sortOrder: 2,
   },
   {
     id: 'fasting',
     name: { en: 'Fasting', am: 'የፆም ምግቦች' },
     icon: '🥗',
     description: { en: 'Delicious vegetarian and vegan options', am: 'ጣፋጭ የቬጀቴሪያን እና ቪጋን አማራጮች' },
-    sortOrder: 3
+    sortOrder: 3,
   },
   {
     id: 'beverages',
     name: { en: 'Beverages', am: 'መጠጦች' },
     icon: '🥤',
     description: { en: 'Hot and cold drinks', am: 'ትኩስ እና ቀዝቃዛ መጠጦች' },
-    sortOrder: 4
+    sortOrder: 4,
   },
   {
     id: 'snacks',
     name: { en: 'Snacks', am: 'ምቹና የተሰበሰቡ' },
     icon: '🍪',
     description: { en: 'Light bites and quick snacks', am: 'ቀላል እና ፈጣን ምቹና የተሰበሰቡ' },
-    sortOrder: 5
-  }
+    sortOrder: 5,
+  },
 ];
 
 const menuItems = [
@@ -53,7 +53,7 @@ const menuItems = [
     icon: '🧃',
     image: '/assets/images/food/beverages/juice.jpeg',
     preparationTime: 5,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Soft Drink', am: 'ሶፍት ድሪንክ' },
@@ -63,7 +63,7 @@ const menuItems = [
     icon: '🥤',
     image: '/assets/images/food/beverages/soft-drink.jpeg',
     preparationTime: 2,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Bottled Water', am: 'የቦቱል ውሃ' },
@@ -73,7 +73,7 @@ const menuItems = [
     icon: '💧',
     image: '/assets/images/food/beverages/water.jpeg',
     preparationTime: 1,
-    isAvailable: true
+    isAvailable: true,
   },
 
   // BREAKFAST
@@ -85,17 +85,20 @@ const menuItems = [
     icon: '🌶️',
     image: '/assets/images/food/breakfast/firfir.jpeg',
     preparationTime: 8,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Omelette (Enkulal Sils)', am: 'ኦሜሌት (እንቁላል ስልስ)' },
     category: 'breakfast',
     price: 85,
-    description: { en: 'Fluffy omelette with onions, tomatoes, and green peppers', am: 'በሽንኩርት፣ ቲማቲም እና ቅይ በርበሬ የተሞላ ኦሜሌት' },
+    description: {
+      en: 'Fluffy omelette with onions, tomatoes, and green peppers',
+      am: 'በሽንኩርት፣ ቲማቲም እና ቅይ በርበሬ የተሞላ ኦሜሌት',
+    },
     icon: '🍳',
     image: '/assets/images/food/breakfast/omelett(Enkulal sils).jpeg',
     preparationTime: 7,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Pasta with Bread', am: 'ፓስታ ከዳቦ' },
@@ -105,27 +108,33 @@ const menuItems = [
     icon: '🍝',
     image: '/assets/images/food/breakfast/pasta-with-bread.jpg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Pasta with Injera', am: 'ፓስታ ከእንጀራ' },
     category: 'breakfast',
     price: 100,
-    description: { en: 'Spaghetti with tomato sauce served with traditional injera', am: 'የቲማቲም ጣዋት ከባህላዊ እንጀራ ጋር የተቀረበ ስፋጤቲ' },
+    description: {
+      en: 'Spaghetti with tomato sauce served with traditional injera',
+      am: 'የቲማቲም ጣዋት ከባህላዊ እንጀራ ጋር የተቀረበ ስፋጤቲ',
+    },
     icon: '🍝',
     image: '/assets/images/food/breakfast/pasta-with-injera.jpg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Scrambled Eggs', am: 'የተገረፈ እንቁላል' },
     category: 'breakfast',
     price: 75,
-    description: { en: 'Fluffy scrambled eggs with onions and tomatoes, served with bread', am: 'በሽንኩርት እና ቲማቲም የተገረፈ እንቁላል ከዳቦ ጋር' },
+    description: {
+      en: 'Fluffy scrambled eggs with onions and tomatoes, served with bread',
+      am: 'በሽንኩርት እና ቲማቲም የተገረፈ እንቁላል ከዳቦ ጋር',
+    },
     icon: '🥚',
     image: '/assets/images/food/breakfast/scrambled-egg.jpeg',
     preparationTime: 5,
-    isAvailable: true
+    isAvailable: true,
   },
 
   // FASTING
@@ -137,7 +146,7 @@ const menuItems = [
     icon: '🫘',
     image: '/assets/images/food/fasting/ful with Bread (Fasting).jpg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Ful with Bread', am: 'ፉል ከዳቦ' },
@@ -147,7 +156,7 @@ const menuItems = [
     icon: '🫘',
     image: '/assets/images/food/fasting/ful-with-bread.jpg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Lentil Stew', am: 'ምስር ወጥ' },
@@ -157,17 +166,20 @@ const menuItems = [
     icon: '🍲',
     image: '/assets/images/food/fasting/lentil-stew.jpeg',
     preparationTime: 12,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Mixed Fasting (Yetsom Beyaynet)', am: 'የፆም በያየነት' },
     category: 'fasting',
     price: 120,
-    description: { en: 'Assorted vegetarian dishes: lentils, split peas, vegetables, and salad', am: 'የተለያዩ የፆም ምግቦች፡ ምስር፣ ቅክ፣ አትክልቶች እና ሳላዳ' },
+    description: {
+      en: 'Assorted vegetarian dishes: lentils, split peas, vegetables, and salad',
+      am: 'የተለያዩ የፆም ምግቦች፡ ምስር፣ ቅክ፣ አትክልቶች እና ሳላዳ',
+    },
     icon: '🥗',
     image: '/assets/images/food/fasting/mixed-fasting(yetsom Beyaynet).jpeg',
     preparationTime: 15,
-    isAvailable: true
+    isAvailable: true,
   },
 
   // MAIN MEALS
@@ -179,7 +191,7 @@ const menuItems = [
     icon: '🥬',
     image: '/assets/images/food/main-meals/cabbage-with-meat.jpeg',
     preparationTime: 15,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Cheese with Butter', am: 'አይብ ከቅቤ' },
@@ -189,7 +201,7 @@ const menuItems = [
     icon: '🧀',
     image: '/assets/images/food/main-meals/cheese-with-butter.jpeg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Egg with Meat', am: 'እንቁላል ከስጋ' },
@@ -199,7 +211,7 @@ const menuItems = [
     icon: '🍳',
     image: '/assets/images/food/main-meals/egg-with-meat.jpg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Grilled Meat', am: 'የተቀለበ ስጋ' },
@@ -209,17 +221,20 @@ const menuItems = [
     icon: '🥩',
     image: '/assets/images/food/main-meals/grilled-meat.jpeg',
     preparationTime: 20,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Pasta with Vegetables', am: 'ፓስታ ከአትክልቶች' },
     category: 'main-meals',
     price: 120,
-    description: { en: 'Pasta with fresh seasonal vegetables in tomato sauce', am: 'በቲማቲም ጣዋት የተጠበቀ ፓስታ ከትኩስ አትክልቶች ጋር' },
+    description: {
+      en: 'Pasta with fresh seasonal vegetables in tomato sauce',
+      am: 'በቲማቲም ጣዋት የተጠበቀ ፓስታ ከትኩስ አትክልቶች ጋር',
+    },
     icon: '🍝',
     image: '/assets/images/food/main-meals/pasta-with-vegetables.jpeg',
     preparationTime: 12,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Red Stew (Key Wat)', am: 'ቀይ ወጥ' },
@@ -229,7 +244,7 @@ const menuItems = [
     icon: '🍖',
     image: '/assets/images/food/main-meals/red-stew.jpeg',
     preparationTime: 18,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Shiro Feses', am: 'ሽሮ ፈሰስ' },
@@ -239,7 +254,7 @@ const menuItems = [
     icon: '🍲',
     image: '/assets/images/food/main-meals/shiro-feses.jpg',
     preparationTime: 12,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Tomato Sauce', am: 'የቲማቲም ጣዋት' },
@@ -249,17 +264,20 @@ const menuItems = [
     icon: '🍅',
     image: '/assets/images/food/main-meals/tomato-sauce.jpeg',
     preparationTime: 10,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Vegetables with Meat', am: 'አትክልቶች ከስጋ' },
     category: 'main-meals',
     price: 145,
-    description: { en: 'Mixed vegetables sautéed with tender beef strips', am: 'በቅቤ እና በርበሬ የተጠበቁ የተለያዩ አትክልቶች ከጣፋጭ ስጋ ጋር' },
+    description: {
+      en: 'Mixed vegetables sautéed with tender beef strips',
+      am: 'በቅቤ እና በርበሬ የተጠበቁ የተለያዩ አትክልቶች ከጣፋጭ ስጋ ጋር',
+    },
     icon: '🥘',
     image: '/assets/images/food/main-meals/vegetables-with-meat.jpeg',
     preparationTime: 15,
-    isAvailable: true
+    isAvailable: true,
   },
 
   // SNACKS
@@ -271,7 +289,7 @@ const menuItems = [
     icon: '🥑',
     image: '/assets/images/food/snacks/Avocado with injera.jpg',
     preparationTime: 5,
-    isAvailable: true
+    isAvailable: true,
   },
   {
     name: { en: 'Meat Sandwich', am: 'የስጋ ሳንድዊች' },
@@ -281,8 +299,8 @@ const menuItems = [
     icon: '🥪',
     image: '/assets/images/food/snacks/meat-sandwich.jpg',
     preparationTime: 8,
-    isAvailable: true
-  }
+    isAvailable: true,
+  },
 ];
 
 const users = [
@@ -293,7 +311,7 @@ const users = [
     password: 'password123',
     role: 'admin',
     balance: 5000,
-    status: 'ACTIVE'
+    status: 'ACTIVE',
   },
   {
     name: 'Kitchen Staff',
@@ -302,7 +320,7 @@ const users = [
     password: 'password123',
     role: 'kitchen',
     balance: 0,
-    status: 'ACTIVE'
+    status: 'ACTIVE',
   },
   {
     name: 'Customer User',
@@ -311,7 +329,7 @@ const users = [
     password: 'password123',
     role: 'customer',
     balance: 1000,
-    status: 'ACTIVE'
+    status: 'ACTIVE',
   },
   {
     name: 'Delivery Staff',
@@ -320,8 +338,8 @@ const users = [
     password: 'password123',
     role: 'delivery',
     balance: 0,
-    status: 'ACTIVE'
-  }
+    status: 'ACTIVE',
+  },
 ];
 
 const seedData = async () => {
@@ -358,8 +376,8 @@ const seedData = async () => {
             isActive: true,
             availabilityStatus: 'AVAILABLE',
             stockQuantity: 50,
-            lowStockThreshold: 10
-          }
+            lowStockThreshold: 10,
+          },
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );

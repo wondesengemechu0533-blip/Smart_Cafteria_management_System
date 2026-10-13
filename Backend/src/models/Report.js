@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * Report Schema - System reports
@@ -10,7 +10,7 @@ const ReportSchema = new mongoose.Schema(
   {
     reportType: {
       type: String,
-      enum: ["daily_orders", "sales", "popular_items", "payments"],
+      enum: ['daily_orders', 'sales', 'popular_items', 'payments'],
       required: true,
     },
     date: {
@@ -37,7 +37,7 @@ const ReportSchema = new mongoose.Schema(
     },
     generatedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
     },
     createdAt: {
       type: Date,
@@ -46,7 +46,7 @@ const ReportSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
-module.exports = mongoose.model("Report", ReportSchema);
+module.exports = mongoose.model('Report', ReportSchema);

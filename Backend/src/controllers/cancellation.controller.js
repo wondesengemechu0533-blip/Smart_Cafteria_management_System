@@ -4,7 +4,15 @@ const User = require('../models/User');
 const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
 const Cancellation = require('../models/Cancellation');
-const { PAYMENT_STATUS, CANCELLATION_STATUS, CANCELLATION_FLOW_STATUS, REFUND_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
+const {
+  PAYMENT_STATUS,
+  CANCELLATION_STATUS,
+  CANCELLATION_FLOW_STATUS,
+  REFUND_STATUS,
+  MESSAGES,
+  HTTP_STATUS,
+} = require('../config/constants');
+const { isAdminRole } = require('../config/roles');
 const { logAction } = require('../utils/audit');
 const svc = require('../services/cancellation.service');
 
@@ -112,7 +120,7 @@ exports.requestCancellation = async (req, res) => {
 
     let isOwner = false;
     if (order.userId) isOwner = String(order.userId) === String(req.user.id);
-    if (!isOwner && req.user.role !== 'admin') {
+    if (!isOwner && !isAdminRole(req.user.role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'You can only cancel your own orders' });
     }
 
@@ -127,15 +135,15 @@ exports.requestCancellation = async (req, res) => {
     if (!CANCELLABLE.includes(current)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `This order can no longer be cancelled because it has already entered the "${current || 'active'}" stage. Cancellation is only available before preparation begins.`
+        error: `This order can no longer be cancelled because it has already entered the "${current || 'active'}" stage. Cancellation is only available before preparation begins.`,
       });
     }
 
-    const { cancellation } = await svc.createCancellation(
-      order,
-      req.user,
-      { reason, description: details || '', source: 'customer' }
-    );
+    const { cancellation } = await svc.createCancellation(order, req.user, {
+      reason,
+      description: details || '',
+      source: 'customer',
+    });
 
     try {
       await logAction({
@@ -145,7 +153,9 @@ exports.requestCancellation = async (req, res) => {
         entityId: String(cancellation.cancellationNumber || cancellation._id),
         description: `Customer requested cancellation for order #${order.orderId} (${reason})`,
       });
-    } catch (_) { /* audit is best effort */ }
+    } catch (_) {
+      /* audit is best effort */
+    }
 
     // ================================================================
     // Self-service cancellation: the eligibility check above guarantees
@@ -169,6 +179,7 @@ exports.requestCancellation = async (req, res) => {
       cancellation,
       actorId: req.user.id,
       adminNote: cancellation.adminNote,
+      source: 'customer',
     });
 
     // 2. Handle refund: if payment was PAID, leave the refund for admin
@@ -187,12 +198,19 @@ exports.requestCancellation = async (req, res) => {
       order.refundAmount = order.totalAmount;
       await order.save();
 
+      // The cancellation frame above was broadcast before the refund fields
+      // existed, so push a refund frame now: this is what flips the
+      // Manager/Admin dashboard to "Refund Required" without a refresh.
+      await svc.emitRefundStatus(order, 'customer');
+
       try {
         await Payment.findOneAndUpdate(
           { orderId: order._id },
-          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount },
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount }
         );
-      } catch (_) { /* best effort */ }
+      } catch (_) {
+        /* best effort */
+      }
 
       await Notification.create({
         userId: order.userId,
@@ -210,11 +228,10 @@ exports.requestCancellation = async (req, res) => {
       cancellation.refundAmount = 0;
       await cancellation.save();
       try {
-        await Payment.findOneAndUpdate(
-          { orderId: order._id },
-          { status: 'CANCELLED', cancelledAt: new Date() },
-        );
-      } catch (_) { /* best effort */ }
+        await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
+      } catch (_) {
+        /* best effort */
+      }
       await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
@@ -240,7 +257,9 @@ exports.requestCancellation = async (req, res) => {
         entityId: String(cancellation.cancellationNumber || cancellation._id),
         description: `Pending order #${order.orderId} cancelled immediately by customer. Refund: ${paid ? cancellation.refundAmount + ' ETB pending admin processing' : 'not required'}`,
       });
-    } catch (_) { /* audit is best effort */ }
+    } catch (_) {
+      /* audit is best effort */
+    }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -293,7 +312,11 @@ exports.getCancellations = async (req, res) => {
       const order = await loadOrder(cancellation);
       const record = await svc.serializeCancellation(cancellation, order);
       if (cancellation.customerId && cancellation.customerId.name) {
-        record.customer = { name: cancellation.customerId.name, email: cancellation.customerId.email, phone: cancellation.customerId.phone };
+        record.customer = {
+          name: cancellation.customerId.name,
+          email: cancellation.customerId.email,
+          phone: cancellation.customerId.phone,
+        };
       }
       serialized.push(record);
     }
@@ -404,7 +427,9 @@ exports.getCancellationById = async (req, res) => {
     }
 
     const order = await loadOrder(cancellation);
-    const customer = await User.findById(cancellation.customerId || (order && order.userId)).select('name email phone').lean();
+    const customer = await User.findById(cancellation.customerId || (order && order.userId))
+      .select('name email phone')
+      .lean();
     const record = await svc.serializeCancellation(cancellation, order);
     if (customer) record.customer = { name: customer.name, email: customer.email, phone: customer.phone };
 
@@ -454,7 +479,9 @@ exports.approveCancellation = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Cancellation already completed' });
     }
     if (cancellation.status !== CANCELLATION_FLOW_STATUS.REQUESTED) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Cancellation already ${cancellation.status.toLowerCase()}` });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: `Cancellation already ${cancellation.status.toLowerCase()}` });
     }
 
     const order = await Order.findById(cancellation.orderId);
@@ -471,7 +498,7 @@ exports.approveCancellation = async (req, res) => {
     if (!CANCELLABLE.includes(current) && !allowServed) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `Order has already entered the "${current || 'active'}" stage and can no longer be cancelled (cancellation is only available before preparation).`
+        error: `Order has already entered the "${current || 'active'}" stage and can no longer be cancelled (cancellation is only available before preparation).`,
       });
     }
 
@@ -486,21 +513,34 @@ exports.approveCancellation = async (req, res) => {
     await cancellation.save();
 
     // 2. Cancel the order + restore stock (idempotent)
-    await svc.cancelOrderForApproval({ order, cancellation, actorId: req.user.id, adminNote: cancellation.adminNote });
+    await svc.cancelOrderForApproval({
+      order,
+      cancellation,
+      actorId: req.user.id,
+      adminNote: cancellation.adminNote,
+      source: 'admin',
+    });
 
     try {
-      await Payment.findOneAndUpdate(
-        { orderId: order._id },
-        { status: 'CANCELLED', cancelledAt: new Date() },
-      );
-    } catch (_) { /* best effort */ }
+      await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
+    } catch (_) {
+      /* best effort */
+    }
 
     // 3. Refund if payment was successful, otherwise complete immediately.
     //    Refund amount is admin-controlled (full, partial, or none). If the
     //    admin supplies a valid refundAmount (e.g. 0 for no refund, or a partial
     //    amount), it is honored; otherwise it defaults to the full total.
+    // Refund amount is admin-controlled (partial, or none). If the admin
+    // supplies a valid refundAmount (e.g. 0 for no refund, or a partial
+    // amount), it is honored; otherwise it defaults to Total Paid - VAT, so
+    // the VAT portion is never refunded.
     const paid = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
-    let refundAmountUsed = order.totalAmount;
+    const vatCut = Number(order.vatAmount) > 0 ? Number(order.vatAmount) : 0;
+    let refundAmountUsed =
+      Number(order.subtotal) > 0
+        ? Number(order.subtotal)
+        : Math.max(0, (Number(order.totalAmount) || 0) - vatCut);
     if (refundAmount !== undefined && refundAmount !== null && refundAmount !== '') {
       const num = Number(refundAmount);
       if (Number.isFinite(num) && num >= 0) {
@@ -519,13 +559,19 @@ exports.approveCancellation = async (req, res) => {
       await cancellation.save();
     }
 
-    await OrderStatusHistoryCreate(order, previousStatus, 'CANCELLED', req.user.id, adminNote || 'Cancellation approved');
+    await OrderStatusHistoryCreate(
+      order,
+      previousStatus,
+      'CANCELLED',
+      req.user.id,
+      adminNote || 'Cancellation approved'
+    );
 
     await Notification.create({
       userId: order.userId,
       title: 'Cancellation Approved',
       message: paid
-        ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB is being processed.`
+        ? `Your order #${order.orderId} has been cancelled. A refund of ${refundAmountUsed} ETB is being processed.`
         : `Your order #${order.orderId} has been cancelled.`,
       type: 'order',
       orderId: order.orderId,
@@ -558,7 +604,9 @@ async function OrderStatusHistoryCreate(order, previousStatus, newStatus, change
   const OrderStatusHistory = require('../models/OrderStatusHistory');
   try {
     await OrderStatusHistory.create({ orderId: order._id, previousStatus, newStatus, changedBy, reason: reason || '' });
-  } catch (_) { /* best effort */ }
+  } catch (_) {
+    /* best effort */
+  }
 }
 
 /**
@@ -582,7 +630,9 @@ exports.rejectCancellation = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Cancellation was already rejected' });
     }
     if (cancellation.status !== CANCELLATION_FLOW_STATUS.REQUESTED) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: `Cancellation already ${cancellation.status.toLowerCase()}; cannot reject` });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: `Cancellation already ${cancellation.status.toLowerCase()}; cannot reject` });
     }
 
     const order = await Order.findById(cancellation.orderId);
@@ -645,7 +695,15 @@ exports.requestRefund = async (req, res) => {
     const order = await Order.findById(cancellation.orderId);
     if (!order) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
 
-    const result = await svc.requestRefund({ order, cancellation, amount: order.totalAmount, actorId: req.user.id });
+    const result = await svc.requestRefund({
+      order,
+      cancellation,
+      amount:
+        Number(order.subtotal) > 0
+          ? Number(order.subtotal)
+          : Math.max(0, (Number(order.totalAmount) || 0) - (Number(order.vatAmount) || 0)),
+      actorId: req.user.id,
+    });
     await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
 
     await logAction({
@@ -656,7 +714,9 @@ exports.requestRefund = async (req, res) => {
       description: `Refund requested for order #${order.orderId} (${result.refundAmount} ETB)`,
     });
 
-    res.status(HTTP_STATUS.OK).json({ success: true, refund: result, cancellation: await svc.serializeCancellation(cancellation, order) });
+    res
+      .status(HTTP_STATUS.OK)
+      .json({ success: true, refund: result, cancellation: await svc.serializeCancellation(cancellation, order) });
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ success: false, error: error.message });
     console.error('❌ Request Refund Error:', error);
@@ -674,15 +734,27 @@ exports.confirmRefund = async (req, res) => {
   try {
     const { providerReference } = req.body;
     const cancellation = await resolveCancellationParam(req.params.id);
-    if (!cancellation) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Cancellation not found' });
+    if (!cancellation)
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Cancellation not found' });
     const order = await Order.findById(cancellation.orderId);
 
     await svc.confirmRefund({ cancellation, order, providerReference, actorId: req.user && req.user.id });
 
     if (order) {
       try {
-        await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'REFUNDED', refundStatus: 'REFUNDED', refundedAt: new Date(), refundAmount: cancellation.refundAmount, refundReference: cancellation.refundReference });
-      } catch (_) { /* best effort */ }
+        await Payment.findOneAndUpdate(
+          { orderId: order._id },
+          {
+            status: 'REFUNDED',
+            refundStatus: 'REFUNDED',
+            refundedAt: new Date(),
+            refundAmount: cancellation.refundAmount,
+            refundReference: cancellation.refundReference,
+          }
+        );
+      } catch (_) {
+        /* best effort */
+      }
     }
 
     // Refund resolved => cancellation is complete.
@@ -720,7 +792,8 @@ exports.failRefund = async (req, res) => {
   try {
     const { error } = req.body;
     const cancellation = await resolveCancellationParam(req.params.id);
-    if (!cancellation) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Cancellation not found' });
+    if (!cancellation)
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Cancellation not found' });
     const order = await Order.findById(cancellation.orderId);
 
     await svc.failRefund({ cancellation, order, error: error || 'Provider error' });
@@ -728,7 +801,9 @@ exports.failRefund = async (req, res) => {
     if (order) {
       try {
         await Payment.findOneAndUpdate({ orderId: order._id }, { refundStatus: 'FAILED' });
-      } catch (_) { /* best effort */ }
+      } catch (_) {
+        /* best effort */
+      }
     }
 
     await logAction({
@@ -761,7 +836,7 @@ exports.checkCancellationEligibility = async (req, res) => {
     const order = await svc.resolveOrder(orderId);
     if (!order) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
 
-    if (order.userId && String(order.userId) !== String(req.user.id) && req.user.role !== 'admin') {
+    if (order.userId && String(order.userId) !== String(req.user.id) && !isAdminRole(req.user.role)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'Unauthorized to check this order' });
     }
 

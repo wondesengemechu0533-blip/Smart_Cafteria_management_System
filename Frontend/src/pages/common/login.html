@@ -578,7 +578,7 @@
                 <option value="am">🇪🇹 አማርኛ</option>
             </select>
         </div>
-        <button type="button" class="theme-corner" data-theme-toggle aria-label="Toggle dark / light mode" title="Dark Mode">
+        <button type="button" class="theme-corner" data-theme-toggle aria-label="Toggle dark / light mode" data-i18n-title="dark_mode">
             <i class="fa-solid fa-moon"></i>
         </button>
     </div>
@@ -593,8 +593,8 @@
                     <div class="brand-icon">
                         <i class="fa-solid fa-bowl-food"></i>
                     </div>
-                    <h2>Good food, <span>good mood.</span></h2>
-                    <p>
+                    <h2>Good food, <span data-i18n="auth_good_mood">good mood.</span></h2>
+                    <p data-i18n="auth_welcome_paragraph">
                         Welcome back to Smart Cafeteria. Order your favorite meals quickly,
                         conveniently, and enjoy a smarter cafeteria experience.
                     </p>
@@ -622,8 +622,8 @@
                     </div>
                 </div>
                 <div class="login-heading">
-                    <h1>Welcome back</h1>
-                    <p>Sign in to continue to your cafeteria account.</p>
+                    <h1 data-i18n="auth_welcome_back">Welcome back</h1>
+                    <p data-i18n="auth_welcome_subtitle">Sign in to continue to your cafeteria account.</p>
                 </div>
                 <div id="errorMsg" class="message error-message"></div>
                 <div id="successMsg" class="message success-message"></div>
@@ -652,13 +652,14 @@
                             <label for="password">
                                 Password <span>*</span>
                             </label>
-                            <a href="#" class="forgot-link">Forgot password?</a>
+                            <a href="#" class="forgot-link" data-i18n="auth_forgot">Forgot password?</a>
                         </div>
                         <div class="input-wrapper">
                             <input
                                 type="password"
                                 id="password"
                                 class="password-input"
+                                data-i18n-placeholder="auth_password_placeholder"
                                 placeholder="Enter your password"
                                 autocomplete="current-password"
                                 required
@@ -675,7 +676,7 @@
                     <!-- REGISTER -->
                     <p class="footer-link">
                         Don't have an account?
-                        <a href="../common/register.html">Create an account</a>
+                        <a href="../common/register.html" data-i18n="auth_create_account">Create an account</a>
                     </p>
                     <!-- HOME -->
                     <p class="back-home">
@@ -689,6 +690,7 @@
     </main>
 
     <!-- LOGIN JAVASCRIPT -->
+    <script src="../../js/roles.js"></script>
     <script>
         const form = document.getElementById("loginForm");
         const errorMsg = document.getElementById("errorMsg");
@@ -779,31 +781,41 @@
             let normalizedRole = "";
 
             if (backendSuccess && authenticatedUser) {
+                // Normalize via the shared role map (handles legacy aliases like
+                // cafeteria_manager -> manager, kitchen_staff -> kitchen, ...).
                 const rawRole = String(authenticatedUser.role || "customer").trim();
-                normalizedRole = rawRole.toLowerCase();
+                normalizedRole = (window.ScosRoles ? ScosRoles.normalizeRole(rawRole) : rawRole.toLowerCase()) || "customer";
                 userName = authenticatedUser.name || authenticatedUser.email;
                 userEmail = authenticatedUser.email;
 
-                if (normalizedRole === "admin") {
-                    userRole = "ADMIN";
-                    redirectUrl = "../admin/dashboard.html";
-                } else if (normalizedRole === "kitchen" || normalizedRole === "foodmaker" || normalizedRole === "staff" || normalizedRole === "kitchen_staff") {
-                    userRole = "KITCHEN_STAFF";
-                    redirectUrl = "../kitchen/dashboard.html";
-                } else if (normalizedRole === "delivery" || normalizedRole === "delivery_staff" || normalizedRole === "delivery staff" || normalizedRole === "driver" || normalizedRole === "rider") {
-                    userRole = "DELIVERY_STAFF";
-                    redirectUrl = "../delivery/dashboard.html";
-                } else {
-                    userRole = "CUSTOMER";
-                    redirectUrl = "../customer/menu.html";
+                // Map canonical role -> legacy upper-case session key (kept for
+                // compatibility with the existing dashboard entry checks).
+                var ROLE_SESSION_KEYS = {
+                    customer: "CUSTOMER",
+                    admin: "ADMIN",
+                    cafeteria_admin: "CAFETERIA_ADMIN",
+                    manager: "MANAGER",
+                    cashier: "CASHIER",
+                    kitchen: "KITCHEN_STAFF",
+                    delivery: "DELIVERY_STAFF",
+                    tax_authority: "TAX_AUTHORITY"
+                };
+                userRole = ROLE_SESSION_KEYS[normalizedRole] || "CUSTOMER";
 
+                if (window.ScosRoles) {
+                    redirectUrl = ScosRoles.dashboardForRole(normalizedRole);
+                }
+
+                if (normalizedRole === "customer") {
                     // If the user was sent here to order a specific item, send
                     // them back to the menu so they can complete the order.
+                    if (!redirectUrl) redirectUrl = "../customer/menu.html";
                     const storedRedirect = localStorage.getItem("redirect_after_auth");
+
+                    // A bare filename (e.g. "cart.html") resolves relative to
+                    // this page's folder (common/), which is wrong. Rewrite it
+                    // to the customer directory so it never 404s.
                     if (storedRedirect) {
-                        // A bare filename (e.g. "cart.html") resolves relative to
-                        // this page's folder (common/), which is wrong. Rewrite it
-                        // to the customer directory so it never 404s.
                         if (!storedRedirect.startsWith("/") && !/^[a-z]+:\/\//i.test(storedRedirect)) {
                             redirectUrl = "../customer/" + storedRedirect.replace(/^\.\.?\/+/, "");
                         } else {
@@ -859,6 +871,9 @@
             }
             if (userRole === "DELIVERY_STAFF") {
                 localStorage.setItem("deliveryLoggedIn", "true");
+            }
+            if (userRole === "CASHIER") {
+                localStorage.setItem("cashierLoggedIn", "true");
             }
             if (userRole === "ADMIN") {
                 localStorage.setItem("adminLoggedIn", "true");

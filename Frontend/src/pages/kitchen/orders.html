@@ -118,8 +118,267 @@
         .badge-pending { background-color: rgba(245, 158, 11, 0.2); color: #f59e0b; }
         .badge-preparing { background-color: rgba(59, 130, 246, 0.2); color: #3b82f6; }
         .badge-ready { background-color: rgba(16, 185, 129, 0.2); color: #10b981; }
+
+        /* ===== New-order alert UI (mirrors the kitchen dashboard) ===== */
+        .kds-toast-stack {
+            position: fixed;
+            top: 76px;
+            right: 16px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: min(360px, calc(100vw - 32px));
+            pointer-events: none;
+        }
+        .kds-toast {
+            pointer-events: auto;
+            background: #ffffff;
+            color: #111827;
+            border-left: 5px solid #f97316;
+            border-radius: 10px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+            padding: 12px 14px;
+            animation: kds-toast-in 0.25s ease;
+            font-size: 0.9rem;
+        }
+        .kds-toast-cancelled { border-left-color: #ef4444; }
+        .kds-toast-alerting { animation: kds-toast-in 0.25s ease, kds-toast-alert 1.2s ease-in-out infinite; }
+        .kds-toast-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .kds-toast-meta { color: #6b7280; font-size: 0.82rem; margin-bottom: 4px; }
+        .kds-toast-items { color: #374151; font-size: 0.84rem; line-height: 1.35; }
+        .kds-toast-close {
+            border: none;
+            background: transparent;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 1rem;
+            padding: 0 2px;
+        }
+        .kds-toast-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .kds-toast-action {
+            border: 1px solid #d1d5db;
+            background: #f9fafb;
+            color: #374151;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 600;
+            padding: 6px 12px;
+        }
+        .kds-toast-action:hover { background: #f3f4f6; }
+        .kds-toast-action-stop { border-color: #fecaca; color: #b91c1c; }
+        .kds-toast-action:disabled { background: #f3f4f6; color: #9ca3af; cursor: default; }
+        .kds-unread-badge {
+            background: #fff7ed;
+            border: 1px solid #fed7aa;
+            border-radius: 999px;
+            color: #c2410c;
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            text-transform: uppercase;
+        }
+        .kds-ticket-focused { outline: 3px solid #f97316; outline-offset: -3px; }
+        /* Unacknowledged new order: tint the whole row so it is obvious. */
+        tr.kds-ticket-unread > td { background: #fff7ed; }
+        tr.kds-ticket-unread > td:first-child { box-shadow: inset 3px 0 0 #f97316; }
+        /* Clicking a row acknowledges the order, so advertise it. */
+        #kitchenOrdersBody tr[data-order-id] { cursor: pointer; }
+
+        /* ---- Filter tab counts (written by kitchen.js renderFilterCounts) ---
+           A tab with a real number is visibly "empty" when it reads 0, instead
+           of looking like a filter that silently stopped working. */
+        .filter-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .filter-group .btn { display: inline-flex; align-items: center; gap: 6px; }
+        .tab-count {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 22px;
+            height: 20px;
+            padding: 0 6px;
+            border-radius: 999px;
+            background: rgba(120, 120, 128, 0.16);
+            color: inherit;
+            font-size: 0.72rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+        .filter-group .btn.active .tab-count {
+            background: rgba(255, 255, 255, 0.28);
+        }
+        /* Stage tiles double as filters. */
+        .kitchen-stat.filter-trigger { cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; }
+        .kitchen-stat.filter-trigger:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+        .kitchen-stat.filter-trigger:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+        .kitchen-stat.cancelled .number { color: #dc2626; }
+
+        /* ---- "Not paid yet" triage view ---------------------------------- */
+        .btn-unpaid { border-style: dashed; }
+        .btn-unpaid.active {
+            background: #fef3c7;
+            border-color: #f59e0b;
+            color: #b45309;
+            font-weight: 700;
+        }
+        .unpaid-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 14px;
+            padding: 10px 14px;
+            border: 1px solid #fcd34d;
+            border-left: 4px solid #f59e0b;
+            border-radius: 10px;
+            background: #fffbeb;
+            color: #92400e;
+            font-size: 0.85rem;
+            line-height: 1.45;
+        }
+        .unpaid-banner > i { margin-top: 2px; color: #f59e0b; }
+        /* Rows shown only for triage must look visibly different from real work. */
+        #kitchenOrdersBody tr[data-unpaid="1"] { background: #fffbeb; }
+        #kitchenOrdersBody tr[data-unpaid="1"] td:first-child::after {
+            content: "Not paid";
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #fef3c7;
+            color: #b45309;
+            font-size: 0.68rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        body.dark-theme .unpaid-banner {
+            background: rgba(245, 158, 11, 0.14);
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fcd34d;
+        }
+        body.dark-theme #kitchenOrdersBody tr[data-unpaid="1"] { background: rgba(245, 158, 11, 0.08); }
+
+        .kds-new-order-banner {
+            margin: 0 0 20px;
+            border: 2px solid #f97316;
+            border-left-width: 8px;
+            border-radius: 12px;
+            background: #fff7ed;
+            color: #7c2d12;
+            padding: 14px 18px;
+            box-shadow: 0 10px 24px rgba(249, 115, 22, 0.25);
+        }
+        .kds-new-order-banner[hidden] { display: none !important; }
+        .kds-new-order-headline {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 800;
+            font-size: 1.05rem;
+            color: #c2410c;
+            margin-bottom: 10px;
+        }
+        .kds-new-order-pulse {
+            margin-left: auto;
+            background: #f97316;
+            color: #fff;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            padding: 3px 10px;
+            text-transform: uppercase;
+            animation: kds-new-order-pulse 1.1s ease-in-out infinite;
+        }
+        .kds-new-order-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .kds-new-order-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+            background: #fff;
+            border: 1px solid #fed7aa;
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .kds-new-order-summary { color: #7c2d12; }
+        .kds-new-order-actions { margin-left: auto; display: flex; gap: 8px; }
+        .kds-new-order-btn {
+            border: 1px solid #fdba74;
+            background: #fff7ed;
+            color: #c2410c;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            font-weight: 700;
+            padding: 5px 14px;
+            cursor: pointer;
+        }
+        .kds-new-order-btn:hover { background: #ffedd5; }
+        .kds-new-order-btn-stop { border-color: #fecaca; background: #fef2f2; color: #b91c1c; }
+        .kds-new-order-btn-stop:hover { background: #fee2e2; }
+
+        .kds-sound-unlock {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 2100;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: #111827;
+            color: #ffffff;
+            border: 1px solid #374151;
+            border-radius: 999px;
+            padding: 10px 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            font-size: 0.9rem;
+            max-width: calc(100vw - 32px);
+        }
+        .kds-sound-unlock[hidden] { display: none !important; }
+        .kds-sound-unlock button {
+            border: none;
+            border-radius: 999px;
+            background: #f97316;
+            color: #fff;
+            font-weight: 700;
+            padding: 8px 14px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .kds-sound-unlock button:hover { background: #ea580c; }
+
+        @keyframes kds-toast-in {
+            from { opacity: 0; transform: translateX(16px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes kds-toast-alert {
+            0%, 100% { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18); }
+            50% { box-shadow: 0 10px 28px rgba(249, 115, 22, 0.55); }
+        }
+        @keyframes kds-new-order-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.55; }
+        }
     </style>
     <script src="../../js/config.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
     <script src="../../js/theme.js?v=20260907"></script>
 </head>
 <body class="admin-body">
@@ -132,7 +391,7 @@
             </button>
             <div class="kds-header-title">
                 <i class="fa-solid fa-fire-burner fa-xl"></i>
-                <h1>Kitchen Display System</h1>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
             </div>
         </div>
 
@@ -147,10 +406,10 @@
             <div class="user-dropdown">
                 <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
                     <i class="fa-solid fa-user-circle"></i>
-                    <span id="userName">Profile</span>
+                    <span data-i18n="profile" id="userName">Profile</span>
                 </button>
                 <div class="dropdown-menu-custom" id="userDropdownMenu">
-                    <a href="#" onclick="viewProfile()">
+                    <a data-i18n="nav_profile" href="#" onclick="viewProfile()">
                         <i class="fa-solid fa-id-card"></i> My Profile
                     </a>
                 </div>
@@ -167,31 +426,34 @@
         <aside class="kds-sidebar" id="kdsSidebar">
             <div class="kds-sidebar-brand">
                 <i class="fa-solid fa-fire-burner"></i>
-                <span>Kitchen Menu</span>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-group">
-                    <a href="dashboard.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/dashboard.html" class="sidebar-link">
                         <i class="fa-solid fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="orders.html" class="sidebar-link active">
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link active">
                         <i class="fa-solid fa-receipt"></i> Orders
                     </a>
-                    <a href="availability.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link">
                         <i class="fa-solid fa-burger"></i> Availability
                     </a>
-                    <a href="stock-alerts.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
+                    </a>
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
                     </a>
                 </div>
                 <div class="sidebar-group" style="margin-top: 16px;">
-                    <a href="notifications.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
-                    <a href="schedule.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
                         <i class="fa-solid fa-clock"></i> Preparation Schedule
                     </a>
-                    <a href="settings.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link">
                         <i class="fa-solid fa-gear"></i> Settings
                     </a>
                 </div>
@@ -200,6 +462,24 @@
 
         <!-- MAIN ORDERS CONTENT -->
         <main class="kds-main orders-main">
+            <!-- PERSISTENT NEW-ORDER ALERT: stays until the kitchen acknowledges -->
+            <div class="kds-new-order-banner" id="kdsNewOrderBanner" hidden role="alert" aria-live="assertive"></div>
+
+            <!-- PERSISTENT UNREAD-NOTIFICATION PANEL
+                 Same server-backed list as the dashboard, newest first, so
+                 opening the detailed order queue still shows every order event
+                 the kitchen has not acknowledged yet. -->
+            <section class="kds-notif-panel" id="kdsNotifPanel" aria-labelledby="kdsNotifPanelTitle">
+                <header class="kds-notif-head">
+                    <h2 class="kds-notif-heading" id="kdsNotifPanelTitle">
+                        <i class="fa-solid fa-bell"></i> Unhandled Order Alerts
+                    </h2>
+                    <span class="kds-notif-count" id="kdsNotifUnreadCount" hidden>0</span>
+                    <a class="kds-notif-all" href="/src/pages/kitchen/notifications.html">All notifications</a>
+                </header>
+                <ul class="kds-notif-list" id="kdsNotifList" aria-live="polite"></ul>
+            </section>
+
             <div class="page-header">
                 <div>
                     <h1>Kitchen Order Queue</h1>
@@ -208,10 +488,51 @@
 
                 <div class="filter-group">
                     <button class="btn active" data-status="all">All Active</button>
-                    <button class="btn" data-status="Pending">Pending</button>
+                    <button data-i18n="status_pending" class="btn" data-status="Pending">Pending</button>
                     <button class="btn" data-status="Preparing">Preparing</button>
                     <button class="btn" data-status="Ready">Ready</button>
                     <button class="btn" data-status="Cancelled">Cancelled</button>
+                    <!-- Triage view. Off by default: an unconfirmed payment must
+                         never be worked, but a manager needs to SEE why the queue
+                         is empty. Clicking it re-requests the dashboard with
+                         ?includeUnpaid=1 and reveals the "Not paid yet" tab. -->
+                    <button class="btn btn-unpaid" data-toggle-unpaid data-status="unpaid" aria-pressed="false"
+                            title="Show orders that exist but are not paid yet">
+                        <i class="fa-solid fa-eye"></i> Not paid yet
+                    </button>
+                </div>
+            </div>
+
+            <!-- "Not paid yet" rows appear here only after the toggle above is
+                 used, and never count towards the kitchen's stage tiles. -->
+            <div class="unpaid-banner" id="unpaidBanner" hidden>
+                <i class="fa-solid fa-circle-info"></i>
+                <span>These orders have <strong>not</strong> been paid for, so they are held out of
+                    the kitchen queue on purpose. They are shown for triage only — do not prepare them.</span>
+            </div>
+
+            <!-- STAGE COUNTS
+                 Same ids the dashboard's stat tiles use (pendingCount /
+                 preparingCount / readyCount / cancelledCount), so kitchen.js
+                 fills them with no page-specific code. They double as filter
+                 triggers, and every filter button below carries its own row
+                 count - a tab showing 0 is then visibly "empty", not broken. -->
+            <div class="kitchen-stats">
+                <div class="kitchen-stat pending filter-trigger" data-status="Pending" role="button" tabindex="0">
+                    <div class="number" id="pendingCount">0</div>
+                    <div class="label">Pending Kitchen</div>
+                </div>
+                <div class="kitchen-stat preparing filter-trigger" data-status="Preparing" role="button" tabindex="0">
+                    <div class="number" id="preparingCount">0</div>
+                    <div class="label">Preparing</div>
+                </div>
+                <div class="kitchen-stat ready filter-trigger" data-status="Ready" role="button" tabindex="0">
+                    <div class="number" id="readyCount">0</div>
+                    <div class="label">Ready</div>
+                </div>
+                <div class="kitchen-stat cancelled filter-trigger" data-status="Cancelled" role="button" tabindex="0">
+                    <div class="number" id="cancelledCount">0</div>
+                    <div class="label">Cancelled</div>
                 </div>
             </div>
 
@@ -221,12 +542,12 @@
                     <thead>
                         <tr>
                             <th>Ticket #</th>
-                            <th>Customer</th>
-                            <th>Type</th>
+                            <th data-i18n="customer">Customer</th>
+                            <th data-i18n="type">Type</th>
                             <th>Items & Quantities</th>
-                            <th>Status</th>
+                            <th data-i18n="status">Status</th>
                             <th>Time Elapsed</th>
-                            <th>Actions</th>
+                            <th data-i18n="actions">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="kitchenOrdersBody">
@@ -237,13 +558,30 @@
         </main>
     </div>
 
+    <!-- Visible new-order toasts -->
+    <div class="kds-toast-stack" id="kdsToastStack" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- Autoplay unlock CTA (shown if the browser blocks notification sound) -->
+    <div class="kds-sound-unlock" id="soundUnlockBanner" hidden role="alert">
+        <i class="fa-solid fa-volume-xmark"></i>
+        <span>Browser blocked the notification sound.</span>
+        <button type="button" id="enableSoundBtn">Enable notification sound</button>
+    </div>
+
+    <!-- Audio Element for Order Alerts (real PCM chime; mp3 secondary) -->
+    <audio id="orderNotificationSound" src="/assets/sounds/new-order.wav" preload="auto">
+        <source src="/assets/sounds/new-order.wav" type="audio/wav">
+        <source src="/assets/sounds/new-order.mp3" type="audio/mpeg">
+    </audio>
+
     <!-- JavaScript Dependencies -->
     <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
-    <script type="module" src="../../js/utils/i18n.js?v=20260907"></script>
-    <script type="module" src="../../js/api.js?v=20260907"></script>
-    <script type="module" src="../../js/auth.js?v=20260907"></script>
-    <script type="module" src="../../js/socket.js?v=20260907"></script>
-    <script type="module" src="./kitchen.js?v=20260907"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261004-cancel"></script>
+    <script src="../../js/notification-sound.js?v=20260926alert"></script>
+    <script type="module" src="../../js/api.js?v=20260923"></script>
+    <script type="module" src="../../js/auth.js?v=20260923"></script>
+    <script type="module" src="../../js/socket.js?v=20260925loop"></script>
+    <script type="module" src="./kitchen.js?v=20261004-par"></script>
 
     <!-- Navigation & User Menu Script -->
     <script>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="manager_dashboard_page_title">Manager Dashboard - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Bootstrap CSS (required for grid + components) -->
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+
+    <!-- Shared Theme -->
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="manager_dashboard_overview">Manager Overview</h1>
+                </div>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshMetricsBtn" data-i18n="admin_refresh">
+                        <i class="fa-solid fa-rotate"></i> Refresh
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATISTICS CARDS -->
+            <div class="metrics-grid mb-4">
+                <div class="metric-card" data-nav="../kitchen/dashboard.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-utensils"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="manager_total_orders">Total Orders</span>
+                        <h2 class="metric-value" id="statTotalOrders">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="../kitchen/dashboard.html">
+                    <div class="metric-icon bg-blue">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="manager_pending_orders">Pending Orders</span>
+                        <h2 class="metric-value" id="statPendingOrders">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="../kitchen/dashboard.html">
+                    <div class="metric-icon bg-green">
+                        <i class="fa-solid fa-check-circle"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="manager_completed_orders">Completed Orders</span>
+                        <h2 class="metric-value" id="statCompletedOrders">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="../admin/payments.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-sack-dollar"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-i18n="manager_total_revenue">Total Revenue</span>
+                        <h2 id="statTotalRevenue">0 <small>ETB</small></h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CHARTS -->
+            <div class="charts-grid mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title" data-i18n="manager_order_status_overview"><i class="fa-solid fa-chart-pie"></i> Order Status Overview</h3>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="orderStatusChart"></canvas>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h3 class="card-title" data-i18n="manager_revenue_trend"><i class="fa-solid fa-chart-line"></i> Revenue Trend</h3>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="revenueChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KITCHEN STATUS -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h3 class="card-title" data-i18n="manager_kitchen_status"><i class="fa-solid fa-server"></i> Kitchen Status</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row g-4">
+                        <div class="col-md-4">
+                            <div class="status-badge pending">
+                                <i class="fa-solid fa-clock"></i> <span data-i18n="status_preparing">Preparing</span>
+                                <div class="status-count" id="kitchenPreparing">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="status-badge ready">
+                                <i class="fa-solid fa-bowl-food"></i> <span data-i18n="status_ready">Ready</span>
+                                <div class="status-count" id="kitchenReady">0</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="status-badge served">
+                                <i class="fa-solid fa-hand-holding"></i> <span data-i18n="status_served">Served</span>
+                                <div class="status-count" id="kitchenServed">0</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RECENT ORDERS -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title" data-i18n="manager_recent_orders"><i class="fa-solid fa-list-check"></i> Recent Orders</h3>
+                    <a href="../admin/orders.html" class="btn btn-sm btn-outline-primary" data-i18n="manager_view_all">View All</a>
+                </div>
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="manager_col_order_id">Order ID</th>
+                                <th data-i18n="manager_col_customer">Customer</th>
+                                <th data-i18n="manager_col_amount">Amount</th>
+                                <th data-i18n="manager_col_status">Status</th>
+                                <th data-i18n="manager_col_date">Date</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentOrdersTableBody">
+                            <tr><td colspan="5" class="table-empty" data-i18n="manager_loading_recent_orders">Loading recent orders...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- DELIVERY ASSIGNMENT -->
+            <!-- Real data only: GET /api/v1/deliveries + /deliveries/staff, and
+                 PATCH /api/v1/deliveries/:id/assign - the same endpoints the
+                 Delivery Orders page uses. No mock rows, no second assignment
+                 system. -->
+            <div class="card mb-4" id="dashDeliveryCard">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h3 class="card-title" data-i18n="dash_delivery_assignment_title">
+                        <i class="fa-solid fa-truck-fast"></i> Delivery Assignment
+                    </h3>
+                    <div class="d-flex gap-2 align-items-center">
+                        <a href="../admin/deliveries.html" class="btn btn-sm btn-outline-primary" data-i18n="dash_delivery_all_orders">All Deliveries</a>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="dashDeliveryRefreshBtn">
+                            <i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="metrics-grid mb-3">
+                        <div class="metric-card">
+                            <div class="metric-icon bg-orange">
+                                <i class="fa-solid fa-user-slash"></i>
+                            </div>
+                            <div class="metric-content">
+                                <span class="metric-label" data-i18n="dash_delivery_unassigned">Unassigned</span>
+                                <h2 class="metric-value" id="dashDeliveryUnassigned">0</h2>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon bg-green">
+                                <i class="fa-solid fa-user-check"></i>
+                            </div>
+                            <div class="metric-content">
+                                <span class="metric-label" data-i18n="dash_delivery_assigned_count">Assigned</span>
+                                <h2 class="metric-value" id="dashDeliveryAssigned">0</h2>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon bg-blue">
+                                <i class="fa-solid fa-truck"></i>
+                            </div>
+                            <div class="metric-content">
+                                <span class="metric-label" data-i18n="dash_delivery_active_count">Active Deliveries</span>
+                                <h2 class="metric-value" id="dashDeliveryActive">0</h2>
+                            </div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-icon bg-indigo">
+                                <i class="fa-solid fa-people-group"></i>
+                            </div>
+                            <div class="metric-content">
+                                <span class="metric-label" data-i18n="dash_delivery_staff_count">Available Staff</span>
+                                <h2 class="metric-value" id="dashDeliveryStaff">0</h2>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-danger" id="dashDeliveryError" style="display:none;"></div>
+
+                    <div class="table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="manager_col_order_id">Order ID</th>
+                                    <th data-i18n="manager_col_customer">Customer</th>
+                                    <th data-i18n="dash_delivery_col_address">Delivery Address</th>
+                                    <th data-i18n="dash_delivery_col_items">Items</th>
+                                    <th data-i18n="manager_col_amount">Amount</th>
+                                    <th data-i18n="dash_delivery_col_status">Delivery Status</th>
+                                    <th data-i18n="dash_delivery_col_staff">Delivery Staff</th>
+                                    <th data-i18n="dash_delivery_col_actions">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashDeliveryTableBody">
+                                <tr><td colspan="8" class="table-empty" data-i18n="dash_delivery_loading">Loading delivery orders...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DELIVERY STAFF MANAGEMENT
+                 Same data source as the Delivery Orders page: GET /api/v1/deliveries/staff.
+                 "Create" calls POST /api/v1/deliveries/staff, which creates a normal
+                 User (role `delivery`) in this cafeteria - the same accounts the
+                 Delivery Staff selector reads. No mock data, no second user system. -->
+            <div class="card mb-4" id="dashDeliveryStaffCard">
+                <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <h3 class="card-title" data-i18n="mgr_staff_title">
+                        <i class="fa-solid fa-people-group"></i> Delivery Staff
+                    </h3>
+                    <div class="d-flex gap-2 align-items-center">
+                        <a href="../admin/deliveries.html" class="btn btn-sm btn-outline-primary" data-i18n="dash_delivery_all_orders">All Deliveries</a>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="dashStaffRefreshBtn">
+                            <i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span>
+                        </button>
+                        <button type="button" class="btn btn-sm btn-primary" id="addDeliveryStaffBtn">
+                            <i class="fa-solid fa-plus"></i> <span data-i18n="mgr_staff_add">Add Delivery Staff</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger" id="dashStaffError" style="display:none;"></div>
+                    <div class="table-wrapper">
+                        <table class="admin-table">
+                            <thead>
+                                <tr>
+                                    <th data-i18n="mgr_staff_col_name">Full Name</th>
+                                    <th data-i18n="mgr_staff_col_phone">Phone</th>
+                                    <th data-i18n="mgr_staff_col_email">Email</th>
+                                    <th data-i18n="mgr_staff_col_username">Username</th>
+                                    <th data-i18n="mgr_staff_col_status">Status</th>
+                                    <th data-i18n="mgr_staff_col_active">Active Jobs</th>
+                                    <th data-i18n="mgr_staff_col_added">Added</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashDeliveryStaffTableBody">
+                                <tr><td colspan="7" class="table-empty" data-i18n="mgr_staff_loading">Loading delivery staff...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ADD DELIVERY STAFF MODAL -->
+    <div class="modal-overlay" id="addDeliveryStaffModal">
+        <div class="modal" style="max-width:560px;">
+            <div class="modal-header">
+                <h3 class="modal-title" data-i18n="mgr_staff_modal_title">Add Delivery Staff</h3>
+                <button class="modal-close" data-close-modal="addDeliveryStaffModal" aria-label="Close">&times;</button>
+            </div>
+            <form id="addDeliveryStaffForm" novalidate>
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="staffName" class="form-label">
+                                <span data-i18n="mgr_staff_label_name">Full Name</span> <span class="required">*</span>
+                            </label>
+                            <input type="text" name="name" id="staffName" class="form-control" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffPhone" class="form-label">
+                                <span data-i18n="mgr_staff_label_phone">Phone</span> <span class="required">*</span>
+                            </label>
+                            <input type="tel" name="phone" id="staffPhone" class="form-control"
+                                   placeholder="09XXXXXXXX or +2519XXXXXXXX" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffEmail" class="form-label">
+                                <span data-i18n="mgr_staff_label_email">Email</span> <span class="required">*</span>
+                            </label>
+                            <input type="email" name="email" id="staffEmail" class="form-control" autocomplete="off" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffUsername" class="form-label" data-i18n="mgr_staff_label_username">Username</label>
+                            <input type="text" name="username" id="staffUsername" class="form-control"
+                                   pattern="[a-zA-Z0-9_]+" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label for="staffPassword" class="form-label">
+                                <span data-i18n="mgr_staff_label_password">Password</span> <span class="required">*</span>
+                            </label>
+                            <div class="input-wrapper">
+                                <input type="password" name="password" id="staffPassword" class="form-control password-input"
+                                       autocomplete="new-password" required>
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="staffPassword" title="Show password"></i>
+                            </div>
+                            <small class="form-text" data-i18n="mgr_staff_password_hint">
+                                At least 8 characters, with upper and lower case letters, a number and a symbol.
+                            </small>
+                        </div>
+                        <div class="form-group">
+                            <label for="staffConfirmPassword" class="form-label">
+                                <span data-i18n="mgr_staff_label_confirm">Confirm Password</span> <span class="required">*</span>
+                            </label>
+                            <div class="input-wrapper">
+                                <input type="password" name="confirmPassword" id="staffConfirmPassword"
+                                       class="form-control password-input" autocomplete="new-password" required>
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="staffConfirmPassword" title="Show password"></i>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="alert alert-danger" id="addDeliveryStaffError" style="display:none;margin-top:12px;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal="addDeliveryStaffModal"
+                            data-i18n="mgr_staff_cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="createDeliveryStaffBtn" data-i18n="mgr_staff_create">
+                        Create Delivery Staff
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+
+    <!-- Shared Theme -->
+
+    <!-- JavaScript Files -->
+    <!-- Socket.IO client: lets the Delivery Assignment card receive live
+         delivery:new / delivery:assigned events (the 30s poll is the fallback). -->
+    <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
+    <script src="../../js/config.js"></script>
+<script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/manager-dashboard.js"></script>
+    <script src="../../js/dashboard-deliveries.js"></script>
+    <script src="../../js/manager-delivery-staff.js"></script>
+</body>
+</html>

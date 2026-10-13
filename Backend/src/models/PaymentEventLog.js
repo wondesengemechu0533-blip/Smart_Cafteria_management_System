@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * PaymentEventLog Schema - Audit trail for payment events
@@ -8,40 +8,40 @@ const PaymentEventLogSchema = new mongoose.Schema(
   {
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Payment",
+      ref: 'Payment',
       required: true,
     },
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
+      ref: 'Order',
       default: null,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       default: null,
     },
     eventType: {
       type: String,
       enum: [
-        "PAYMENT_CREATED",
-        "PAYMENT_INITIATED",
-        "PAYMENT_AUTHORIZED",
-        "PAYMENT_COMPLETED",
-        "PAYMENT_FAILED",
-        "PAYMENT_CANCELLED",
-        "PAYMENT_REFUND_INITIATED",
-        "PAYMENT_REFUNDED",
-        "PAYMENT_REFUND_FAILED",
-        "MANUAL_ACTION",
-        "WEBHOOK_RECEIVED",
-        "WEBHOOK_PROCESSED",
+        'PAYMENT_CREATED',
+        'PAYMENT_INITIATED',
+        'PAYMENT_AUTHORIZED',
+        'PAYMENT_COMPLETED',
+        'PAYMENT_FAILED',
+        'PAYMENT_CANCELLED',
+        'PAYMENT_REFUND_INITIATED',
+        'PAYMENT_REFUNDED',
+        'PAYMENT_REFUND_FAILED',
+        'MANUAL_ACTION',
+        'WEBHOOK_RECEIVED',
+        'WEBHOOK_PROCESSED',
       ],
       required: true,
     },
     status: {
       type: String,
-      default: "PENDING",
+      default: 'PENDING',
     },
     previousStatus: {
       type: String,
@@ -85,7 +85,7 @@ const PaymentEventLogSchema = new mongoose.Schema(
     },
     performedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       default: null,
     },
     ipAddress: {
@@ -99,7 +99,7 @@ const PaymentEventLogSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 PaymentEventLogSchema.index({ paymentId: 1, createdAt: -1 });
@@ -109,4 +109,4 @@ PaymentEventLogSchema.index({ eventType: 1 });
 PaymentEventLogSchema.index({ providerEventId: 1 });
 PaymentEventLogSchema.index({ createdAt: -1 });
 
-module.exports = mongoose.model("PaymentEventLog", PaymentEventLogSchema);
+module.exports = mongoose.model('PaymentEventLog', PaymentEventLogSchema);

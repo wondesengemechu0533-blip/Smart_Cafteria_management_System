@@ -24,11 +24,11 @@
             
             <h2><i class="fa-solid fa-clock-rotate-left"></i> Order History</h2>
             <div class="user-nav-links">
-                <button type="button" class="theme-toggle-btn nav-icon-link" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode"><i class="fa-solid fa-moon"></i></button>
-                <a href="profile.html" class="nav-icon-link" title="Profile"><i class="fa-solid fa-user"></i></a>
-                <a href="notifications.html" class="nav-icon-link" title="Notifications"><i class="fa-solid fa-bell"></i></a>
-                <a href="feedback.html" class="nav-icon-link" title="Feedback"><i class="fa-solid fa-comment-dots"></i></a>
-                <a href="../common/login.html" class="nav-icon-link nav-logout" title="Logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
+                <button type="button" class="theme-toggle-btn nav-icon-link" data-theme-toggle aria-label="Toggle theme" data-i18n-title="title_toggle_theme"><i class="fa-solid fa-moon"></i></button>
+                <a href="profile.html" class="nav-icon-link" data-i18n-title="profile"><i class="fa-solid fa-user"></i></a>
+                <a href="notifications.html" class="nav-icon-link" data-i18n-title="notifications"><i class="fa-solid fa-bell"></i></a>
+                <a href="feedback.html" class="nav-icon-link" data-i18n-title="feedback"><i class="fa-solid fa-comment-dots"></i></a>
+                <a href="../common/login.html" class="nav-icon-link nav-logout" data-i18n-title="nav_logout" onclick="localStorage.clear()"><i class="fa-solid fa-right-from-bracket"></i></a>
             </div>
         </div>
     </header>
@@ -38,11 +38,11 @@
         <!-- Filters & Search Bar -->
         <section class="history-controls">
             <div class="history-filter-btns">
-                <button class="history-tab active" data-filter="all">All Orders</button>
-                <button class="history-tab" data-filter="Completed">Completed</button>
-                <button class="history-tab" data-filter="Pending">In Progress / Pending</button>
-                <button class="history-tab" data-filter="Cancelled">Cancelled</button>
-                <button class="history-tab" data-filter="Refunded">Refunded</button>
+                <button class="history-tab active" data-filter="all" data-i18n="all_orders">All Orders</button>
+                <button class="history-tab" data-filter="Completed" data-i18n="completed">Completed</button>
+                <button class="history-tab" data-filter="Pending" data-i18n="filter_in_progress">In Progress / Pending</button>
+                <button class="history-tab" data-filter="Cancelled" data-i18n="cancelled">Cancelled</button>
+                <button class="history-tab" data-filter="Refunded" data-i18n="status_refunded">Refunded</button>
             </div>
             <button id="clear-history-btn" class="btn btn-sm btn-outline-danger">
                 <i class="fa-solid fa-trash-can"></i> Clear History

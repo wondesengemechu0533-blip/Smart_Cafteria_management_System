@@ -60,6 +60,16 @@ export function renderNavbar(containerId = "navbar-container") {
     // Bind Logout event
     const logoutBtn = document.getElementById("logoutBtn");
     if (logoutBtn) {
-        logoutBtn.addEventListener("click", () => authService.logout());
+        logoutBtn.addEventListener("click", async () => {
+            try {
+                await authService.logout();
+            } catch (e) {
+                console.warn("Logout failed:", e.message);
+            }
+            ["isLoggedIn", "userProfile", "adminLoggedIn", "customerLoggedIn",
+             "managerLoggedIn", "kitchenLoggedIn", "cashierLoggedIn",
+             "deliveryLoggedIn", "auth_token"].forEach((k) => localStorage.removeItem(k));
+            window.location.href = "../common/login.html";
+        });
     }
 }

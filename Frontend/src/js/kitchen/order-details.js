@@ -16,6 +16,15 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCurrentUserShift();
 });
 
+if (typeof window.onLanguageChange === 'function' || typeof window.onLanguageChangeSafe === 'function' || typeof window.i18nOnLanguageChange === 'function') {
+    const register = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+    register(() => {
+        try {
+            renderOrderDetails();
+        } catch (e) { /* language-change re-render is best-effort */ }
+    });
+}
+
 async function loadOrderDetails() {
     try {
         const token = localStorage.getItem('auth_token');
@@ -47,7 +56,9 @@ function renderOrderDetails() {
 
     // Update header
     document.getElementById('orderNumber').textContent = `Order #${orderData.orderId}`;
-    document.getElementById('statusBadge').textContent = orderData.status.toUpperCase();
+    document.getElementById('statusBadge').textContent = window.translateStatus
+        ? window.translateStatus(orderData.status)
+        : orderData.status.toUpperCase();
     document.getElementById('statusBadge').className = `status-badge status-${orderData.status}`;
     document.getElementById('priorityBadge').textContent = (orderData.priority || 'NORMAL').toUpperCase();
     document.getElementById('priorityBadge').className = `priority-badge priority-${orderData.priority || 'normal'}`;
@@ -136,9 +147,10 @@ function renderTimeline() {
     // Current time info
     const now = new Date();
     const elapsed = Math.round((now - new Date(orderData.createdAt)) / 60000);
+    const isAm = typeof window.getCurrentLanguage === 'function' && window.getCurrentLanguage() === 'am';
     events.push({
         time: now,
-        text: `Currently in kitchen for ${elapsed} minutes`
+        text: isAm ? `በኩሽና ውስጥ ለ${elapsed} ደቂቃ ቆይቷል` : `Currently in kitchen for ${elapsed} minutes`
     });
 
     events.forEach(event => {
@@ -227,7 +239,7 @@ async function updateItemStatus(itemIndex, newStatus) {
 }
 
 async function markOrderReady() {
-    if (!confirm('Mark this order as READY?')) return;
+    if (!confirm(typeof window.tr === 'function' ? window.tr('kitchen_confirm_mark_ready', 'Mark this order as READY?') : 'Mark this order as READY?')) return;
 
     try {
         const token = localStorage.getItem('auth_token');
@@ -256,7 +268,7 @@ async function markOrderReady() {
 }
 
 async function markOrderServed() {
-    if (!confirm('Mark this order as SERVED?')) return;
+    if (!confirm(typeof window.tr === 'function' ? window.tr('kitchen_confirm_mark_served', 'Mark this order as SERVED?') : 'Mark this order as SERVED?')) return;
 
     try {
         const token = localStorage.getItem('auth_token');

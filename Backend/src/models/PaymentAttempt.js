@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * PaymentAttempt Schema - Track individual payment attempts
@@ -8,17 +8,17 @@ const PaymentAttemptSchema = new mongoose.Schema(
   {
     paymentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Payment",
+      ref: 'Payment',
       required: true,
     },
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
+      ref: 'Order',
       required: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     attemptNumber: {
@@ -45,12 +45,12 @@ const PaymentAttemptSchema = new mongoose.Schema(
     },
     currency: {
       type: String,
-      default: "ETB",
+      default: 'ETB',
     },
     status: {
       type: String,
-      enum: ["PENDING", "PROCESSING", "AUTHORIZED", "PAID", "FAILED", "CANCELLED"],
-      default: "PENDING",
+      enum: ['PENDING', 'PROCESSING', 'AUTHORIZED', 'PAID', 'FAILED', 'CANCELLED'],
+      default: 'PENDING',
     },
     failureCode: {
       type: String,
@@ -83,7 +83,7 @@ const PaymentAttemptSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 PaymentAttemptSchema.index({ paymentId: 1, attemptNumber: 1 });
@@ -93,4 +93,4 @@ PaymentAttemptSchema.index({ status: 1 });
 PaymentAttemptSchema.index({ providerEventId: 1 });
 PaymentAttemptSchema.index({ createdAt: -1 });
 
-module.exports = mongoose.model("PaymentAttempt", PaymentAttemptSchema);
+module.exports = mongoose.model('PaymentAttempt', PaymentAttemptSchema);

@@ -555,7 +555,7 @@
                 <option value="am">🇪🇹 አማርኛ</option>
             </select>
         </div>
-        <button type="button" class="theme-corner" data-theme-toggle aria-label="Toggle dark / light mode" title="Dark Mode">
+        <button type="button" class="theme-corner" data-theme-toggle aria-label="Toggle dark / light mode" data-i18n-title="dark_mode">
             <i class="fa-solid fa-moon"></i>
         </button>
     </div>
@@ -568,8 +568,8 @@
                     <div class="brand-icon">
                         <i class="fa-solid fa-bowl-food"></i>
                     </div>
-                    <h2>Smart dining, <span>simplified.</span></h2>
-                    <p>
+                    <h2>Smart dining, <span data-i18n="auth_simplified">simplified.</span></h2>
+                    <p data-i18n="register_welcome_paragraph">
                         Join Smart Cafeteria today to order your favorite campus meals,
                         track your queue status seamlessly, and avoid long lines.
                     </p>
@@ -595,8 +595,8 @@
                             <i class="fa-solid fa-arrow-left"></i> Back
                         </a>
                     </div>
-                    <h1>Create Account</h1>
-                    <p>Fill in your details to get started with Smart Cafeteria.</p>
+                    <h1 data-i18n="auth_create_title">Create Account</h1>
+                    <p data-i18n="register_heading_subtitle">Fill in your details to get started with Smart Cafeteria.</p>
                 </div>
 
                 <div id="registerError" class="message error-message"></div>
@@ -650,7 +650,7 @@
                         <div class="form-group" id="passwordGroup">
                             <label for="regPassword">Password <span>*</span></label>
                             <div class="input-box has-toggle">
-                                <input type="password" id="regPassword" placeholder="At least 8 characters" required>
+                                <input type="password" id="regPassword" data-i18n-placeholder="password_min_chars" placeholder="At least 8 characters" required>
                                 <i class="fa-solid fa-lock"></i>
                                 <span class="validation-icon">
                                     <i class="fa-solid fa-circle-xmark"></i>
@@ -667,7 +667,7 @@
                         <div class="form-group" id="confirmPasswordGroup">
                             <label for="confirmPassword">Confirm Password <span>*</span></label>
                             <div class="input-box has-toggle">
-                                <input type="password" id="confirmPassword" placeholder="Repeat password" required>
+                                <input type="password" id="confirmPassword" data-i18n-placeholder="password_repeat" placeholder="Repeat password" required>
                                 <i class="fa-solid fa-lock"></i>
                                 <span class="validation-icon">
                                     <i class="fa-solid fa-circle-xmark"></i>
@@ -698,7 +698,7 @@
                     <!-- REDIRECT TO LOGIN -->
                     <p class="login-redirect">
                         Already have an account?
-                        <a href="login.html">Sign in</a>
+                        <a href="login.html" data-i18n="auth_sign_in">Sign in</a>
                     </p>
                 </form>
             </section>

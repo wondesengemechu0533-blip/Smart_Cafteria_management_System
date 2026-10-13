@@ -1145,11 +1145,11 @@
 
             <div class="cancel-header">
 
-                <h1>Cancel Order</h1>
+                <h1 data-i18n="cancel_order_title">Cancel Order</h1>
 
                 <a href="order-history.html">
                     <i class="fas fa-arrow-left"></i>
-                    <span>Back to Orders</span>
+                    <span data-i18n="back_to_orders">Back to Orders</span>
                 </a>
 
             </div>
@@ -1191,12 +1191,13 @@
                         "
                         aria-hidden="true"
                     ></i>
-                    <h3>Loading Order Details</h3>
+                    <h3 data-i18n="cancel_loading">Loading Order Details</h3>
                     <p
                         style="
                             color:#64748b;
                             margin:0;
                         "
+                        data-i18n="cancel_please_wait"
                     >
                         Please wait while we load your order...
                     </p>
@@ -1249,7 +1250,7 @@
                 Cancel Order
             </h3>
 
-            <p style="margin:0 0 16px; color:#475569;">
+            <p style="margin:0 0 16px; color:#475569;" data-i18n="cancel_order_confirm">
                 Are you sure you want to cancel this order?
             </p>
 
@@ -1264,21 +1265,21 @@
                 "
             >
                 <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                    <span class="label" style="color:#64748b;">Order ID</span>
+                    <span class="label" style="color:#64748b;" data-i18n="order_id">Order ID</span>
                     <strong id="mOrderId">-</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-                    <span class="label" style="color:#64748b;">Order Status</span>
+                    <span class="label" style="color:#64748b;" data-i18n="order_status_label">Order Status</span>
                     <strong id="mOrderStatus">-</strong>
                 </div>
                 <div style="display:flex; justify-content:space-between;">
-                    <span class="label" style="color:#64748b;">Total Amount</span>
+                    <span class="label" style="color:#64748b;" data-i18n="total_amount">Total Amount</span>
                     <strong id="mOrderTotal">-</strong>
                 </div>
             </div>
 
             <div style="margin-bottom:6px;">
-                <span class="label" style="color:#334155; font-weight:600;">
+                <span class="label" style="color:#334155; font-weight:600;" data-i18n="cancel_reason">
                     Cancellation Reason
                 </span>
             </div>
@@ -1310,6 +1311,7 @@
                     id="modalKeepOrderBtn"
                     class="btn btn-secondary"
                     style="cursor:pointer;"
+                    data-i18n="cancel_keep_order"
                 >
                     Keep Order
                 </button>
@@ -1318,6 +1320,7 @@
                     id="modalConfirmBtn"
                     class="btn-cancel-order"
                     style="cursor:pointer;"
+                    data-i18n="cancel_confirm"
                 >
                     Confirm Cancellation
                 </button>
@@ -1534,7 +1537,14 @@
 
                 onToggleLanguage: () => {},
 
-                onLogout: () => {},
+                onLogout: () => {
+                    if (confirm('Are you sure you want to log out?')) {
+                        ['auth_token', 'current_user', 'role', 'userRole', 'userName', 'name', 'isLoggedIn', 'userProfile', 'latestOrder'].forEach(function (k) {
+                            localStorage.removeItem(k);
+                        });
+                        window.location.href = '../common/login.html';
+                    }
+                },
 
                 onNotificationClick: () => {
 
@@ -2083,7 +2093,7 @@
 
                                 This order is already
                                 <strong>
-                                    ${String(order.status || order.orderStatus || '').toLowerCase().replace(/^./, c => c.toUpperCase())}
+                                    ${(window.translateStatus || (v => String(v).toLowerCase().replace(/^./, c => c.toUpperCase())))(String(order.status || order.orderStatus || ''))}
                                 </strong>
                                 and can no longer be cancelled.
 
@@ -2174,7 +2184,7 @@
                                         item.name?.[lang] ||
                                         item.name?.en ||
                                         item.name
-                                    } Ã— ${item.quantity}`
+                                    } × ${item.quantity}`
                             )
                             .join(', ');
 
@@ -2258,7 +2268,7 @@
                                             font-weight:800;
                                         "
                                     >
-                                        ${order.totalAmount} á‰¥áˆ­
+                                        ${order.totalAmount} ${lang === 'am' ? 'ብር' : 'ETB'}
                                     </span>
 
                                 </div>
@@ -2275,7 +2285,7 @@
                                         <span
                                             class="status-badge ${order.status}"
                                         >
-                                            ${order.status}
+                                            ${(window.translateStatus || (v => String(v).toLowerCase().replace(/^./, c => c.toUpperCase())))(String(order.status || order.orderStatus || ''))}
                                         </span>
 
                                     </span>
@@ -2569,8 +2579,7 @@ Confirm Cancellation
                                 order.orderId || orderId || '-';
 
                             mOrderStatus.textContent =
-                                orderStatusValue.charAt(0) +
-                                orderStatusValue.slice(1).toLowerCase() ||
+                                (window.translateStatus || (v => String(v).toLowerCase().replace(/^./, c => c.toUpperCase())))(orderStatusValue) ||
                                 String(
                                     order.status || order.orderStatus || 'unknown'
                                 );
@@ -2671,11 +2680,16 @@ Confirm Cancellation
                                                 result.refunded
                                                     ? `<p style="margin:10px 0 0; color:#15803d; background:#dcfce7; border:1px solid #86efac; border-radius:6px; padding:8px 10px; font-size:13px;">
                                                            <i class="fas fa-circle-check"></i>
-                                                           A full refund of ${result.cancellation?.refundAmount ?? ''} ETB has been processed automatically.
+                                                           Your payment has been refunded successfully.
                                                        </p>`
-                                                    : `<p style="margin:10px 0 0; color:#475569; font-size:13px;">
-                                                           No payment was involved, so no refund is needed.
-                                                       </p>`
+                                                    : (result.refundRequested
+                                                        ? `<p style="margin:10px 0 0; color:#92400e; background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:8px 10px; font-size:13px;">
+                                                               <i class="fas fa-money-bill-transfer"></i>
+                                                               A refund of ${result.cancellation?.refundAmount ?? ''} ETB is required. Our team will review and process it - you will be notified as soon as it is complete.
+                                                           </p>`
+                                                        : `<p style="margin:10px 0 0; color:#475569; font-size:13px;">
+                                                               No payment was involved, so no refund is needed.
+                                                           </p>`)
                                             }
                                         </div>
                                         `;
@@ -2743,7 +2757,7 @@ Confirm Cancellation
         // =========================================================
 
         console.log(
-            `âŒ Cancel order page loaded for order: ${
+            `❌ Cancel order page loaded for order: ${
                 orderId || 'none'
             }`
         );

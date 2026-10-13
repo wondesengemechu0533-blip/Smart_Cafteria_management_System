@@ -4,16 +4,32 @@ const { protect } = require('../middleware/auth');
 const {
   getNotifications,
   getUnreadCount,
+  getPreferences,
+  updatePreferences,
   markAsRead,
   markAllRead,
   deleteNotification,
-  clearAllNotifications
+  clearAllNotifications,
 } = require('../controllers/notification.controller');
 
 // ============================================================
 //  ALL ROUTES REQUIRE AUTHENTICATION
 // ============================================================
 router.use(protect);
+
+/**
+ * @route   GET /api/notifications/preferences
+ * @desc    Get notification sound preference
+ * @access  Private
+ */
+router.get('/preferences', getPreferences);
+
+/**
+ * @route   PUT /api/notifications/preferences
+ * @desc    Update notification sound preference
+ * @access  Private
+ */
+router.put('/preferences', updatePreferences);
 
 /**
  * @route   GET /api/notifications

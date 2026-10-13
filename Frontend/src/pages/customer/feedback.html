@@ -20,7 +20,7 @@
             <div class="nav-left-group">
                 <a href="menu.html" class="btn-back-home">
                     <i class="fa-solid fa-arrow-left"></i>
-                    <span>Menu</span>
+                    <span data-i18n="menu">Menu</span>
                 </a>
                 <a href="menu.html" class="brand-logo">
                     <i class="fa-solid fa-utensils"></i> TasteEthio
@@ -28,12 +28,12 @@
             </div>
 
             <div class="header-actions">
-                <button type="button" class="theme-toggle-btn nav-link-item" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode">
+                <button type="button" class="theme-toggle-btn nav-link-item" data-theme-toggle aria-label="Toggle theme" data-i18n-title="title_toggle_theme">
                     <i class="fa-solid fa-moon"></i>
                 </button>
                 <a href="order-history.html" class="nav-link-item">
                     <i class="fa-solid fa-clock-rotate-left"></i>
-                    <span>History</span>
+                    <span data-i18n="history">History</span>
                 </a>
                 <a href="cart.html" class="cart-btn">
                     <i class="fa-solid fa-cart-shopping"></i>
@@ -55,9 +55,9 @@
                     </div>
                 </div>
                 <!-- Logout (top-right) -->
-                <a href="../common/login.html" class="nav-link-item nav-logout logout-link" title="Logout">
+                <a href="../common/login.html" class="nav-link-item nav-logout logout-link" data-i18n-title="nav_logout">
                     <i class="fa-solid fa-right-from-bracket"></i>
-                    <span>Logout</span>
+                    <span data-i18n="logout">Logout</span>
                 </a>
             </div>
         </div>
@@ -72,7 +72,7 @@
         <section class="profile-content">
             <div class="content-header">
                 <h2><i class="fa-solid fa-star-half-stroke"></i> Feedback & Reviews</h2>
-                <p>We value your opinion! Rate your recent meal or cafeteria service.</p>
+                <p data-i18n="feedback_intro">We value your opinion! Rate your recent meal or cafeteria service.</p>
             </div>
 
             <!-- Feedback Submission Form -->
@@ -81,7 +81,7 @@
 
                 <!-- Star Rating Selector -->
                 <div class="form-group rating-container">
-                    <label>Overall Experience Rating *</label>
+                    <label data-i18n="rating_label">Overall Experience Rating *</label>
                     <div class="star-rating" id="star-rating-group">
                         <i class="fa-solid fa-star star-btn" data-value="1"></i>
                         <i class="fa-solid fa-star star-btn" data-value="2"></i>
@@ -94,24 +94,24 @@
 
                 <div class="form-grid">
                     <div class="form-group">
-                        <label for="feedback-category">Feedback Topic</label>
+                        <label for="feedback-category" data-i18n="fb_topic">Feedback Topic</label>
                         <select id="feedback-category">
-                            <option value="Food Quality">Food & Drink Quality</option>
-                            <option value="Service Speed">Service & Preparation Speed</option>
-                            <option value="Cleanliness">Cafeteria Cleanliness</option>
-                            <option value="App Suggestion">Website / App Suggestion</option>
-                            <option value="Other">Other</option>
+                            <option value="Food Quality" data-i18n="fb_food_quality">Food & Drink Quality</option>
+                            <option value="Service Speed" data-i18n="fb_service_speed">Service & Preparation Speed</option>
+                            <option value="Cleanliness" data-i18n="fb_cleanliness">Cafeteria Cleanliness</option>
+                            <option value="App Suggestion" data-i18n="fb_app_suggestion">Website / App Suggestion</option>
+                            <option value="Other" data-i18n="fb_other">Other</option>
                         </select>
                     </div>
 
                     <div class="form-group">
-                        <label for="dish-reviewed">Specific Dish (Optional)</label>
+                        <label for="dish-reviewed" data-i18n="dish_optional">Specific Dish (Optional)</label>
                         <input type="text" id="dish-reviewed" placeholder="e.g. Special Kitfo, Macchiato">
                     </div>
                 </div>
 
                 <div class="form-group" style="margin-top: 16px;">
-                    <label for="feedback-comments">Your Comments / Review *</label>
+                    <label for="feedback-comments" data-i18n="comments_review">Your Comments / Review *</label>
                     <textarea id="feedback-comments" rows="4" required placeholder="Tell us what you enjoyed or what we can improve..."></textarea>
                 </div>
 
@@ -126,7 +126,7 @@
 
             <!-- Previously Submitted Feedback List -->
             <div class="previous-feedback-section">
-                <h3>My Past Reviews</h3>
+                <h3 data-i18n="past_reviews">My Past Reviews</h3>
                 <div id="past-feedback-list" class="feedback-list">
                     <!-- Populated via feedback.js -->
                 </div>

@@ -1,3 +1,10 @@
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - FEEDBACK MODULE
@@ -15,6 +22,15 @@ function showToast(message, type = "success") {
         return;
     }
     window.alert(message);
+}
+
+function getLang() {
+    try { return (window.getCurrentLanguage && window.getCurrentLanguage()) || localStorage.getItem("scos_language") || localStorage.getItem("cafeteria_language") || "en"; } catch (e) { return "en"; }
+}
+
+function ft(key, fallback) {
+    if (typeof window !== "undefined" && typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback);
+    return fallback;
 }
 
 /**
@@ -151,12 +167,12 @@ export async function submitFeedback(orderId, rating, comment = '') {
     try {
         const user = getCurrentUser();
         if (!user) {
-            return { success: false, error: 'Please login to submit feedback' };
+            return { success: false, error: ft("feedback_login_required", getLang() === "am" ? "አስተያየት ለመስጠት እባክዎ ይግቡ" : "Please login to submit feedback") };
         }
 
         // Validate rating
         if (rating < 1 || rating > 5 || !Number.isInteger(rating)) {
-            return { success: false, error: 'Rating must be between 1 and 5' };
+            return { success: false, error: ft("feedback_rating_range", getLang() === "am" ? "ደረጃው ከ1 እስከ 5 መሆን አለበት።" : "Rating must be between 1 and 5") };
         }
 
         // Parse category + dish from the combined comment ("Category - (Dish) - comments")
@@ -184,13 +200,13 @@ export async function submitFeedback(orderId, rating, comment = '') {
 
         const result = await api.post("/feedback", payload);
 
-        showToast('Thank you for your feedback!', 'success');
+        showToast(ft("feedback_thanks", getLang() === "am" ? "ስለ አስተያየትዎ እናመሰግናለን!" : "Thank you for your feedback!"), 'success');
 
         return { success: true, feedback: result.feedback || result };
 
     } catch (error) {
         console.error('Submit feedback error:', error);
-        return { success: false, error: error.message || 'Failed to submit feedback' };
+        return { success: false, error: error.message || ft("feedback_submit_failed", getLang() === "am" ? "አስተያየት ማስገባት አልተሳካም" : "Failed to submit feedback") };
     }
 }
 
@@ -201,29 +217,31 @@ export async function submitFeedback(orderId, rating, comment = '') {
  * @returns {Promise<Object>} Updated feedback or error
  */
 export async function replyToFeedback(feedbackId, reply) {
-    try {
-        const index = feedbackList.findIndex(f => f.id === feedbackId);
+    try {
+        if (!reply || !reply.trim()) {
+            return { success: false, error: ft("feedback_reply_required", getLang() === "am" ? "የመልስ መልእክት ያስፈልጋል" : "Reply message is required") };
+        }
 
-        if (index === -1) {
-            return { success: false, error: 'Feedback not found' };
-        }
+        // Persist server-side; the old implementation only mutated the in-memory
+        // list (and had a broken `message` reference that made every reply fail
+        // validation).
+        const result = await api.patch("/feedback/" + encodeURIComponent(feedbackId) + "/reply", { reply: reply.trim() });
 
-        if (!reply || reply.trim() === '') {
-            return { success: false, error: 'Reply message is required' };
-        }
+        const index = feedbackList.findIndex((f) => String(f.id || f._id) === String(feedbackId));
+        if (index !== -1) {
+            feedbackList[index].reply = reply.trim();
+            feedbackList[index].status = 'approved';
+            notifyFeedbackListeners();
+        }
 
-        feedbackList[index].reply = reply.trim();
-        feedbackList[index].status = 'approved';
+        showToast(ft("feedback_reply_sent", getLang() === "am" ? "መልሱ በተሳካ ሁኔታ ተላከ" : "Reply sent successfully"), 'success');
 
-        notifyFeedbackListeners();
-        showToast('Reply sent successfully', 'success');
+        return { success: true, feedback: (result && result.feedback) || feedbackList[index] };
 
-        return { success: true, feedback: feedbackList[index] };
-
-    } catch (error) {
-        console.error('Reply to feedback error:', error);
-        return { success: false, error: 'Failed to send reply' };
-    }
+    } catch (error) {
+        console.error('Reply to feedback error:', error);
+        return { success: false, error: error.message || ft("feedback_reply_failed", getLang() === "am" ? "መልስ መላክ አልተሳካም" : "Failed to send reply") };
+    }
 }
 
 /**
@@ -235,21 +253,21 @@ export async function deleteFeedback(feedbackId) {
     try {
         const index = feedbackList.findIndex(f => f.id === feedbackId);
 
-        if (index === -1) {
-            return { success: false, error: 'Feedback not found' };
-        }
+if (index === -1) {
+            return { success: false, error: ft("feedback_not_found", getLang() === "am" ? "አስተያየት አልተገኘም" : "Feedback not found") };
+        }
 
-        feedbackList.splice(index, 1);
-        notifyFeedbackListeners();
+        feedbackList.splice(index, 1);
+        notifyFeedbackListeners();
 
-        showToast('Feedback deleted', 'info');
+        showToast(ft("feedback_deleted", getLang() === "am" ? "አስተያየት ተሰርዟል" : "Feedback deleted"), 'info');
 
-        return { success: true };
+        return { success: true };
 
-    } catch (error) {
-        console.error('Delete feedback error:', error);
-        return { success: false, error: 'Failed to delete feedback' };
-    }
+    } catch (error) {
+        console.error('Delete feedback error:', error);
+        return { success: false, error: ft("feedback_delete_failed", getLang() === "am" ? "አስተያየት መሰረዝ አልተሳካም" : "Failed to delete feedback") };
+    }
 }
 
 /**
@@ -373,10 +391,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     async function renderPastFeedback() {
         if (!pastList) return;
+        const isAm = getLang() === "am";
         const items = (await getMyFeedback()).slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         if (items.length === 0) {
-            pastList.innerHTML = '<p style="color:#6b7280; text-align:center; padding:16px 0;">No reviews yet. Share your first review above.</p>';
+            pastList.innerHTML = `<p style="color:#6b7280; text-align:center; padding:16px 0;">${isAm ? "እስካሁን ምንም ግምገማ የለም። ከላይ የመጀመሪያ ግምገማዎን ያጋሩ።" : "No reviews yet. Share your first review above."}</p>`;
             return;
         }
 
@@ -386,7 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 return `<i class="fa-solid fa-star" style="color:${filled ? "#ffb400" : "#d1d5db"}; font-size:14px;"></i>`;
             }).join("");
             const replyHtml = f.reply
-                ? `<div style="margin-top:8px; padding:8px 10px; background:#f3f4f6; border-radius:6px; font-size:13px; color:#374151;"><strong>Reply:</strong> ${escapeHtml(f.reply)}</div>`
+                ? `<div style="margin-top:8px; padding:8px 10px; background:#f3f4f6; border-radius:6px; font-size:13px; color:#374151;"><strong>${isAm ? "ምላሽ:" : "Reply:"}</strong> ${escapeHtml(f.reply)}</div>`
                 : "";
             return `
                 <div class="review-card" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:14px; margin-bottom:12px;">
@@ -403,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.addEventListener("click", () => {
             selectedRating = parseInt(btn.getAttribute("data-value"), 10);
             updateStars(selectedRating);
-            if (ratingText) ratingText.textContent = selectedRating + " out of 5";
+            if (ratingText) ratingText.textContent = ft("feedback_out_of", getLang() === "am" ? `ከ5 ውስጥ ${selectedRating}` : selectedRating + " out of 5").replace("{rating}", selectedRating);
         });
         btn.addEventListener("mouseenter", () => {
             if (!selectedRating) updateStars(parseInt(btn.getAttribute("data-value"), 10));
@@ -420,7 +439,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const dish = document.getElementById("dish-reviewed")?.value || "";
 
         if (!comments.trim()) {
-            showAlert("Please write a comment before submitting.");
+            showAlert(ft("feedback_write_comment", getLang() === "am" ? "ከማስገባትዎ በፊት እባክዎ አስተያየት ይጻፉ።" : "Please write a comment before submitting."));
             return;
         }
 
@@ -431,18 +450,22 @@ document.addEventListener("DOMContentLoaded", () => {
         const result = await submitFeedback(orderId, selectedRating, combinedComment);
 
         if (result.success) {
-            showAlert("Thank you for your feedback!", "success");
+            showAlert(ft("feedback_thanks", getLang() === "am" ? "ስለ አስተያየትዎ እናመሰግናለን!" : "Thank you for your feedback!"), "success");
             form.reset();
             selectedRating = 0;
             updateStars(0);
-            if (ratingText) ratingText.textContent = "Select a rating";
+            if (ratingText) ratingText.textContent = ft("feedback_select_rating", getLang() === "am" ? "ደረጃ ይምረጡ" : "Select a rating");
             renderPastFeedback();
         } else {
-            showAlert(result.error || "Failed to submit feedback", "error");
+            showAlert(result.error || ft("feedback_submit_failed", getLang() === "am" ? "አስተያየት ማስገባት አልተሳካም" : "Failed to submit feedback"), "error");
         }
     });
 
     renderPastFeedback();
+    // Re-render the past-feedback list instantly when the language changes.
+    __registerLangChange(() => {
+        try { renderPastFeedback(); } catch (e) {}
+    });
 
     // Real-time: when admin replies, notification arrives via customer-realtime.js
     window.addEventListener("customer:notification", (e) => {

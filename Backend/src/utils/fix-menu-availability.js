@@ -7,7 +7,9 @@ const fixAvailability = async () => {
   try {
     await connectDatabase();
 
-    await mongoose.connection.db.listCollections({ name: 'menuitems' }).next()
+    await mongoose.connection.db
+      .listCollections({ name: 'menuitems' })
+      .next()
       .catch(() => null);
 
     // Every item that is still marked as available via the legacy boolean flags
@@ -18,8 +20,8 @@ const fixAvailability = async () => {
       {
         $or: [
           { availabilityStatus: 'OUT_OF_STOCK', $or: [{ availability: true }, { isAvailable: true }] },
-          { stockQuantity: 0, $or: [{ availability: true }, { isAvailable: true }] }
-        ]
+          { stockQuantity: 0, $or: [{ availability: true }, { isAvailable: true }] },
+        ],
       },
       {
         $set: {
@@ -27,8 +29,8 @@ const fixAvailability = async () => {
           stockQuantity: 50,
           lowStockThreshold: 10,
           availability: true,
-          isAvailable: true
-        }
+          isAvailable: true,
+        },
       }
     );
     console.log(`Fixed ${result.modifiedCount} menu item(s) to AVAILABLE with stock 50.`);
@@ -41,8 +43,8 @@ const fixAvailability = async () => {
           isAvailable: true,
           availabilityStatus: 'AVAILABLE',
           stockQuantity: 50,
-          lowStockThreshold: 10
-        }
+          lowStockThreshold: 10,
+        },
       },
       { new: true }
     );

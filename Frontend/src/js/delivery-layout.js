@@ -1,3 +1,20 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
+// Delivery pages run silent: the rider works through alerts/banners, and the
+// shared notification chime would fire for dispatches owned by other riders on
+// a shared screen. Loaded on every delivery page BEFORE notification-sound.js,
+// which reads this flag in ScosNotify.enabled().
+window.__scosMuteDeliverySound = true;
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 /**
  * ==========================================================================
    SMART CAFETERIA DELIVERY STAFF — SHARED LAYOUT MODULE
@@ -6,29 +23,25 @@
    Load this BEFORE page-specific delivery scripts.
 
    Sidebar sections:
-     MAIN:       Dashboard
      DELIVERIES: Active Deliveries, My History
      ACCOUNT:    Notifications, Profile
    ========================================================================== */
-(function () {
+  (function () {
   'use strict';
 
   var DELIVERY_PAGES = [
-    { id: 'dashboard', path: 'dashboard.html', icon: 'fa-chart-line', label: 'Dashboard', group: 'main' },
     { id: 'deliveries', path: 'deliveries.html', icon: 'fa-truck-fast', label: 'Active Deliveries', group: 'operations' },
-    { id: 'history', path: 'history.html', icon: 'fa-clock-rotate-left', label: 'My History', group: 'operations' },
+    { id: 'history', path: 'history.html', icon: 'fa-clock-rotate-left', label: 'Delivery History', group: 'operations' },
     { id: 'notifications', path: 'notifications.html', icon: 'fa-bell', label: 'Notifications', group: 'account' },
     { id: 'profile', path: 'profile.html', icon: 'fa-user', label: 'Profile', group: 'account' }
   ];
 
   var SIDEBAR_GROUPS = [
-    { id: 'main', label: 'MAIN', labelKey: 'delivery_main', pages: ['dashboard'] },
     { id: 'operations', label: 'DELIVERIES', labelKey: 'delivery_operations', pages: ['deliveries', 'history'] },
     { id: 'account', label: 'ACCOUNT', labelKey: 'delivery_account', pages: ['notifications', 'profile'] }
   ];
 
   var LABEL_KEYS = {
-    dashboard: 'delivery_dashboard',
     deliveries: 'delivery_active_deliveries',
     history: 'delivery_history',
     notifications: 'delivery_notifications',
@@ -38,7 +51,7 @@
   // Current page detection
   function getCurrentPageId() {
     var path = window.location.pathname.split('/').pop().replace('.html', '');
-    return path || 'dashboard';
+    return path || 'deliveries';
   }
 
   // Translate helper (falls back to English label)
@@ -100,6 +113,20 @@
     document.head.appendChild(l);
   }
 
+  // Ensure the shared idle-session (auto-logout) module is loaded
+  function ensureSessionLoaded() {
+    if (!document.querySelector('script[src*="session-timeout.js"]')) {
+      var s = document.createElement('script');
+      s.src = '../../js/session-timeout.js';
+      document.head.appendChild(s);
+    }
+    if (!document.querySelector('script[src*="notification-sound.js"]')) {
+      var n = document.createElement('script');
+      n.src = '../../js/notification-sound.js';
+      document.head.appendChild(n);
+    }
+  }
+
   // Refresh the unread notification badge on the bell button
   function refreshNotificationBadge() {
     var badge = document.getElementById('notifBadge');
@@ -140,7 +167,7 @@
     navbar.innerHTML = ''
       + '<div class="nav-left">'
       + '  <button id="sidebarToggle" class="btn-icon" aria-label="Toggle Sidebar"><i class="fa-solid fa-bars"></i></button>'
-      + '  <a href="dashboard.html" class="brand-logo"><i class="fa-solid fa-truck-fast"></i><span>' + brandText + ' <small>' + brandRoleText + '</small></span></a>'
+      + '  <a href="deliveries.html" class="brand-logo"><i class="fa-solid fa-truck-fast"></i><span>' + brandText + ' <small>' + brandRoleText + '</small></span></a>'
       + '</div>'
       + '<div class="nav-right">'
       + '  <div class="lang-switcher-widget" style="display:inline-flex;align-items:center;gap:6px;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;padding:3px 8px;box-shadow:0 2px 8px rgba(0,0,0,0.08);margin-right:8px;">'
@@ -153,7 +180,7 @@
       + '  <a href="notifications.html" class="btn-icon notification-btn" id="notificationBtn" title="' + t('delivery_notifications', 'Notifications') + '">'
       + '    <i class="fa-solid fa-bell"></i><span class="badge-dot" id="notifBadge"></span>'
       + '  </a>'
-      + '  <button type="button" class="btn-icon theme-toggle" id="themeToggle" title="Toggle Theme">'
+      + '  <button type="button" class="btn-icon theme-toggle" id="themeToggle" title="' + tr('toggle_theme', 'Toggle Theme') + '">'
       + '    <i class="fa-solid fa-moon"></i>'
       + '  </button>'
       + '  <div class="user-profile-menu">'
@@ -206,28 +233,39 @@
       });
     }
 
-    document.addEventListener('click', function (e) {
-      var backdrop = document.querySelector('.sidebar-backdrop');
-      if (backdrop && backdrop.classList.contains('open') && !sidebar.contains(e.target) && !document.getElementById('sidebarToggle').contains(e.target)) {
-        sidebar.classList.remove('open');
-        backdrop.classList.remove('open');
-      }
-    });
-
-    document.addEventListener('click', function (e) {
-      var link = e.target.closest('.sidebar-link');
-      if (link && window.innerWidth < 992) {
-        sidebar.classList.remove('open');
+    // Document-level sidebar helpers — bind only once so language re-renders
+    // do not stack duplicate listeners (and null-guard the sidebar nodes).
+    if (!window.__scosDeliverySidebarDocBound) {
+      window.__scosDeliverySidebarDocBound = true;
+      document.addEventListener('click', function (e) {
+        var side = document.getElementById('deliverySidebar');
+        var toggle = document.getElementById('sidebarToggle');
         var backdrop = document.querySelector('.sidebar-backdrop');
-        if (backdrop) backdrop.classList.remove('open');
-      }
-    });
+        if (!side || !toggle || !backdrop || !backdrop.classList.contains('open')) return;
+        if (!side.contains(e.target) && !toggle.contains(e.target)) {
+          side.classList.remove('open');
+          backdrop.classList.remove('open');
+        }
+      });
+      document.addEventListener('click', function (e) {
+        var side = document.getElementById('deliverySidebar');
+        if (!side) return;
+        var link = e.target.closest && e.target.closest('.sidebar-link');
+        if (link && window.innerWidth < 992) {
+          side.classList.remove('open');
+          var backdrop = document.querySelector('.sidebar-backdrop');
+          if (backdrop) backdrop.classList.remove('open');
+        }
+      });
+    }
 
     // Logout handler - clears the whole session then goes to login
     var logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
+    if (logoutBtn && !logoutBtn.dataset.logoutBound) {
+      logoutBtn.dataset.logoutBound = '1';
       logoutBtn.addEventListener('click', function () {
-        if (window.confirm('Are you sure you want to log out?')) {
+        if (window.confirm(t('delivery_logout_confirm', 'Are you sure you want to log out?'))) {
+          if (window.ScosSession) { window.ScosSession.logout(); return; }
           ['auth_token', 'userRole', 'role', 'userProfile', 'current_user', 'userName', 'name', 'isLoggedIn', 'deliveryLoggedIn', 'adminLoggedIn', 'kitchenLoggedIn', 'customerLoggedIn'].forEach(function (k) {
             localStorage.removeItem(k);
           });
@@ -249,18 +287,36 @@
     } catch (e) {}
   }
 
+  // Roles allowed on the delivery pages. One list serves BOTH the boot guard
+  // and the session watcher below, so the two can never disagree.
+  var DELIVERY_ALLOWED_ROLES = ['delivery', 'delivery_staff', 'delivery staff', 'driver', 'rider', 'admin', 'administrator'];
+
+  // Auth keys that describe "who is signed in". A change to any of them means
+  // the account behind this page may have been replaced or signed out.
+  var SESSION_KEYS = ['auth_token', 'userRole', 'role', 'current_user', 'userProfile'];
+
+  // Role this page booted with, so a replacement session can be detected.
+  var bootRole = null;
+
+  function currentUserRole() {
+    return (localStorage.getItem('userRole') || localStorage.getItem('role') || '').toLowerCase();
+  }
+
+  // Read-only check: may the delivery pages run with the session that is
+  // signed in RIGHT NOW? Used by the page scripts before every scoped request,
+  // so a stale tab can never fire calls its token is not allowed to make.
+  function sessionRoleAllowed() {
+    return DELIVERY_ALLOWED_ROLES.indexOf(currentUserRole()) !== -1;
+  }
+
   // Auth guard + profile population
   function initAuthGuard() {
-    var userRole = (localStorage.getItem('userRole') || localStorage.getItem('role') || '').toLowerCase();
-    if (!userRole) {
+    var userRole = currentUserRole();
+    if (!userRole || DELIVERY_ALLOWED_ROLES.indexOf(userRole) === -1) {
       window.location.href = '../common/login.html';
       return false;
     }
-    var allowedRoles = ['delivery', 'delivery_staff', 'delivery staff', 'driver', 'rider', 'admin', 'administrator'];
-    if (!allowedRoles.includes(userRole)) {
-      window.location.href = '../common/login.html';
-      return false;
-    }
+    bootRole = userRole;
 
     var profile = getStoredProfile();
     if (profile) {
@@ -278,6 +334,46 @@
     return true;
   }
 
+  /**
+   * The signed-in account changed while this page was open (another tab logged
+   * in or out, or the browser restored the page from the back/forward cache).
+   *
+   * Without this the page happily keeps polling with a token that belongs to a
+   * completely different role, which is exactly how a delivery dashboard ends
+   * up spamming GET /deliveries/mine and POST /deliveries/:id/location with
+   * 403s the backend is right to reject.
+   */
+  function sessionChanged() {
+    if (!sessionRoleAllowed()) {
+      if (!/login\.html$/i.test(window.location.pathname)) {
+        window.location.href = '../common/login.html';
+      }
+      return;
+    }
+    // Still an allowed role, but a different account: rebuild the page state
+    // (queues, GPS, socket rooms) for the user who is signed in now.
+    if (bootRole !== null && currentUserRole() !== bootRole) {
+      window.location.reload();
+    }
+  }
+
+  function watchSession() {
+    window.addEventListener('storage', function (e) {
+      if (!e.key || SESSION_KEYS.indexOf(e.key) === -1) return;
+      sessionChanged();
+    });
+    // A page restored from the bfcache keeps its old timers and GPS watch but
+    // reads localStorage afresh, so it can be running against a session that
+    // was replaced while it was in the history.
+    window.addEventListener('pageshow', function (e) {
+      if (e.persisted) sessionChanged();
+    });
+  }
+  // Installed while the script is parsed, not on DOMContentLoaded: the queue
+  // scripts are modules that start requesting as soon as they run, so the
+  // guard has to be in place before that first call can go out.
+  watchSession();
+
   function getStoredProfile() {
     try {
       var raw = localStorage.getItem('userProfile') || localStorage.getItem('current_user');
@@ -291,6 +387,7 @@
 
     ensureThemeLoaded();
     ensureDarkThemeCssLoaded();
+    ensureSessionLoaded();
 
     renderNavbar();
     renderSidebar(getCurrentPageId());
@@ -300,12 +397,7 @@
       renderNavbar();
       renderSidebar(getCurrentPageId());
     }
-    if (typeof window.onLanguageChange === 'function') {
-      window.onLanguageChange(reRenderOnLangChange);
-    } else {
-      window.addEventListener('language:changed', reRenderOnLangChange);
-      window.addEventListener('languageChanged', reRenderOnLangChange);
-    }
+    __registerLangChange(reRenderOnLangChange);
 
     if (typeof initPageSpecific === 'function') {
       initPageSpecific();
@@ -318,6 +410,12 @@
     renderNavbar: renderNavbar,
     getCurrentPageId: getCurrentPageId,
     getStoredProfile: getStoredProfile,
-    refreshNotificationBadge: refreshNotificationBadge
+    refreshNotificationBadge: refreshNotificationBadge,
+    // Session helpers: page scripts check the role BEFORE calling a scoped
+    // endpoint and the storage watcher re-checks it whenever the signed-in
+    // account changes in another tab.
+    sessionRoleAllowed: sessionRoleAllowed,
+    sessionChanged: sessionChanged,
+    currentUserRole: currentUserRole
   };
 })();

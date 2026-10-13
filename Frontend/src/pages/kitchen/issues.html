@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Issue Reports - Kitchen</title>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+    <!-- Shared Stylesheets -->
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/kitchen.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #333;
+        }
+
+        .btn-report {
+            padding: 10px 20px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .btn-report:hover {
+            background: #218838;
+        }
+
+        .filters {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 15px;
+        }
+
+        .filter-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .filter-group label {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .alerts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .alert-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 20px;
+            align-items: start;
+            border-left: 4px solid;
+        }
+
+        .alert-card.critical { border-left-color: #dc3545; background: #fff5f5; }
+        .alert-card.high { border-left-color: #fd7e14; background: #fffbf5; }
+        .alert-card.medium { border-left-color: #ffc107; background: #fffef5; }
+        .alert-card.low { border-left-color: #17a2b8; }
+
+        .alert-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .alert-header {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .alert-icon { font-size: 24px; }
+
+        .alert-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .severity-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .severity-critical { background: #f8d7da; color: #721c24; }
+        .severity-high { background: #fff3cd; color: #856404; }
+        .severity-medium { background: #d1ecf1; color: #0c5460; }
+        .severity-low { background: #d4edda; color: #155724; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-PENDING { background: #fff3cd; color: #856404; }
+        .status-ACCEPTED { background: #cfe2ff; color: #084298; }
+        .status-RESOLVED { background: #d1e7dd; color: #0f5132; }
+
+        .category-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e9ecef;
+            color: #495057;
+            text-transform: uppercase;
+        }
+
+        .alert-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .detail-label {
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .detail-value { color: #333; font-weight: 500; }
+
+        .alert-reason {
+            background: rgba(0,0,0,0.05);
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #555;
+            border-left: 2px solid #ccc;
+        }
+
+        .alert-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 130px;
+        }
+
+        .btn {
+            padding: 8px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.3s ease;
+            text-align: center;
+        }
+
+        .btn-view {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-view:hover { background: #0056b3; }
+
+        .btn-solution {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-solution:hover { background: #218838; }
+
+        .empty-state {
+            background: white;
+            padding: 60px 20px;
+            border-radius: 8px;
+            text-align: center;
+            color: #666;
+        }
+
+        .empty-state .error-detail {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #999;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .alert-notification {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .notification-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .notification-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active { display: flex; }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            max-width: 560px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .form-group { margin-bottom: 20px; }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 25px;
+        }
+
+        .modal .btn-cancel,
+        .modal-buttons .btn-cancel {
+            padding: 10px 20px;
+            border: 1px solid #ddd;
+            background-color: #ffffff !important;
+            color: #333333 !important;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .modal .btn-submit,
+        .modal-buttons .btn-submit {
+            padding: 10px 20px;
+            background-color: #28a745 !important;
+            color: #ffffff !important;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .detail-section {
+            margin-bottom: 18px;
+        }
+
+        .detail-section h4 {
+            font-size: 13px;
+            text-transform: uppercase;
+            color: #999;
+            margin-bottom: 8px;
+        }
+
+        .solution-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 4px solid #22c55e;
+            border-radius: 6px;
+            padding: 14px;
+            font-size: 14px;
+            color: #166534;
+            white-space: pre-wrap;
+        }
+
+        .solution-meta {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .alert-card { grid-template-columns: 1fr; }
+            .alert-details { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 15px; text-align: center; }
+            .filters { flex-direction: column; }
+        }
+
+        /* ===== Dark mode (consistent with the rest of the kitchen) ===== */
+        [data-theme="dark"] body { background: #0f172a; color: #e2e8f0; }
+        [data-theme="dark"] .header,
+        [data-theme="dark"] .filters,
+        [data-theme="dark"] .alert-card,
+        [data-theme="dark"] .empty-state {
+            background: #1e293b;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+        [data-theme="dark"] .header h1,
+        [data-theme="dark"] .alert-title,
+        [data-theme="dark"] .detail-value,
+        [data-theme="dark"] .modal-header,
+        [data-theme="dark"] .form-group label,
+        [data-theme="dark"] .filter-group label { color: #f8fafc; }
+        [data-theme="dark"] .alert-card.critical { background: #3b0f0f; }
+        [data-theme="dark"] .alert-card.high { background: #422006; }
+        [data-theme="dark"] .alert-card.medium { background: #2c1a05; }
+        [data-theme="dark"] .detail-label { color: #64748b; }
+        [data-theme="dark"] .alert-reason {
+            background: #0f172a;
+            color: #cbd5e1;
+            border-left-color: #334155;
+        }
+        [data-theme="dark"] .filter-group select,
+        [data-theme="dark"] .form-group input,
+        [data-theme="dark"] .form-group select,
+        [data-theme="dark"] .form-group textarea {
+            background: #0f172a;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        [data-theme="dark"] .severity-critical,
+        [data-theme="dark"] .status-PENDING { background: #3b0f0f; color: #fecaca; }
+        [data-theme="dark"] .severity-high { background: #422006; color: #fcd34d; }
+        [data-theme="dark"] .severity-medium,
+        [data-theme="dark"] .status-ACCEPTED { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .severity-low,
+        [data-theme="dark"] .status-RESOLVED { background: #052e1f; color: #6ee7b7; }
+        [data-theme="dark"] .category-badge { background: #334155; color: #cbd5e1; }
+        [data-theme="dark"] .empty-state { color: #94a3b8; }
+        [data-theme="dark"] .notification-success { background: #052e1f; color: #6ee7b7; border-color: #065f46; }
+        [data-theme="dark"] .notification-error { background: #3b0f0f; color: #fecaca; border-color: #7f1d1d; }
+        [data-theme="dark"] .modal-content {
+            background: #1e293b;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+        [data-theme="dark"] .modal .btn-cancel,
+        [data-theme="dark"] .modal-buttons .btn-cancel {
+            background-color: #1e293b !important;
+            color: #e2e8f0 !important;
+            border-color: #334155;
+        }
+        [data-theme="dark"] .modal .btn-cancel:hover { background-color: #0f172a !important; }
+        [data-theme="dark"] .solution-box {
+            background: #052e1f;
+            border-color: #065f46;
+            color: #6ee7b7;
+        }
+        [data-theme="dark"] .solution-meta { color: #94a3b8; }
+    </style>
+    <script src="../../js/theme.js?v=20260907"></script>
+    <script src="../../js/roles.js?v=20260907"></script>
+    <script>
+        // Page guard: Kitchen Staff (and admins who can view kitchen pages) only.
+        (function () {
+            var role = '';
+            try {
+                role = (JSON.parse(localStorage.getItem('current_user') || 'null') || {}).role || '';
+            } catch (e) { /* ignore */ }
+            if (!role) role = localStorage.getItem('userRole') || localStorage.getItem('role') || '';
+            var canonical = window.ScosRoles ? ScosRoles.normalizeRole(role) : String(role).toLowerCase();
+            var allowed = ['kitchen', 'admin', 'system_admin'].indexOf(canonical) !== -1;
+            if (!allowed) {
+                alert('Access denied. Kitchen staff only.');
+                window.location.href = '../common/login.html';
+            }
+        })();
+    </script>
+</head>
+<body>
+
+    <!-- KITCHEN NAVIGATION HEADER -->
+    <header class="kds-header">
+        <div style="display:flex;align-items:center;gap:14px;">
+            <button class="kds-sidebar-toggle" id="kdsSidebarToggle" aria-label="Toggle Sidebar">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+            <div class="kds-header-title">
+                <i class="fa-solid fa-fire-burner fa-xl"></i>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
+            </div>
+        </div>
+        <div class="user-menu">
+            <button type="button" class="kds-nav-btn theme-toggle" id="kitchenThemeToggle" data-theme-toggle aria-label="Toggle theme" title="Toggle Dark/Light Mode">
+                <i class="fa-solid fa-moon"></i>
+            </button>
+            <button type="button" class="kds-nav-btn kds-logout-btn" onclick="logout()" title="Logout">
+                <i class="fa-solid fa-right-from-bracket"></i> Logout
+            </button>
+            <div class="user-dropdown">
+                <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
+                    <i class="fa-solid fa-user-circle"></i>
+                    <span data-i18n="profile" id="userName">Profile</span>
+                </button>
+                <div class="dropdown-menu-custom" id="userDropdownMenu">
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- MOBILE SIDEBAR BACKDROP -->
+    <div class="kds-sidebar-backdrop" id="kdsSidebarBackdrop"></div>
+
+    <!-- KITCHEN LAYOUT: LEFT SIDEBAR + CONTENT -->
+    <div class="kds-layout">
+        <!-- LEFT SIDEBAR NAVIGATION -->
+        <aside class="kds-sidebar" id="kdsSidebar">
+            <div class="kds-sidebar-brand">
+                <i class="fa-solid fa-fire-burner"></i>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="sidebar-group">
+                    <a data-i18n="kitchen_nav_dashboard" href="/src/pages/kitchen/dashboard.html" class="sidebar-link">
+                        <i class="fa-solid fa-tachometer-alt"></i> Dashboard
+                    </a>
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link">
+                        <i class="fa-solid fa-receipt"></i> Orders
+                    </a>
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link">
+                        <i class="fa-solid fa-burger"></i> Availability
+                    </a>
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
+                        <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
+                    </a>
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link active">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
+                    </a>
+                </div>
+                <div class="sidebar-group" style="margin-top: 16px;">
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
+                        <i class="fa-solid fa-bell"></i> Notifications
+                    </a>
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
+                        <i class="fa-solid fa-clock"></i> Preparation Schedule
+                    </a>
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link">
+                        <i class="fa-solid fa-gear"></i> Settings
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- MAIN ISSUE REPORTS CONTENT -->
+        <main class="kds-main">
+            <div class="container">
+                <div class="header">
+                    <h1><i class="fa-solid fa-flag" style="color:#f59e0b"></i> My Issue Reports</h1>
+                    <button data-i18n="report_issue" class="btn-report" onclick="openReportModal()">+ Report Issue</button>
+                </div>
+
+                <div id="notificationContainer"></div>
+
+                <div class="filters">
+                    <div class="filter-group">
+                        <label data-i18n="status_colon" for="statusFilter">Status:</label>
+                        <select id="statusFilter" onchange="filterIssues()">
+                            <option data-i18n="all" value="">All</option>
+                            <option data-i18n="status_pending" value="PENDING">Pending</option>
+                            <option data-i18n="issue_status_accepted" value="ACCEPTED">Accepted</option>
+                            <option data-i18n="issue_status_resolved" value="RESOLVED">Resolved</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="alerts-list" id="issuesList">
+                    <div class="empty-state">
+                        <div class="empty-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+                        <p data-i18n="loading_issue_reports">Loading issue reports…</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Report Issue Modal -->
+    <div class="modal" id="reportModal">
+        <div class="modal-content">
+            <div class="modal-header">Report an Issue</div>
+            <form id="reportForm">
+                <div class="form-group">
+                    <label for="issueTitle">Issue Title *</label>
+                    <input type="text" id="issueTitle" maxlength="200" placeholder="e.g. Oven not heating properly" required>
+                </div>
+                <div class="form-group">
+                    <label for="issueCategory">Category *</label>
+                    <select id="issueCategory" required>
+                        <option value="equipment">Equipment</option>
+                        <option value="stock">Stock</option>
+                        <option value="quality">Quality</option>
+                        <option value="safety">Safety</option>
+                        <option value="cleaning">Cleaning</option>
+                        <option value="staffing">Staffing</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="issuePriority">Priority *</label>
+                    <select id="issuePriority" required>
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="issueDescription">Description *</label>
+                    <textarea id="issueDescription" maxlength="2000" placeholder="Describe the issue in detail..." required></textarea>
+                </div>
+                <div class="modal-buttons">
+                    <button data-i18n="nav_cancel" type="button" class="btn-cancel" onclick="closeReportModal()">Cancel</button>
+                    <button type="submit" class="btn-submit" id="submitIssueBtn">Submit Report</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Issue Details Modal (original issue + status + manager solution) -->
+    <div class="modal" id="detailsModal">
+        <div class="modal-content">
+            <div class="modal-header" id="detailsTitle">Issue Details</div>
+            <div id="detailsBody"></div>
+            <div class="modal-buttons">
+                <button type="button" class="btn-cancel" onclick="closeDetailsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="../../js/utils/i18n.js?v=20261013b"></script>
+    <script src="../../js/config.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
+    <script src="../../js/kitchen/issues.js?v=20260907"></script>
+
+    <!-- Navigation & User Menu Script -->
+    <script>
+        function toggleUserMenu() {
+            const menu = document.getElementById('userDropdownMenu');
+            if (menu) menu.classList.toggle('active');
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('kdsSidebar');
+            const backdrop = document.getElementById('kdsSidebarBackdrop');
+            sidebar.classList.toggle('open');
+            backdrop.classList.toggle('show', sidebar.classList.contains('open'));
+        }
+
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('userDropdownMenu');
+            const btn = document.getElementById('userMenuBtn');
+            if (menu && !menu.contains(e.target) && !btn.contains(e.target)) {
+                menu.classList.remove('active');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const userName = localStorage.getItem('userName') || localStorage.getItem('name') || 'User';
+            const nameEl = document.getElementById('userName');
+            if (nameEl) nameEl.textContent = userName.split(' ')[0];
+
+            const sidebarToggle = document.getElementById('kdsSidebarToggle');
+            const sidebar = document.getElementById('kdsSidebar');
+            const backdrop = document.getElementById('kdsSidebarBackdrop');
+            if (sidebarToggle && sidebar) sidebarToggle.addEventListener('click', toggleSidebar);
+            if (backdrop) backdrop.addEventListener('click', toggleSidebar);
+            if (sidebar) {
+                sidebar.querySelectorAll('.sidebar-link').forEach((link) => {
+                    link.addEventListener('click', () => {
+                        if (window.innerWidth <= 768) sidebar.classList.remove('open');
+                        if (backdrop) backdrop.classList.remove('show');
+                    });
+                });
+            }
+        });
+
+        function logout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.clear();
+                window.location.href = '../common/login.html';
+            }
+        }
+    </script>
+    <script type="module" src="../../js/components/unified-header.js?v=20260907"></script>
+</body>
+</html>

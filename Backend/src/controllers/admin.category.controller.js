@@ -4,18 +4,22 @@ const { MESSAGES, HTTP_STATUS } = require('../config/constants');
 const { logAction } = require('../utils/audit');
 
 function toId(name) {
-  const base = String(name || '').trim().toLowerCase()
+  const base = String(name || '')
+    .trim()
+    .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
   return base || 'category-' + Date.now();
 }
 
 function localName(name, lang) {
-  return (name && typeof name === 'object') ? (name[lang] || name.en || '') : String(name || '');
+  return name && typeof name === 'object' ? name[lang] || name.en || '' : String(name || '');
 }
 
 function localDesc(description, lang) {
-  return (description && typeof description === 'object') ? (description[lang] || description.en || '') : String(description || '');
+  return description && typeof description === 'object'
+    ? description[lang] || description.en || ''
+    : String(description || '');
 }
 
 /**
@@ -46,7 +50,12 @@ exports.getAllCategories = async (req, res) => {
       filter.isActive = status === 'true';
     }
 
-    const sortMap = { name: { 'name.en': 1 }, foods: { sortOrder: 1 }, created: { createdAt: 1 }, updated: { updatedAt: -1 } };
+    const sortMap = {
+      name: { 'name.en': 1 },
+      foods: { sortOrder: 1 },
+      created: { createdAt: 1 },
+      updated: { updatedAt: -1 },
+    };
     const sort = sortMap[String(req.query.sort || 'created')] || sortMap.created;
     const [categories, total] = await Promise.all([
       Category.find(filter).sort(sort).skip(skip).limit(limit),
@@ -103,7 +112,9 @@ exports.getCategoryById = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Category not found' });
     }
     const count = await MenuItem.countDocuments({ category: category.id });
-    const foods = await MenuItem.find({ category: category.id }).sort({ createdAt: -1 }).select('name price image stockQuantity availability availabilityStatus isActive isPopular isRecommended');
+    const foods = await MenuItem.find({ category: category.id })
+      .sort({ createdAt: -1 })
+      .select('name price image stockQuantity availability availabilityStatus isActive isPopular isRecommended');
     res.status(HTTP_STATUS.OK).json({ success: true, category: serialize(category, count), foods });
   } catch (error) {
     console.error('❌ Admin Get Category By ID Error:', error);
@@ -124,14 +135,22 @@ exports.createCategory = async (req, res) => {
     }
 
     const cleanName = String(name).trim();
-    if (cleanName.length > 100) return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Category name cannot exceed 100 characters' });
+    if (cleanName.length > 100)
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Category name cannot exceed 100 characters' });
     const id = toId(cleanName);
-    const existing = await Category.findOne({ $or: [{ id }, { 'name.en': { $regex: `^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }] });
+    const existing = await Category.findOne({
+      $or: [{ id }, { 'name.en': { $regex: `^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } }],
+    });
     if (existing) {
-      return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'A category with this name already exists' });
+      return res
+        .status(HTTP_STATUS.CONFLICT)
+        .json({ success: false, error: 'A category with this name already exists' });
     }
 
     const category = await Category.create({
+      cafeteriaId: req.user.cafeteriaId || (await require('../utils/cafeteria').getDefaultCafeteriaId()),
       id,
       name: { en: cleanName, am: cleanName },
       icon: icon || '🍽️',
@@ -171,8 +190,14 @@ exports.updateCategory = async (req, res) => {
 
     if (name !== undefined && String(name).trim() !== '') {
       const cleanName = String(name).trim();
-      const duplicate = await Category.findOne({ _id: { $ne: category._id }, 'name.en': { $regex: `^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' } });
-      if (duplicate) return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'A category with this name already exists' });
+      const duplicate = await Category.findOne({
+        _id: { $ne: category._id },
+        'name.en': { $regex: `^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
+      });
+      if (duplicate)
+        return res
+          .status(HTTP_STATUS.CONFLICT)
+          .json({ success: false, error: 'A category with this name already exists' });
       category.name = { en: cleanName, am: cleanName };
     }
     if (icon !== undefined) category.icon = icon;
@@ -280,7 +305,13 @@ exports.getCategoryStats = async (req, res) => {
     ]);
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      stats: { totalCategories: total, active, inactive, withFoods: usedCategoryIds.length, empty: Math.max(total - usedCategoryIds.length, 0) },
+      stats: {
+        totalCategories: total,
+        active,
+        inactive,
+        withFoods: usedCategoryIds.length,
+        empty: Math.max(total - usedCategoryIds.length, 0),
+      },
     });
   } catch (error) {
     console.error('❌ Admin Get Category Stats Error:', error);

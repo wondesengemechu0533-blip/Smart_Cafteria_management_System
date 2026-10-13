@@ -397,7 +397,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
 
         button.innerHTML =
-            '<i class="fa-solid fa-check"></i> Added';
+            '<i class="fa-solid fa-check"></i> ' + (getMenuLang() === "am" ? "ተጨምሯል" : "Added");
 
         button.disabled = true;
 
@@ -502,6 +502,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
         const foodCards =
             document.querySelectorAll(".food-card");
+
+        // The menu cards are rendered asynchronously by customer-menu.js, so on
+        // this first call the grid may legitimately be empty while items are
+        // still being fetched. Treating "nothing rendered yet" as "no results"
+        // makes the empty state flash/stick and hides items that load a moment
+        // later. Only render the empty state when the renderer found no items
+        // at all (see renderMenu([]) in customer-menu.js).
+        if (foodCards.length === 0) {
+            return;
+        }
 
         let visibleCards = [];
 

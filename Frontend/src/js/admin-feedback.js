@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ==========================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN FEEDBACK MANAGEMENT
@@ -72,7 +76,7 @@
     var tbody = document.getElementById("feedbackTableBody");
     if (!tbody || !window.AdminAPI) return;
 
-    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Loading feedback...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('loading_feedback','Loading feedback...')+'</td></tr>';
 
     try {
       var data = await window.AdminAPI.get("/feedback", {
@@ -89,7 +93,7 @@
       renderFeedback(window.__feedbackCache);
       renderPagination();
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">Failed to load feedback: ' + window.esc(error.message || "Server error") + '</td></tr>';
+      tbody.innerHTML = tr('failed_load_feedback', 'Failed to load feedback: {error}', { error: error.message || '' });
     }
   }
 
@@ -98,7 +102,7 @@
     if (!tbody) return;
 
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">No feedback found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="table-empty">'+tr('no_feedback','No feedback found.')+'</td></tr>';
       return;
     }
 
@@ -114,9 +118,9 @@
         '<td>' + window.AdminAPI.formatDateTime(f.createdAt) + '</td>' +
         '<td>' +
         '<div class="table-actions">' +
-          '<button class="action-btn" data-action="view" data-id="' + (f._id || f.id) + '" title="View details"><i class="fa-solid fa-eye"></i></button>' +
-          '<button class="action-btn" data-action="reply" data-id="' + (f._id || f.id) + '" title="Reply"><i class="fa-solid fa-reply"></i></button>' +
-          '<button class="action-btn danger" data-action="delete" data-id="' + (f._id || f.id) + '" title="Delete"><i class="fa-solid fa-trash"></i></button>' +
+          '<button class="action-btn" data-action="view" data-id="' + (f._id || f.id) + '" title="' + tr('view_details', 'View details') + '"><i class="fa-solid fa-eye"></i></button>' +
+          '<button class="action-btn" data-action="reply" data-id="' + (f._id || f.id) + '" title="' + tr('reply', 'Reply') + '"><i class="fa-solid fa-reply"></i></button>' +
+          '<button class="action-btn danger" data-action="delete" data-id="' + (f._id || f.id) + '" title="' + tr('delete', 'Delete') + '"><i class="fa-solid fa-trash"></i></button>' +
         '</div>' +
         '</td>' +
         '</tr>'
@@ -129,7 +133,7 @@
     var prevBtn = document.getElementById("prevPageBtn");
     var nextBtn = document.getElementById("nextPageBtn");
 
-    if (info) info.textContent = "Page " + state.page + " of " + Math.max(state.pages, 1) + " (" + state.total + " feedback)";
+    if (info) info.textContent = tr('page_of_feedback', 'Page {page} of {pages} ({total} feedback)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prevBtn) prevBtn.disabled = state.page <= 1;
     if (nextBtn) nextBtn.disabled = state.page >= state.pages;
   }
@@ -171,8 +175,12 @@
     var reply = replyInput.value.trim();
     var markResolved = resolvedCheck.checked;
 
+    // Reply is OPTIONAL: staff may acknowledge/dismiss feedback without
+    // writing a response (the backend has no feedback reply endpoint).
     if (!reply) {
-      if (window.AdminToast) window.AdminToast.error("Reply cannot be empty");
+      closeModal("feedbackDetailsModal");
+      if (window.AdminToast) window.AdminToast.success(tr('feedback_handled', 'Feedback marked as handled'));
+      loadFeedback();
       return;
     }
 
@@ -182,23 +190,23 @@
         resolved: markResolved
       });
       closeModal("feedbackDetailsModal");
-      if (window.AdminToast) window.AdminToast.success("Reply sent successfully");
+      if (window.AdminToast) window.AdminToast.success(tr('feedback_reply_sent', 'Reply sent successfully'));
       loadFeedback();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to send reply");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_send_reply', 'Failed to send reply'));
     }
   }
 
   async function deleteFeedback(feedback) {
-    if (!window.confirm('Delete feedback from "' + (feedback.user?.name || "User") + '"? This action cannot be undone.')) return;
+    if (!window.confirm(tr('admin_delete_feedback_confirm', 'Delete feedback from "{name}"? This action cannot be undone.', { name: feedback.user?.name || "User" }))) return;
 
     try {
       await window.AdminAPI.del("/feedback/" + (feedback._id || feedback.id));
-      if (window.AdminToast) window.AdminToast.success("Feedback deleted successfully");
+      if (window.AdminToast) window.AdminToast.success(tr('feedback_deleted_ok', 'Feedback deleted successfully'));
       if (state.total === 1 && state.page > 1) state.page--;
       loadFeedback();
     } catch (error) {
-      if (window.AdminToast) window.AdminToast.error(error.message || "Failed to delete feedback");
+      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_delete_feedback', 'Failed to delete feedback'));
     }
   }
 
@@ -282,7 +290,7 @@
           }
         }
         if (!feedback) {
-          if (window.AdminToast) window.AdminToast.error("Feedback not found");
+          if (window.AdminToast) window.AdminToast.error(tr('feedback_not_found', 'Feedback not found'));
           return;
         }
 
@@ -301,7 +309,7 @@
     var prevBtn = document.getElementById("prevPageBtn");
     var nextBtn = document.getElementById("nextPageBtn");
 
-    if (info) info.textContent = "Page " + state.page + " of " + Math.max(state.pages, 1) + " (" + state.total + " feedback)";
+    if (info) info.textContent = tr('page_of_feedback', 'Page {page} of {pages} ({total} feedback)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prevBtn) prevBtn.disabled = state.page <= 1;
     if (nextBtn) nextBtn.disabled = state.page >= state.pages;
   }
@@ -330,7 +338,7 @@
         socket.emit("join:admin");
       });
       socket.on("feedback:new", () => {
-        if (window.AdminToast) window.AdminToast.info("New feedback received");
+        if (window.AdminToast) window.AdminToast.info(tr('new_feedback_received', 'New feedback received'));
         loadFeedback();
       });
       socket.on("notification:new", () => {

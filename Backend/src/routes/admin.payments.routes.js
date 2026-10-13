@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const {
@@ -7,12 +7,12 @@ const {
   getPaymentById,
   getPaymentHistory,
   getOrderPayment,
-  refundPayment
+  refundPayment,
 } = require('../controllers/admin.payment.controller');
 
 // All routes require admin, staff, or kitchen role
 router.use(protect);
-router.use(authorize('admin', 'ADMIN', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
+router.use(authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
 
 /**
  * Security note (Requirement 24):

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title data-i18n="delivery_history_page_title">My Delivery History - Smart Cafeteria</title>
+    <title data-i18n="delivery_history_page_title">Delivery History - Smart Cafeteria</title>
 
     <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="/src/css/style.css">
@@ -11,6 +11,50 @@
     <link rel="stylesheet" href="/src/css/delivery.css">
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
+    <style>
+        /* Filter bar - laid out with the same tokens as the rest of the panel. */
+        .history-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: flex-end;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+        .history-filters .filter-field { display: flex; flex-direction: column; gap: 4px; }
+        .history-filters label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: #64748b;
+        }
+        .history-filters .form-control { min-width: 150px; }
+        .history-filters .filter-field.grow { flex: 1 1 220px; }
+        .history-filters .filter-actions { display: flex; gap: 8px; margin-left: auto; }
+        .history-count {
+            color: #64748b;
+            font-size: 0.85rem;
+            margin-bottom: 8px;
+        }
+        /* Stage timestamps: compact two-line cells (date over time). */
+        .history-table td.stage { white-space: nowrap; font-size: 0.8rem; }
+        .history-table td.stage .stage-date { display: block; color: #475569; }
+        .history-table td.stage .stage-time { display: block; color: #94a3b8; font-size: 0.75rem; }
+        .history-table td.stage.is-empty { color: #cbd5e1; }
+        .history-table .cust-cell small { display: block; color: #94a3b8; font-size: 0.75rem; }
+        .history-table .dur-cell { white-space: nowrap; font-size: 0.82rem; color: #475569; }
+        [data-theme="dark"] .history-filters { background: #1e293b; border-color: #334155; }
+        [data-theme="dark"] .history-filters label { color: #94a3b8; }
+        [data-theme="dark"] .history-table td.stage .stage-date { color: #cbd5e1; }
+        [data-theme="dark"] .history-table td.stage .stage-time,
+        [data-theme="dark"] .history-table .cust-cell small,
+        [data-theme="dark"] .history-table .dur-cell,
+        [data-theme="dark"] .history-count { color: #94a3b8; }
+    </style>
 </head>
 <body class="admin-body">
 
@@ -20,7 +64,7 @@
         <main class="admin-main">
 
             <div class="delivery-header">
-                <h1><i class="fa-solid fa-clock-rotate-left"></i> <span data-i18n="delivery_history">My History</span></h1>
+                <h1><i class="fa-solid fa-clock-rotate-left"></i> <span data-i18n="delivery_history">Delivery History</span></h1>
                 <div class="page-actions">
                     <button type="button" class="btn btn-secondary" id="refreshBtn"><i class="fa-solid fa-rotate"></i> <span data-i18n="admin_refresh">Refresh</span></button>
                 </div>
@@ -29,14 +73,48 @@
             <div id="errorBanner" class="error-banner" style="display:none;"></div>
 
             <div class="stats-row">
-                <div class="stat-card"><div class="num" id="statTotal">0</div><div class="lbl">Total Delivered</div></div>
-                <div class="stat-card"><div class="num" id="statToday">0</div><div class="lbl">Delivered Today</div></div>
-                <div class="stat-card"><div class="num" id="statCollected">0.00 ETB</div><div class="lbl">Collected (All Time)</div></div>
+                <div class="stat-card"><div class="num" id="statTotal">0</div><div class="lbl" data-i18n="delivery_stat_total">Total Delivered</div></div>
+                <div class="stat-card"><div class="num" id="statToday">0</div><div class="lbl" data-i18n="delivery_stat_today">Delivered Today</div></div>
+                <div class="stat-card"><div class="num" id="statCollected">0.00 ETB</div><div class="lbl" data-i18n="delivery_stat_collected">Collected (All Time)</div></div>
+                <div class="stat-card"><div class="num" id="statFailed">0</div><div class="lbl" data-i18n="delivery_stat_failed">Failed / Cancelled</div></div>
             </div>
 
-            <div class="section-title"><h3><i class="fa-solid fa-receipt" style="color:#64748b;"></i> My Completed Deliveries</h3></div>
+            <div class="section-title"><h3><i class="fa-solid fa-filter" style="color:#64748b;"></i> <span data-i18n="delivery_history_filters">Filters</span></h3></div>
+            <div class="history-filters">
+                <div class="filter-field grow">
+                    <label for="filterSearch" data-i18n="delivery_filter_search">Order ID or customer</label>
+                    <input type="search" id="filterSearch" class="form-control" placeholder="ORD-1001 / Abebe" autocomplete="off">
+                </div>
+                <div class="filter-field">
+                    <label for="filterStatus" data-i18n="delivery_th_status">Status</label>
+                    <select id="filterStatus" class="form-control">
+                        <option value="all" data-i18n="delivery_filter_all">All</option>
+                        <!-- DELIVERED is deliberately absent: /deliveries/my-history returns
+                             terminal states only (COMPLETED/FAILED/CANCELLED) because a
+                             delivered-but-not-completed order still lives on the active
+                             queue. Offering it here could only ever show an empty list. -->
+                        <option value="completed" data-i18n="status_completed">Completed</option>
+                        <option value="failed" data-i18n="status_failed">Failed</option>
+                        <option value="cancelled" data-i18n="status_cancelled">Cancelled</option>
+                    </select>
+                </div>
+                <div class="filter-field">
+                    <label for="filterFrom" data-i18n="delivery_filter_from">From</label>
+                    <input type="date" id="filterFrom" class="form-control">
+                </div>
+                <div class="filter-field">
+                    <label for="filterTo" data-i18n="delivery_filter_to">To</label>
+                    <input type="date" id="filterTo" class="form-control">
+                </div>
+                <div class="filter-actions">
+                    <button type="button" class="btn btn-secondary" id="resetFiltersBtn"><i class="fa-solid fa-xmark"></i> <span data-i18n="delivery_filter_reset">Reset</span></button>
+                </div>
+            </div>
+
+            <div class="section-title"><h3><i class="fa-solid fa-receipt" style="color:#64748b;"></i> <span data-i18n="delivery_section_completed">Completed Deliveries</span></h3></div>
+            <div class="history-count" id="historyCount"></div>
             <div id="historyContainer">
-                <div class="empty-state"><i class="fa-solid fa-clipboard-list"></i><p>No delivered orders yet.</p></div>
+                <div class="empty-state"><i class="fa-solid fa-clipboard-list"></i><p data-i18n="delivery_empty_history">No delivered orders yet.</p></div>
             </div>
 
         </main>

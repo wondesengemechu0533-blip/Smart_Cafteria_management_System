@@ -76,6 +76,8 @@
 .delivery-card.active { border-left: 4px solid #f97316; }
 .delivery-card.picked { border-left: 4px solid #7c3aed; }
 .delivery-card.out { border-left: 4px solid #2563eb; }
+/* Handed over and proven, but not closed out yet: still the courier's work. */
+.delivery-card.delivered { border-left: 4px solid #16a34a; }
 .delivery-card .d-card-head {
   display: flex;
   justify-content: space-between;
@@ -92,6 +94,36 @@
   padding: 10px;
   margin-top: 8px;
 }
+.delivery-card .d-card-body .addr-coords {
+  color: #1d4ed8;
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+/* Structured delivery address: one labeled row per stored field (city, area,
+   house, street, landmark) so the courier sees exactly what the customer
+   typed. Rendered only when the structured fields exist. */
+.delivery-card .d-card-body .addr-details {
+  margin-top: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.delivery-card .d-card-body .addr-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.delivery-card .d-card-body .addr-row > span {
+  color: #64748b;
+  flex: 0 0 auto;
+}
+.delivery-card .d-card-body .addr-row > strong {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 .delivery-card .d-card-actions { margin-top: 14px; display: flex; gap: 10px; flex-wrap: wrap; }
 
 .status-chip {
@@ -104,6 +136,10 @@
 .status-ready { background: #fef3c7; color: #b45309; }
 .status-picked { background: #ede9fe; color: #6d28d9; }
 .status-out { background: #dbeafe; color: #1d4ed8; }
+.status-arrived { background: #dcfce7; color: #15803d; }
+.btn-accept { background: #16a34a; color: #fff; border-color: #16a34a; }
+.btn-decline { background: #dc2626; color: #fff; border-color: #dc2626; }
+.btn-arrived { background: #16a34a; color: #fff; border-color: #16a34a; }
 .status-delivered { background: #dcfce7; color: #15803d; }
 
 .btn-action {
@@ -120,7 +156,90 @@
 .btn-pickup:hover { background: #6d28d9; }
 .btn-done { background: #16a34a; color: #fff; }
 .btn-done:hover { background: #15803d; }
+.btn-nav {
+  background: #0284c7;
+  color: #fff;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn-nav:hover { background: #0369a1; color: #fff; }
 .btn-disabled { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+
+/* -------- SOS / emergency ---------------------------------------------------
+   The one control on the card that must be findable under stress: high
+   contrast, hard to mis-tap, and visibly "pending" between the press and the
+   server confirmation so a double-tap cannot spawn two emergencies. */
+.btn-sos {
+  background: #dc2626;
+  color: #fff;
+  border: 2px solid #7f1d1d;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.btn-sos:hover { background: #b91c1c; }
+.btn-sos:disabled { background: #991b1b; cursor: wait; opacity: 0.85; }
+.btn-sos-pending { animation: sos-pulse 0.9s ease-in-out infinite; }
+@keyframes sos-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+  50% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+}
+
+/* -------- Proof of delivery modal ------------------------------------------ */
+.proof-modal-overlay {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(2, 6, 23, 0.62);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.proof-modal {
+  background: #fff; border-radius: 14px; max-width: 520px; width: 100%;
+  box-shadow: 0 24px 60px rgba(2, 6, 23, 0.35); overflow: hidden;
+}
+.proof-head { padding: 18px 20px 0; position: relative; }
+.proof-head h3 { margin: 0 0 6px; font-size: 1.1rem; color: #0f172a; }
+.proof-sub { margin: 0; color: #64748b; font-size: 0.86rem; }
+.proof-error { color: #b91c1c; }
+.proof-head .modal-close {
+  position: absolute; top: 12px; right: 12px;
+  background: transparent; border: none; font-size: 1.4rem; color: #94a3b8; cursor: pointer;
+}
+.proof-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.proof-label { display: block; font-weight: 700; font-size: 0.9rem; color: #0f172a; margin-bottom: 4px; }
+.proof-hint { margin: 0 0 8px; color: #64748b; font-size: 0.8rem; }
+.proof-inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.proof-inline input[type="text"] {
+  flex: 1 1 160px; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem;
+}
+.proof-inline input[type="file"] { font-size: 0.82rem; max-width: 260px; }
+.proof-status { min-height: 18px; font-size: 0.82rem; margin-top: 6px; }
+.proof-status-line.ok { color: #15803d; }
+.proof-status-line.bad { color: #b91c1c; }
+.proof-divider {
+  text-align: center; color: #94a3b8; font-size: 0.78rem; font-weight: 700;
+  border-top: 1px solid #e2e8f0; padding-top: 12px; margin-top: 2px;
+}
+.proof-foot {
+  display: flex; justify-content: flex-end; gap: 10px;
+  padding: 14px 20px 18px; border-top: 1px solid #e2e8f0; background: #f8fafc;
+}
+.btn-disabled-soft { background: #e2e8f0; color: #94a3b8; cursor: not-allowed; }
+
+
+/* -------- Linked-order highlight (notification -> deliveries deep link) ------ */
+.delivery-card-focus {
+  outline: 3px solid #f97316;
+  outline-offset: 2px;
+  animation: deliveryCardFocus 2.4s ease-out;
+}
+@keyframes deliveryCardFocus {
+  0%   { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); }
+  70%  { box-shadow: 0 0 0 12px rgba(249, 115, 22, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); }
+}
 
 /* -------- Empty state / section titles ------------------------------------ */
 .empty-state { text-align: center; color: #94a3b8; padding: 40px 20px; }
@@ -185,4 +304,389 @@
   background: #f97316;
   border-color: #f97316;
   color: #fff;
+}
+/* Live count per tab. A stage with no deliveries shows 0 instead of an empty
+   list with no explanation, which is what made the bar look broken. */
+.delivery-tabs .tab-count {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.delivery-tabs .tab-btn.active .tab-count { background: rgba(255, 255, 255, 0.28); color: #fff; }
+.delivery-tabs .tab-count[data-empty="1"] { opacity: 0.55; }
+/* The count is unknown (never loaded, or the request failed). A dash is the
+   honest value; a 0 here would read as "no deliveries" and hide a dead backend. */
+.delivery-tabs .tab-count[data-unavailable="1"] {
+  opacity: 1;
+  background: #fef3c7;
+  color: #92400e;
+  font-style: italic;
+}
+.delivery-tabs .tab-btn[aria-busy="true"] { cursor: progress; }
+.empty-state-error { border: 1px dashed #f59e0b; }
+.empty-state-error .fa-plug-circle-xmark { color: #f59e0b; }
+.empty-state-error .btn-action { margin-top: 10px; }
+/* -------- Delivery GPS tracking ---------------------------------------------- */
+.d-gps {
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 12px;
+  padding-top: 10px;
+}
+.d-gps-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.btn-gps {
+  background: #0f766e;
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+}
+.btn-gps:hover { background: #115e59; }
+.btn-gps-stop { background: #475569; }
+.btn-gps-stop:hover { background: #334155; }
+/* Retry after the user changed the site's location setting. Deliberately
+   distinct from "Start" so it is obvious this is a second attempt after a
+   refusal, not a fresh opt-in. */
+.btn-gps-retry { background: #b45309; }
+.btn-gps-retry:hover { background: #92400e; }
+.btn-gps:disabled { opacity: 0.6; cursor: progress; }
+
+/* Blocked-permission notice.
+   Shown instead of the Start button once the browser has refused. It has to
+   carry the whole recovery path (what happened + what to change + what is
+   still possible), because a rider who cannot grant location must not think the
+   delivery is broken. */
+.gps-help {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid #fecaca;
+  border-left: 4px solid #dc2626;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #7f1d1d;
+  font-size: 0.85rem;
+}
+.gps-help strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+.gps-help p {
+  margin: 0 0 6px;
+  line-height: 1.45;
+}
+.gps-help-steps {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px dashed #fca5a5;
+  font-weight: 600;
+}
+.gps-help small {
+  display: block;
+  margin-top: 6px;
+  opacity: 0.85;
+}
+body.dark-theme .gps-help {
+  background: rgba(220, 38, 38, 0.14);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #fecaca;
+}
+body.dark-theme .gps-help-steps {
+  background: rgba(15, 23, 42, 0.5);
+  border-color: rgba(252, 165, 165, 0.35);
+}
+.gps-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #0f766e;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.gps-badge.gps-live {
+  color: #15803d;
+  animation: gpsPulse 1.2s ease-in-out infinite;
+}
+@keyframes gpsPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* Six GPS status pills */
+.gps-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.gps-state.state-permission_required {
+  background: #fef3c7;
+  color: #b45309;
+}
+.gps-state.state-active {
+  background: #dcfce7;
+  color: #15803d;
+}
+.gps-state.state-permission_denied {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.gps-state.state-unavailable {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.gps-state.state-error {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.gps-state.state-stopped {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+/* Rider metrics: lat / lng / accuracy / last updated */
+.gps-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.gps-metric {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.gps-metric-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+.gps-metric-value {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gps-status {
+  margin-top: 6px;
+  font-size: 0.8rem;
+  min-height: 1.1em;
+}
+.gps-status .gps-ok { color: #15803d; }
+.gps-status .gps-wait { color: #b45309; }
+.gps-status .gps-err { color: #b91c1c; }
+.gps-status .gps-muted { color: #64748b; }
+
+/* "You are near the customer's location." Proximity hint.
+   ADVISORY ONLY: it tells the rider they are close so they can stop looking at
+   the screen, and it never advances the delivery - Mark Arrived and Mark
+   Delivered stay manual. */
+.gps-status.gps-near {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #15803d;
+  font-weight: 700;
+  min-height: 0;
+}
+.gps-status.gps-near .gps-near-distance {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+/* Per-delivery live map inside the GPS panel. Sized down from the customer
+   tracker's map because a courier card can be one of several on screen. */
+.d-gps-map {
+  margin-top: 10px;
+  width: 100%;
+  height: 200px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  background: #e9ecef;
+  z-index: 1;
+}
+body.dark-theme .d-gps-map {
+  filter: brightness(0.82) contrast(1.05);
+  border-color: #334155;
+}
+@media (max-width: 560px) {
+  .d-gps-map { height: 170px; }
+}
+
+/* -------- New assignment toast -------------------------------------------- */
+/* Raised on the Delivery Dashboard when a manager assigns a delivery to this
+   rider. Purely informational - the delivery card itself is driven by the
+   backend list, so a missed toast never loses a delivery. */
+.delivery-assigned-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 380px;
+  padding: 14px 18px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #f97316;
+  border-left: 4px solid #f97316;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.18);
+  color: #0f172a;
+  font-size: 0.92rem;
+  font-weight: 600;
+  opacity: 0;
+  transform: translateX(24px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.delivery-assigned-toast.show {
+  opacity: 1;
+  transform: translateX(0);
+}
+.delivery-assigned-toast i {
+  color: #f97316;
+  font-size: 1.15rem;
+}
+
+/* Delivery stage tracker: every stage is always visible, completed/current/future
+   are distinguished, but only the current transition is actionable. */
+.d-stages {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 10px 6px 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow-x: auto;
+}
+.d-stages.halted {
+  justify-content: center;
+  color: #b91c1c;
+  font-weight: 700;
+}
+.d-stage {
+  position: relative;
+  flex: 1 0 auto;
+  min-width: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  text-align: center;
+}
+.d-stage:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  left: 50%;
+  width: 100%;
+  height: 2px;
+  background: #cbd5e1;
+  z-index: 0;
+}
+.d-stage.done:not(:last-child)::after { background: #16a34a; }
+.d-stage-dot {
+  position: relative;
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 2px solid #cbd5e1;
+}
+.d-stage.done .d-stage-dot { background: #16a34a; border-color: #16a34a; }
+.d-stage.current .d-stage-dot {
+  background: #f97316;
+  border-color: #f97316;
+  box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.2);
+}
+.d-stage-label {
+  font-size: 0.66rem;
+  line-height: 1.15;
+  font-weight: 600;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+.d-stage.done .d-stage-label { color: #16a34a; }
+.d-stage.current .d-stage-label { color: #c2410c; font-weight: 800; }
+
+/* The current stage is the one live control on the card. It is a real button
+   so it is keyboard reachable and reads as actionable next to the read-only
+   stage labels, and it turns green on activation to match the customer's
+   tracking page. */
+.d-stage-btn {
+  font-size: 0.66rem;
+  line-height: 1.15;
+  font-weight: 800;
+  color: #c2410c;
+  background: #fff7ed;
+  border: 1px solid #fb923c;
+  border-radius: 999px;
+  padding: 2px 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.d-stage-btn:hover:not(:disabled) { background: #ffedd5; }
+.d-stage-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.d-stage-btn:focus-visible { outline: 2px solid #f97316; outline-offset: 2px; }
+
+[data-theme="dark"] .d-stages { background: #0f172a; border-color: #334155; }
+[data-theme="dark"] .d-stage-btn {
+  background: #431407;
+  border-color: #c2410c;
+  color: #fdba74;
+}
+[data-theme="dark"] .d-stage-btn:hover:not(:disabled) { background: #7c2d12; }
+[data-theme="dark"] .d-stage-label { color: #94a3b8; }
+[data-theme="dark"] .d-stage:not(:last-child)::after { background: #334155; }
+[data-theme="dark"] .d-stage.done:not(:last-child)::after { background: #22c55e; }
+[data-theme="dark"] .d-stage.done .d-stage-label { color: #4ade80; }
+[data-theme="dark"] .d-stage.current .d-stage-label { color: #fb923c; }
+[data-theme="dark"] .d-stage.done .d-stage-dot { background: #22c55e; border-color: #22c55e; }
+[data-theme="dark"] .d-stage-dot { background: #1e293b; border-color: #334155; }
+
+@media (prefers-color-scheme: dark) {
+  .delivery-assigned-toast {
+    background: #1e293b;
+    color: #f8fafc;
+  }
 }

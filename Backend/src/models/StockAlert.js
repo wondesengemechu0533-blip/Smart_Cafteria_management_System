@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * StockAlert Schema - Track out-of-stock and inventory issues
@@ -13,7 +13,7 @@ const StockAlertSchema = new mongoose.Schema(
   {
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "MenuItem",
+      ref: 'MenuItem',
       required: false,
     },
     itemName: {
@@ -22,13 +22,13 @@ const StockAlertSchema = new mongoose.Schema(
     },
     alertType: {
       type: String,
-      enum: ["out_of_stock", "low_stock", "ingredient_shortage", "quality_issue"],
-      default: "out_of_stock",
+      enum: ['out_of_stock', 'low_stock', 'ingredient_shortage', 'quality_issue'],
+      default: 'out_of_stock',
     },
     severity: {
       type: String,
-      enum: ["low", "medium", "high", "critical"],
-      default: "high",
+      enum: ['low', 'medium', 'high', 'critical'],
+      default: 'high',
     },
     reason: {
       type: String,
@@ -36,18 +36,37 @@ const StockAlertSchema = new mongoose.Schema(
     },
     reportedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     reportedByRole: {
       type: String,
-      enum: ["kitchen", "admin"],
-      default: "kitchen",
+      enum: ['kitchen', 'admin'],
+      default: 'kitchen',
     },
     status: {
       type: String,
-      enum: ["active", "acknowledged", "resolved", "cancelled"],
-      default: "active",
+      enum: ['active', 'acknowledged', 'resolved', 'cancelled'],
+      default: 'active',
+    },
+    // Manager responsibility assignment (recognizes the issue and who owns it).
+    acknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
+    assignedAt: {
+      type: Date,
+      default: null,
+    },
+    assignedNote: {
+      type: String,
+      default: null,
     },
     resolutionNote: {
       type: String,
@@ -55,7 +74,7 @@ const StockAlertSchema = new mongoose.Schema(
     },
     resolvedBy: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       default: null,
     },
     resolvedAt: {
@@ -75,6 +94,13 @@ const StockAlertSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Owning cafeteria (tenant). Stamped server-side when the alert is created
+    // so kitchen stock alerts stay scoped to the caller's cafeteria.
+    cafeteriaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cafeteria',
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -86,5 +112,6 @@ StockAlertSchema.index({ itemId: 1, status: 1 });
 StockAlertSchema.index({ status: 1 });
 StockAlertSchema.index({ reportedBy: 1 });
 StockAlertSchema.index({ createdAt: -1 });
+StockAlertSchema.index({ cafeteriaId: 1, status: 1 });
 
-module.exports = mongoose.model("StockAlert", StockAlertSchema);
+module.exports = mongoose.model('StockAlert', StockAlertSchema);

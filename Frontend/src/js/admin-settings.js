@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN SETTINGS
@@ -31,8 +35,8 @@
 
   function setLoading(btn, on) {
     if (!btn) return;
-    if (on) { btn.disabled = true; btn._o = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving...'; }
-    else { btn.disabled = false; btn.innerHTML = btn._o || btn.innerHTML; }
+    if (on) { if (btn.disabled) return; btn.disabled = true; btn._o = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Saving...'; }
+    else { btn.disabled = false; btn.innerHTML = btn._o || btn.innerHTML; btn._o = null; }
   }
 
   function saveSetting(key, value) {
@@ -65,7 +69,7 @@
       if (circle && u.avatar) {
         circle.innerHTML = '<img src="' + u.avatar + '" alt="Avatar" class="w-full h-full rounded-2xl object-cover">';
       }
-    } catch (e) { showAlert('Failed to load profile: ' + e.message, 'error'); }
+    } catch (e) { showAlert(tr('failed_load_profile', 'Failed to load profile: ') + e.message, 'error'); }
   }
 
   async function saveProfile(e) {
@@ -114,8 +118,8 @@
           navAvatar.textContent = updated.name.charAt(0).toUpperCase();
         }
       }
-      showAlert('Profile saved successfully');
-    } catch (e) { showAlert('Failed to save profile: ' + e.message, 'error'); }
+      showAlert(tr('profile_saved', 'Profile saved successfully'));
+    } catch (e) { showAlert(tr('failed_save_profile', 'Failed to save profile: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
@@ -126,9 +130,9 @@
     const cur = val('currentPassword');
     const nw = val('newPassword');
     const cf = val('confirmPassword');
-    if (!cur || !nw) { showAlert('Fill in current and new password', 'error'); return; }
-    if (nw.length < 6) { showAlert('New password must be at least 6 characters', 'error'); return; }
-    if (nw !== cf) { showAlert('New passwords do not match', 'error'); return; }
+    if (!cur || !nw) { showAlert(tr('fill_passwords', 'Fill in current and new password'), 'error'); return; }
+    if (nw.length < 6) { showAlert(tr('password_min_length', 'New password must be at least 6 characters'), 'error'); return; }
+    if (nw !== cf) { showAlert(tr('password_mismatch', 'Passwords do not match'), 'error'); return; }
     const btn = $('changePasswordBtn');
     setLoading(btn, true);
     try {
@@ -140,16 +144,16 @@
       $('currentPassword').value = '';
       $('newPassword').value = '';
       $('confirmPassword').value = '';
-      showAlert('Password updated successfully. Please sign out and sign back in with your new password.');
-    } catch (e) { showAlert('Failed to change password: ' + e.message, 'error'); }
+      showAlert(tr('password_updated', 'Password updated successfully. Please sign out and sign back in with your new password.'));
+    } catch (e) { showAlert(tr('failed_change_password', 'Failed to change password: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
   async function save2FA() {
     try {
       await saveSetting('two_factor_enabled', chk('twoFactorEnabled'));
-      showAlert('Two-factor authentication setting saved');
-    } catch (e) { showAlert('Failed to save 2FA: ' + e.message, 'error'); }
+      showAlert(tr('twofa_saved', 'Two-factor authentication setting saved'));
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save 2FA: ') + e.message, 'error'); }
   }
 
   /* =============================================
@@ -174,8 +178,8 @@
       await saveSetting('currency', val('paymentCurrency'));
       await saveSetting('max_daily_orders', num('maxDailyOrders', 100));
       await saveSetting('order_availability', chk('orderAvailability'));
-      showAlert('System configuration saved');
-    } catch (e) { showAlert('Failed to save config: ' + e.message, 'error'); }
+      showAlert(tr('config_saved', 'System configuration saved'));
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save config: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
@@ -185,8 +189,8 @@
     try {
       await saveSetting('delivery_fee', num('deliveryFee', 30));
       await saveSetting('delivery_enabled', chk('deliveryEnabled'));
-      showAlert('Delivery settings saved');
-    } catch (e) { showAlert('Failed to save delivery settings: ' + e.message, 'error'); }
+      showAlert(tr('delivery_settings_saved', 'Delivery settings saved'));
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save delivery settings: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
@@ -208,8 +212,8 @@
       await saveSetting('notify_low_stock', chk('notifyLowStock'));
       await saveSetting('notify_daily_sales', chk('notifyDailySales'));
       await saveSetting('notify_security_login', chk('notifySecurityLogin'));
-      showAlert('Notification preferences saved');
-    } catch (e) { showAlert('Failed to save notifications: ' + e.message, 'error'); }
+      showAlert(tr('notifications_saved', 'Notification preferences saved'));
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save notifications: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
@@ -236,8 +240,8 @@
         notify_security_login: chk('notifySecurityLogin')
       };
       for (const [k, v] of Object.entries(all)) await saveSetting(k, v);
-      showAlert('All settings saved successfully');
-    } catch (e) { showAlert('Failed to save all: ' + e.message, 'error'); }
+      showAlert(tr('all_settings_saved', 'All settings saved successfully'));
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save all: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
@@ -271,7 +275,7 @@
       const map = await loadSettingsMap();
       populateSystemConfig(map);
       populateNotifications(map);
-    } catch (e) { showAlert('Failed to load settings: ' + e.message, 'error'); }
+    } catch (e) { showAlert(tr('failed_load_settings', 'Failed to load settings: ') + e.message, 'error'); }
 
     // Re-apply toggle styling after settings are loaded from backend
     document.querySelectorAll('.toggle-checkbox').forEach(cb => {

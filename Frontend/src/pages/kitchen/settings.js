@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function") return window.tr(key, fallback, vars);
+  return fallback;
+}
 import api from '../../js/api.js';
 
 const settingsContainer = document.getElementById('settingsContent');
@@ -88,14 +92,14 @@ function renderSettings() {
 
         <div class="settings-card">
             <h3><i class="fa-solid fa-desktop"></i> Display</h3>
-            ${toggleSwitch('showCompletedOrders', 'Show Completed Orders', settings.showCompletedOrders)}
+            ${toggleSwitch('showCompletedOrders', tr('kitchen_show_completed', 'Show Completed Orders'), settings.showCompletedOrders)}
         </div>
 
         <div class="settings-card">
             <h3><i class="fa-solid fa-key"></i> Change Password</h3>
-            ${passwordControl('currentPassword', 'Current Password', 'Enter current password')}
-            ${passwordControl('newPassword', 'New Password', 'Min 6 characters')}
-            ${passwordControl('confirmPassword', 'Confirm New Password', 'Re-enter new password')}
+            ${passwordControl('currentPassword', tr('current_password', 'Current Password'), tr('enter_current_password', 'Enter current password'))}
+            ${passwordControl('newPassword', tr('new_password', 'New Password'), tr('min_6_chars', 'Min 6 characters'))}
+            ${passwordControl('confirmPassword', tr('confirm_new_password', 'Confirm New Password'), tr('reenter_new_password', 'Re-enter new password'))}
             <div class="btn-save-wrap">
                 <button class="btn btn-primary" id="changePasswordBtn" onclick="window.changeKitchenPassword()">
                     <i class="fa-solid fa-key"></i> Update Password
@@ -123,6 +127,14 @@ async function loadSettings() {
         const data = await api.get('/kitchen/settings');
         if (data.success && data.settings) {
             settings = { ...settings, ...data.settings };
+            // Seed the shared sound flag from kitchen prefs on first load
+            // (only when user has not already set an explicit toggle this session).
+            try {
+                if (localStorage.getItem('scos_notify_sound') === null) {
+                    const soundOn = !!(settings.orderAlertSound && settings.generalNotificationSound);
+                    localStorage.setItem('scos_notify_sound', soundOn ? '1' : '0');
+                }
+            } catch (e) { /* ignore */ }
         }
     } catch (err) {
         console.warn('Could not load settings, using defaults:', err);
@@ -151,15 +163,20 @@ window.saveSettings = async function () {
         const data = await api.put('/kitchen/settings', payload);
         if (data.success) {
             settings = { ...settings, ...payload };
+            // Keep dashboard / notification-sound mute in sync with kitchen settings.
+            try {
+                const soundOn = !!(payload.orderAlertSound && payload.generalNotificationSound);
+                localStorage.setItem('scos_notify_sound', soundOn ? '1' : '0');
+            } catch (e) { /* ignore */ }
             const badge = document.getElementById('stationBadge');
             if (badge) badge.textContent = settings.stationName;
-            showToast('Settings saved successfully');
+            showToast(tr('kitchen_settings_saved', 'Settings saved successfully'));
         } else {
-            showToast('Failed to save settings', 'error');
+            showToast(tr('kitchen_settings_save_failed', 'Failed to save settings'), 'error');
         }
     } catch (err) {
         console.error('Save settings error:', err);
-        showToast('Failed to save settings', 'error');
+        showToast(tr('kitchen_settings_save_failed', 'Failed to save settings'), 'error');
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Settings';

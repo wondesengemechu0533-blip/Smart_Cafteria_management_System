@@ -1,28 +1,6 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
-
-const normalizeUserRole = (role) => {
-  const value = String(role ?? '').trim();
-  if (!value) return 'customer';
-
-  const key = value.toLowerCase();
-  const roleMap = {
-    customer: 'customer',
-    kitchen: 'kitchen',
-    foodmaker: 'kitchen',
-    'kitchen staff': 'kitchen',
-    kitchen_staff: 'kitchen',
-    staff: 'kitchen',
-    admin: 'admin',
-    delivery: 'delivery',
-    delivery_staff: 'delivery',
-    'delivery staff': 'delivery',
-    driver: 'delivery',
-    rider: 'delivery'
-  };
-
-  return roleMap[key] || value;
-};
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const { ROLES, normalizeRole } = require('../config/roles');
 
 /**
  * User Schema - Matches Frontend Requirements
@@ -37,29 +15,26 @@ const UserSchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: [true, "Full name is required"],
+      required: [true, 'Full name is required'],
       trim: true,
-      minlength: [2, "Name must be at least 2 characters"],
-      maxlength: [100, "Name cannot exceed 100 characters"],
+      minlength: [2, 'Name must be at least 2 characters'],
+      maxlength: [100, 'Name cannot exceed 100 characters'],
     },
     email: {
       type: String,
-      required: [true, "Email is required"],
+      required: [true, 'Email is required'],
       unique: true,
       lowercase: true,
       trim: true,
-      match: [
-        /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-        "Please provide a valid email address",
-      ],
+      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid email address'],
     },
     phone: {
       type: String,
-      required: [true, "Phone number is required"],
+      required: [true, 'Phone number is required'],
       unique: true,
       match: [
         /^(\+251[0-9]{9}|(09|07)[0-9]{8})$/,
-        "Please provide a valid Ethiopian phone number (e.g. 09XXXXXXXX or +2519XXXXXXXX)",
+        'Please provide a valid Ethiopian phone number (e.g. 09XXXXXXXX or +2519XXXXXXXX)',
       ],
     },
     username: {
@@ -67,9 +42,9 @@ const UserSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
       trim: true,
-      minlength: [3, "Username must be at least 3 characters"],
-      maxlength: [30, "Username cannot exceed 30 characters"],
-      match: [/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"],
+      minlength: [3, 'Username must be at least 3 characters'],
+      maxlength: [30, 'Username cannot exceed 30 characters'],
+      match: [/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'],
       // No default: when absent, the field must be left unset so the sparse
       // unique index does not index it. A `null` value would be indexed by
       // MongoDB (sparse skips only missing fields, not null), causing false
@@ -78,26 +53,28 @@ const UserSchema = new mongoose.Schema(
     address: {
       type: String,
       trim: true,
-      maxlength: [255, "Address cannot exceed 255 characters"],
+      maxlength: [255, 'Address cannot exceed 255 characters'],
       default: null,
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
-      minlength: [8, "Password must be at least 8 characters"],
+      required: [true, 'Password is required'],
+      minlength: [8, 'Password must be at least 8 characters'],
       select: false,
     },
     role: {
       type: String,
-      enum: [
-        "customer",
-        "kitchen",
-        "admin",
-        "delivery"
-      ],
-      default: "customer",
+      enum: ROLES,
+      default: 'customer',
       lowercase: false,
-      set: normalizeUserRole,
+      set: normalizeRole,
+    },
+    // Cafeteria this staff member belongs to. Customers have no cafeteria.
+    // Cafeteria-scoped access is resolved from this field on the backend only.
+    cafeteriaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cafeteria',
+      default: null,
     },
     balance: {
       type: Number,
@@ -106,8 +83,8 @@ const UserSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["ACTIVE", "BLOCKED", "SUSPENDED"],
-      default: "ACTIVE",
+      enum: ['ACTIVE', 'BLOCKED', 'SUSPENDED'],
+      default: 'ACTIVE',
     },
     avatar: {
       type: String,
@@ -119,18 +96,50 @@ const UserSchema = new mongoose.Schema(
     },
     agreedToTerms: {
       type: Boolean,
-      required: [true, "You must agree to the Terms & Conditions"],
+      required: [true, 'You must agree to the Terms & Conditions'],
       default: false,
+    },
+    otpVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    notificationSoundEnabled: {
+      type: Boolean,
+      default: true,
+    },
+    // --- Delivery courier availability ---------------------------------
+    // Manual on-duty toggle set by the courier from the delivery dashboard.
+    // The manager's assignment dropdown reads this together with the live
+    // active-delivery load so a new job is only offered to an available rider.
+    isAvailable: {
+      type: Boolean,
+      default: true,
+    },
+    // Last time the courier did anything on the delivery system (API call or
+    // socket connect). Used to render Available / Offline in the staff list.
+    lastActiveAt: {
+      type: Date,
+      default: null,
+    },
+    // Newest real device GPS fix, mirrored while the courier is tracking an
+    // active delivery. Never generated on the server.
+    lastKnownLocation: {
+      latitude: { type: Number, default: null, min: -90, max: 90 },
+      longitude: { type: Number, default: null, min: -180, max: 180 },
+      accuracy: { type: Number, default: null, min: 0 },
+      heading: { type: Number, default: null, min: -360, max: 360 },
+      speed: { type: Number, default: null, min: 0 },
+      timestamp: { type: Date, default: null },
     },
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 // Hash password before saving
-UserSchema.pre("save", async function () {
-  if (!this.isModified("password")) {
+UserSchema.pre('save', async function () {
+  if (!this.isModified('password')) {
     return;
   }
   const salt = await bcrypt.genSalt(10);
@@ -138,7 +147,7 @@ UserSchema.pre("save", async function () {
 });
 
 // Update updatedAt on save
-UserSchema.pre("findOneAndUpdate", function () {
+UserSchema.pre('findOneAndUpdate', function () {
   this.set({ updatedAt: new Date() });
 });
 
@@ -166,5 +175,6 @@ UserSchema.methods.getPublicProfile = function () {
 
 UserSchema.index({ role: 1 });
 UserSchema.index({ status: 1 });
+UserSchema.index({ cafeteriaId: 1 });
 
-module.exports = mongoose.model("User", UserSchema);
+module.exports = mongoose.model('User', UserSchema);

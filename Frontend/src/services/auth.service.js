@@ -69,11 +69,21 @@ export class AuthService {
         }
 
         api.removeToken();
-        localStorage.removeItem("current_user");
-        localStorage.removeItem("role");
-        localStorage.removeItem("userRole");
-        localStorage.removeItem("userName");
-        localStorage.removeItem("name");
+        [
+            "current_user",
+            "role",
+            "userRole",
+            "userName",
+            "name",
+            "isLoggedIn",
+            "userProfile",
+            "adminLoggedIn",
+            "customerLoggedIn",
+            "managerLoggedIn",
+            "kitchenLoggedIn",
+            "cashierLoggedIn",
+            "deliveryLoggedIn"
+        ].forEach((key) => localStorage.removeItem(key));
     }
 
     async getProfile() {

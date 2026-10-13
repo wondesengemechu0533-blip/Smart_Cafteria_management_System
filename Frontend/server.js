@@ -25,6 +25,9 @@ const MIME_TYPES = {
     '.otf': 'font/otf',
     '.eot': 'application/vnd.ms-fontobject',
     '.mp4': 'video/mp4',
+    '.mp3': 'audio/mpeg',
+    '.ogg': 'audio/ogg',
+    '.wav': 'audio/wav',
     '.txt': 'text/plain; charset=utf-8',
     '.pdf': 'application/pdf'
 };
@@ -42,8 +45,10 @@ const sendFile = (res, filePath) => {
         const headers = {
             'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
             'Cache-Control': isHtml ? 'no-store, no-cache, must-revalidate' : 'no-cache',
-            // Hybrid CSP - vendored CSS/JS offline + allow Unsplash banners when online, with local fallback onerror
-            'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* http://127.0.0.1:* http://localhost:*; img-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+            // Hybrid CSP - vendored CSS/JS offline + allow Unsplash banners when online, with local fallback onerror.
+            // connect-src must include the LAN backend (http://<lan-ip>:5000) and
+            // ws/wss so phones on the same Wi-Fi can call the real API + sockets.
+            'Content-Security-Policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; connect-src 'self' ws://*:* wss://*:* http://*:* https://*:*; img-src 'self' data: blob: https: http:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; media-src 'self' data: blob: https: http:"
         };
         if (isHtml) headers['Pragma'] = 'no-cache';
         res.writeHead(200, headers);
@@ -124,24 +129,27 @@ server.on('upgrade', (req, socket) => {
 });
 
 const start = () => {
-    let listenPort = PORT;
-    const listen = (attemptPort) => {
-        server.once('error', (err) => {
-            if (err.code === 'EADDRINUSE' && attemptPort < PORT + 10) {
-                console.warn(`⚠️  Port ${attemptPort} is in use, trying ${attemptPort + 1}...`);
-                server.removeAllListeners('listening');
-                listen(attemptPort + 1);
-            } else {
-                console.error('✗ Frontend startup failed:', err.message);
-                process.exit(1);
-            }
-        });
-        server.once('listening', () => {
-            console.log(`🚀 Frontend running at: http://localhost:${attemptPort}`);
-        });
-        server.listen(attemptPort);
-    };
-    listen(listenPort);
+    // The app MUST run on PORT (default 5500): the backend CORS whitelist only
+    // allows 5500/5501 and the frontend is hardcoded to talk to the backend on
+    // 5000. Do NOT fall back to a higher port silently - it breaks CORS and
+    // hides stale server instances. Fail loudly instead.
+    server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+            console.error(`\n✗ Port ${PORT} is already in use.`);
+            console.error(`  The backend only allows CORS from http://localhost:5500 and http://localhost:5501.`);
+            console.error(`  Another frontend server is probably still running.`);
+            console.error(`  Fix: close the other process, or on Windows run:`);
+            console.error(`       netstat -ano | findstr :${PORT}`);
+            console.error(`       taskkill /PID <pid> /F\n`);
+        } else {
+            console.error('✗ Frontend startup failed:', err.message);
+        }
+        process.exit(1);
+    });
+    server.once('listening', () => {
+        console.log(`🚀 Frontend running at: http://localhost:${PORT}`);
+    });
+    server.listen(PORT);
 };
 
 start();

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="cashier_payments">Payments - Smart Cafeteria</title>
+
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/src/css/style.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="/src/css/delivery.css">
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar cashier-sidebar" id="cashierSidebar"></aside>
+        <main class="admin-main">
+            <div class="delivery-header">
+                <h1><i class="fa-solid fa-wallet"></i> <span data-i18n="cashier_payments">Payments</span></h1>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshPaymentsBtn"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+                        <div>
+                            <label class="form-label" for="paymentSearchInput">Search</label>
+                            <input type="text" id="paymentSearchInput" class="form-control" placeholder="Txn, order #, customer..." style="min-width:220px;">
+                        </div>
+                        <div>
+                            <label class="form-label" for="paymentStatusFilter">Status</label>
+                            <select id="paymentStatusFilter" class="form-select">
+                                <option value="all">All</option>
+                                <option value="PAID">Paid</option>
+                                <option value="PENDING">Pending</option>
+                                <option value="FAILED">Failed</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="paymentMethodFilter">Method</label>
+                            <select id="paymentMethodFilter" class="form-select">
+                                <option value="all">All</option>
+                                <option value="CASH">Cash</option>
+                                <option value="CARD">Card</option>
+                                <option value="TELEBIRR">Telebirr</option>
+                                <option value="CHAPA">Chapa</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="form-label" for="paymentDateFilter">Date</label>
+                            <input type="date" id="paymentDateFilter" class="form-control">
+                        </div>
+                        <div>
+                            <button type="button" class="btn btn-primary" id="applyPaymentFiltersBtn"><i class="fa-solid fa-filter"></i> Apply</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="errorBanner" class="error-banner" style="display:none;"></div>
+
+            <div class="card">
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Order ID</th>
+                                <th>Customer</th>
+                                <th>Method</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Transaction</th>
+                                <th>Paid At</th>
+                            </tr>
+                        </thead>
+                        <tbody id="paymentsTableBody">
+                            <tr><td colspan="7" class="table-empty">Loading payments...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <span class="pagination-info" id="paymentsPaginationInfo">Page 1</span>
+                    <div class="pagination-actions">
+                        <button class="btn btn-secondary" id="prevPaymentsPageBtn">Prev</button>
+                        <button class="btn btn-secondary" id="nextPaymentsPageBtn">Next</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="../../js/config.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/cashier-layout.js"></script>
+    <script src="../../js/cashier-payments.js"></script>
+    <script>
+        function initPageSpecific() {}
+    </script>
+</body>
+</html>

@@ -1,3 +1,7 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  return fallback;
+}
 /**
  * ================================================================
  * SMART CAFETERIA ORDERING SYSTEM - ADMIN PROFILE
@@ -20,12 +24,14 @@
   function setLoading(btn, loading) {
     if (!btn) return;
     if (loading) {
+      if (btn.disabled) return;
       btn.disabled = true;
       btn.dataset.originalText = btn.innerHTML;
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
     } else {
       btn.disabled = false;
       btn.innerHTML = btn.dataset.originalText || 'Update Password';
+      delete btn.dataset.originalText;
     }
   }
 
@@ -64,15 +70,15 @@
     const confirm = document.getElementById('confirmPassword').value;
 
     if (!current || !newPass || !confirm) {
-      showAlert('All fields are required', 'error');
+      showAlert(tr('all_fields_required', 'All fields are required'), 'error');
       return;
     }
     if (newPass.length < 6) {
-      showAlert('New password must be at least 6 characters', 'error');
+      showAlert(tr('password_min_length', 'New password must be at least 6 characters'), 'error');
       return;
     }
     if (newPass !== confirm) {
-      showAlert('Passwords do not match', 'error');
+      showAlert(tr('password_mismatch', 'Passwords do not match'), 'error');
       return;
     }
 
@@ -83,10 +89,10 @@
       if (data.token) {
         localStorage.setItem('auth_token', data.token);
       }
-      showAlert('Password updated successfully. Please sign out and sign back in with your new password.');
+      showAlert(tr('password_updated', 'Password updated successfully. Please sign out and sign back in with your new password.'));
       document.getElementById('passwordForm').reset();
     } catch (error) {
-      showAlert('Failed to update password: ' + (error.message || error), 'error');
+      showAlert(tr('failed_update_password', 'Failed to update password: ') + (error.message || error), 'error');
     } finally {
       setLoading(btn, false);
     }
@@ -106,7 +112,7 @@
         input.type = isPassword ? 'text' : 'password';
         icon.classList.toggle('fa-eye', !isPassword);
         icon.classList.toggle('fa-eye-slash', isPassword);
-        icon.title = isPassword ? 'Hide password' : 'Show password';
+        icon.title = isPassword ? tr('hide_password', 'Hide password') : tr('show_password', 'Show password');
       });
     });
   }

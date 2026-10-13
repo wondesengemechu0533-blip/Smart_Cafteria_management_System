@@ -441,7 +441,7 @@
             </button>
             <div class="kds-header-title">
                 <i class="fa-solid fa-fire-burner fa-xl"></i>
-                <h1>Kitchen Display System</h1>
+                <h1 data-i18n="kitchen_display_system">Kitchen Display System</h1>
             </div>
         </div>
         <div class="user-menu">
@@ -454,7 +454,7 @@
             <div class="user-dropdown">
                 <button class="kds-nav-btn" id="userMenuBtn" onclick="toggleUserMenu()">
                     <i class="fa-solid fa-user-circle"></i>
-                    <span id="userName">Profile</span>
+                    <span data-i18n="profile" id="userName">Profile</span>
                 </button>
                 <div class="dropdown-menu-custom" id="userDropdownMenu">
                 </div>
@@ -471,31 +471,34 @@
         <aside class="kds-sidebar" id="kdsSidebar">
             <div class="kds-sidebar-brand">
                 <i class="fa-solid fa-fire-burner"></i>
-                <span>Kitchen Menu</span>
+                <span data-i18n="kitchen_brand">Kitchen Menu</span>
             </div>
             <nav class="sidebar-nav">
                 <div class="sidebar-group">
-                    <a href="dashboard.html" class="sidebar-link">
+                    <a data-i18n="kitchen_nav_dashboard" href="/src/pages/kitchen/dashboard.html" class="sidebar-link">
                         <i class="fa-solid fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="orders.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/orders.html" class="sidebar-link">
                         <i class="fa-solid fa-receipt"></i> Orders
                     </a>
-                    <a href="availability.html" class="sidebar-link active">
+                    <a href="/src/pages/kitchen/availability.html" class="sidebar-link active">
                         <i class="fa-solid fa-burger"></i> Availability
                     </a>
-                    <a href="stock-alerts.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
+                    </a>
+                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
+                        <i class="fa-solid fa-flag"></i> Issue Reports
                     </a>
                 </div>
                 <div class="sidebar-group" style="margin-top: 16px;">
-                    <a href="notifications.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
-                    <a href="schedule.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/schedule.html" class="sidebar-link">
                         <i class="fa-solid fa-clock"></i> Preparation Schedule
                     </a>
-                    <a href="settings.html" class="sidebar-link">
+                    <a href="/src/pages/kitchen/settings.html" class="sidebar-link">
                         <i class="fa-solid fa-gear"></i> Settings
                     </a>
                 </div>
@@ -513,9 +516,9 @@
 
                 <div class="filters">
                     <div class="filter-group">
-                        <label for="categoryFilter">Category:</label>
+                        <label data-i18n="category_colon" for="categoryFilter">Category:</label>
                         <select id="categoryFilter" onchange="filterItems()">
-                            <option value="">All Categories</option>
+                            <option data-i18n="all_categories" value="">All Categories</option>
                             <option value="breakfast">Breakfast</option>
                             <option value="mains">Mains</option>
                             <option value="main-meals">Main Meals</option>
@@ -525,11 +528,11 @@
                         </select>
                     </div>
                     <div class="filter-group">
-                        <label for="statusFilter">Status:</label>
+                        <label data-i18n="status_colon" for="statusFilter">Status:</label>
                         <select id="statusFilter" onchange="filterItems()">
-                            <option value="">All Items</option>
-                            <option value="available">Available</option>
-                            <option value="unavailable">Unavailable</option>
+                            <option data-i18n="all_items" value="">All Items</option>
+                            <option data-i18n="status_available" value="available">Available</option>
+                            <option data-i18n="status_unavailable" value="unavailable">Unavailable</option>
                         </select>
                     </div>
                     <button class="btn-filter" onclick="filterItems()">?? Filter</button>
@@ -552,20 +555,21 @@
             <form id="unavailableForm">
                 <input type="hidden" id="itemIdForModal">
                 <div class="form-group">
-                    <label for="unavailableReason">Reason</label>
+                    <label data-i18n="kitchen_reason" for="unavailableReason">Reason</label>
                     <textarea id="unavailableReason" placeholder="e.g., Out of stock, Equipment issue, etc." required></textarea>
                 </div>
                 <div class="modal-buttons">
-                    <button type="button" class="btn-cancel" onclick="closeUnavailableModal()">Cancel</button>
-                    <button type="submit" class="btn-submit">Mark Unavailable</button>
+                    <button data-i18n="nav_cancel" type="button" class="btn-cancel" onclick="closeUnavailableModal()">Cancel</button>
+                    <button data-i18n="kitchen_mark_unavailable" type="submit" class="btn-submit">Mark Unavailable</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <script type="module" src="../../js/utils/i18n.js?v=20260907"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261013b"></script>
     <script src="../../js/config.js?v=20260907"></script>
-<script src="../../js/kitchen/availability.js?v=20260907"></script>
+    <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
+<script src="../../js/kitchen/availability.js?v=20261013"></script>
 
     <!-- Navigation & User Menu Script -->
     <script>

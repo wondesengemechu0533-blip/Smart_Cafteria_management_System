@@ -11,6 +11,35 @@
     <link rel="stylesheet" href="/src/css/delivery.css">
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
+    <style>
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+            align-items: start;
+        }
+        .profile-card { padding: 22px; margin: 0; }
+        .profile-card h4 { margin-top: 0; display: flex; align-items: center; gap: 8px; }
+        .profile-details { list-style: none; margin: 0; padding: 0; }
+        .profile-details li {
+            display: flex; justify-content: space-between; gap: 12px;
+            padding: 9px 0; border-bottom: 1px dashed #e2e8f0; font-size: 0.9rem;
+        }
+        .profile-details li:last-child { border-bottom: none; }
+        .profile-details .k { color: #64748b; }
+        .profile-details .v { color: #0f172a; font-weight: 600; text-align: right; word-break: break-word; }
+        .profile-lock {
+            font-size: 0.78rem; color: #94a3b8; margin-top: 6px;
+            display: inline-flex; align-items: center; gap: 5px;
+        }
+        .profile-sound-row {
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        }
+        [data-theme="dark"] .profile-details li { border-bottom-color: #334155; }
+        [data-theme="dark"] .profile-details .k,
+        [data-theme="dark"] .profile-lock { color: #94a3b8; }
+        [data-theme="dark"] .profile-details .v { color: #e2e8f0; }
+    </style>
 </head>
 <body class="admin-body">
 
@@ -28,40 +57,103 @@
             <div class="card" style="padding:24px; margin-bottom:20px;">
                 <div class="text-center">
                     <div class="avatar profile-avatar mx-auto mb-3" id="profileAvatar">D</div>
-                    <h3 id="profileName" style="margin:10px 0 4px;">Delivery Staff</h3>
+                    <h3 id="profileName" style="margin:10px 0 4px;" data-i18n="delivery_role">Delivery Staff</h3>
                     <p class="form-text" id="profileEmail" style="color:#64748b;">delivery@cafeteria.com</p>
                     <span class="badge badge-warning" id="profileRole">DELIVERY STAFF</span>
+                    <span class="badge badge-neutral" id="profileStatus" style="margin-left:6px;">—</span>
                 </div>
             </div>
 
-            <div class="card" style="padding:24px;">
-                <h4 style="margin-top:0;"><i class="fa-solid fa-key" style="color:#f97316;"></i> Change Password</h4>
-                <form id="passwordForm">
-                    <div class="form-group">
-                        <label for="currentPassword" class="form-label">Current Password</label>
-                        <div class="input-wrapper">
-                            <input type="password" id="currentPassword" class="form-control" required autocomplete="current-password">
-                            <i class="fa-regular fa-eye toggle-password-icon" data-target="currentPassword" title="Show password"></i>
+            <div class="section-title"><h3><i class="fa-solid fa-chart-simple" style="color:#64748b;"></i> <span data-i18n="delivery_profile_stats">My Delivery Performance</span></h3></div>
+            <div class="stats-row">
+                <div class="stat-card"><div class="num" id="statActive">0</div><div class="lbl" data-i18n="delivery_stat_my_active">My Active Deliveries</div></div>
+                <div class="stat-card"><div class="num" id="statOut">0</div><div class="lbl" data-i18n="delivery_stat_out">Out for Delivery</div></div>
+                <div class="stat-card"><div class="num" id="statArrived">0</div><div class="lbl" data-i18n="delivery_stat_arrived">Arrived</div></div>
+                <div class="stat-card"><div class="num" id="statDelivered">0</div><div class="lbl" data-i18n="delivery_stat_delivered_all">Delivered (All Time)</div></div>
+                <div class="stat-card"><div class="num" id="statToday">0</div><div class="lbl" data-i18n="delivery_stat_today">Delivered Today</div></div>
+                <div class="stat-card"><div class="num" id="statCollected">0.00 ETB</div><div class="lbl" data-i18n="delivery_stat_collected">Collected (All Time)</div></div>
+                <div class="stat-card"><div class="num" id="statAvg">—</div><div class="lbl" data-i18n="delivery_stat_avg">Avg Delivery Time</div></div>
+                <div class="stat-card"><div class="num" id="statFailed">0</div><div class="lbl" data-i18n="delivery_stat_failed">Failed Deliveries</div></div>
+            </div>
+
+            <div class="section-title"><h3><i class="fa-solid fa-address-card" style="color:#64748b;"></i> <span data-i18n="delivery_profile_account">Account Information</span></h3></div>
+            <div class="profile-grid">
+                <div class="card profile-card">
+                    <h4><i class="fa-solid fa-circle-info" style="color:#2563eb;"></i> <span data-i18n="delivery_profile_details">My Details</span></h4>
+                    <ul class="profile-details">
+                        <li><span class="k" data-i18n="delivery_field_name">Full Name</span><span class="v" id="detailName">—</span></li>
+                        <li><span class="k" data-i18n="delivery_field_email">Email</span><span class="v" id="detailEmail">—</span></li>
+                        <li><span class="k" data-i18n="delivery_field_phone">Phone</span><span class="v" id="detailPhone">—</span></li>
+                        <li><span class="k" data-i18n="delivery_field_role">Role</span><span class="v" id="detailRole">—</span></li>
+                        <li><span class="k" data-i18n="delivery_field_status">Account Status</span><span class="v" id="detailStatus">—</span></li>
+                        <li><span class="k" data-i18n="delivery_field_member_since">Member Since</span><span class="v" id="detailSince">—</span></li>
+                    </ul>
+                    <p class="profile-lock"><i class="fa-solid fa-lock"></i> <span data-i18n="delivery_profile_role_locked">Role and account status are managed by your cafeteria administrator.</span></p>
+                </div>
+
+                <div class="card profile-card">
+                    <h4><i class="fa-solid fa-pen-to-square" style="color:#f97316;"></i> <span data-i18n="delivery_edit_profile">Edit Profile</span></h4>
+                    <form id="profileForm">
+                        <div class="form-group">
+                            <label for="editName" class="form-label" data-i18n="delivery_field_name">Full Name</label>
+                            <input type="text" id="editName" class="form-control" maxlength="100" autocomplete="name">
+                        </div>
+                        <div class="form-group">
+                            <label for="editPhone" class="form-label" data-i18n="delivery_field_phone">Phone</label>
+                            <input type="tel" id="editPhone" class="form-control" placeholder="09XXXXXXXX" autocomplete="tel">
+                            <small class="form-text" data-i18n="delivery_phone_hint">09XXXXXXXX or +2519XXXXXXXX</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="editEmail" class="form-label" data-i18n="delivery_field_email">Email</label>
+                            <input type="email" id="editEmail" class="form-control" autocomplete="email">
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="saveProfileBtn">
+                            <i class="fa-solid fa-floppy-disk"></i> <span data-i18n="delivery_save_profile">Save Changes</span>
+                        </button>
+                    </form>
+                </div>
+
+                <div class="card profile-card">
+                    <h4><i class="fa-solid fa-key" style="color:#f97316;"></i> <span data-i18n="delivery_change_password">Change Password</span></h4>
+                    <form id="passwordForm">
+                        <div class="form-group">
+                            <label for="currentPassword" class="form-label" data-i18n="delivery_current_password">Current Password</label>
+                            <div class="input-wrapper">
+                                <input type="password" id="currentPassword" class="form-control" required autocomplete="current-password">
+                                <i class="fa-regular fa-eye toggle-password-icon" data-target="currentPassword" data-i18n-title="delivery_show_password" title="Show password"></i>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="newPassword" class="form-label" data-i18n="delivery_new_password">New Password</label>
+                            <div class="input-wrapper">
+                                <input type="password" id="newPassword" class="form-control" required autocomplete="new-password">
+                                <i class="fa-regular fa-eye toggle-password-icon" data-target="newPassword" data-i18n-title="delivery_show_password" title="Show password"></i>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="confirmPassword" class="form-label" data-i18n="delivery_confirm_new_password">Confirm New Password</label>
+                            <div class="input-wrapper">
+                                <input type="password" id="confirmPassword" class="form-control" required autocomplete="new-password">
+                                <i class="fa-regular fa-eye toggle-password-icon" data-target="confirmPassword" data-i18n-title="delivery_show_password" title="Show password"></i>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="changePasswordBtn" data-i18n="delivery_update_password">
+                            <i class="fa-solid fa-key"></i> Update Password
+                        </button>
+                    </form>
+                </div>
+
+                <div class="card profile-card">
+                    <h4><i class="fa-solid fa-bell" style="color:#2563eb;"></i> <span data-i18n="delivery_profile_prefs">Preferences</span></h4>
+                    <div class="profile-sound-row">
+                        <label for="soundToggle" data-i18n="delivery_pref_sound">Notification sound</label>
+                        <div>
+                            <input type="checkbox" id="soundToggle" class="form-check-input">
+                            <span class="form-text" id="soundState" data-i18n="delivery_pref_sound_on">On</span>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="newPassword" class="form-label">New Password</label>
-                        <div class="input-wrapper">
-                            <input type="password" id="newPassword" class="form-control" required autocomplete="new-password">
-                            <i class="fa-regular fa-eye toggle-password-icon" data-target="newPassword" title="Show password"></i>
-                        </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="confirmPassword" class="form-label">Confirm New Password</label>
-                        <div class="input-wrapper">
-                            <input type="password" id="confirmPassword" class="form-control" required autocomplete="new-password">
-                            <i class="fa-regular fa-eye toggle-password-icon" data-target="confirmPassword" title="Show password"></i>
-                        </div>
-                    </div>
-                    <button type="submit" class="btn btn-primary" id="changePasswordBtn" form="passwordForm">
-                        <i class="fa-solid fa-key"></i> Update Password
-                    </button>
-                </form>
+                    <p class="profile-lock"><i class="fa-solid fa-circle-info"></i> <span data-i18n="delivery_pref_sound_hint">Plays the cafeteria alert chime for new assignments and delivery updates.</span></p>
+                </div>
             </div>
 
         </main>
@@ -71,6 +163,7 @@
     <script src="../../js/config.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/delivery-layout.js"></script>
+    <script src="../../js/notification-sound.js"></script>
     <script type="module" src="../../js/api.js"></script>
     <script type="module" src="../../js/delivery/profile.js"></script>
     <script type="module" src="../../js/components/unified-header.js"></script>

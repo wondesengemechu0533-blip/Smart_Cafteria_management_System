@@ -1,14 +1,25 @@
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     const notificationsContainer = document.getElementById("notifications-container");
     const markAllReadBtn = document.getElementById("mark-all-read-btn");
     const clearAllBtn = document.getElementById("clear-notifications-btn");
+
+    function getLang() {
+        try { return (window.getCurrentLanguage && window.getCurrentLanguage()) || localStorage.getItem("scos_language") || localStorage.getItem("cafeteria_language") || "en"; } catch (e) { return "en"; }
+    }
 
     // Load notifications from backend API
     async function getNotifications() {
         try {
             const token = localStorage.getItem("auth_token");
             if (!token) {
-                renderEmpty("Please log in to view notifications.");
+                renderEmpty((typeof window.tr === "function" ? window.tr("notif_login_required", "Please log in to view notifications.") : "Please log in to view notifications."));
                 return [];
             }
             const response = await fetch(window.__API_URL + "/notifications", {
@@ -21,16 +32,18 @@ document.addEventListener("DOMContentLoaded", () => {
             return [];
         } catch (err) {
             console.error("Failed to load notifications:", err);
-            renderEmpty("Failed to load notifications.");
+            renderEmpty((typeof window.tr === "function" ? window.tr("notif_load_failed", "Failed to load notifications.") : "Failed to load notifications."));
             return [];
         }
     }
 
     function renderEmpty(message) {
+        if (!notificationsContainer) return;
+        const isAm = getLang() === "am";
         notificationsContainer.innerHTML = `
             <div class="empty-state-card">
                 <i class="fa-regular fa-bell-slash empty-icon"></i>
-                <h3>No Notifications</h3>
+                <h3>${typeof window.tr === "function" ? window.tr("notif_none", isAm ? "ምንም ማሳወቂያ የለም" : "No Notifications") : (isAm ? "ምንም ማሳወቂያ የለም" : "No Notifications")}</h3>
                 <p>${message}</p>
             </div>
         `;
@@ -41,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const list = await getNotifications();
 
         if (!list || list.length === 0) {
-            renderEmpty("You have no recent alerts or order updates right now.");
+            renderEmpty((typeof window.tr === "function" ? window.tr("notif_no_recent", "You have no recent alerts or order updates right now.") : "You have no recent alerts or order updates right now."));
             return;
         }
 
@@ -140,6 +153,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 renderNotifications();
+                // The bell badge shows unread counts, so it must follow.
+                window.dispatchEvent(new CustomEvent("notification:refresh"));
+                if (typeof window.refreshNotificationBadge === "function") {
+                    window.refreshNotificationBadge();
+                }
             } catch (err) {
                 console.error("Failed to mark all as read:", err);
             }
@@ -149,22 +167,25 @@ document.addEventListener("DOMContentLoaded", () => {
     // Clear All - actually delete all notifications
     if (clearAllBtn) {
         clearAllBtn.addEventListener("click", async () => {
-            if (confirm("Are you sure you want to clear all notifications?")) {
-                try {
-                    const token = localStorage.getItem("auth_token");
-                    await fetch(window.__API_URL + "/notifications", {
-                        method: "DELETE",
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-                    renderNotifications();
-                    // Keep the header/bell unread badge in sync.
-                    window.dispatchEvent(new CustomEvent("notification:refresh"));
-                    if (typeof window.refreshNotificationBadge === "function") {
-                        window.refreshNotificationBadge();
-                    }
-                } catch (err) {
-                    console.error("Failed to clear all notifications:", err);
+            // Deleting is irreversible, so it must only run when the user
+            // CONFIRMS. The condition used to be inverted, which wiped every
+            // notification on Cancel and did nothing on OK.
+            const ok = confirm((typeof window.tr === "function" ? window.tr("notif_clear_confirm", "Are you sure you want to clear all notifications?") : "Are you sure you want to clear all notifications?"));
+            if (!ok) return;
+            try {
+                const token = localStorage.getItem("auth_token");
+                await fetch(window.__API_URL + "/notifications", {
+                    method: "DELETE",
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                renderNotifications();
+                // Keep the header/bell unread badge in sync.
+                window.dispatchEvent(new CustomEvent("notification:refresh"));
+                if (typeof window.refreshNotificationBadge === "function") {
+                    window.refreshNotificationBadge();
                 }
+            } catch (err) {
+                console.error("Failed to clear all notifications:", err);
             }
         });
     }
@@ -181,8 +202,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         socket.on("notification:new", (notification) => {
             renderNotifications();
+            // The bell badge lives outside this list, so refresh it whenever a
+            // new row arrives.
+            window.dispatchEvent(new CustomEvent("notification:refresh"));
+            if (typeof window.refreshNotificationBadge === "function") {
+                window.refreshNotificationBadge();
+            }
         });
     }
+
+    // Re-render the notifications list instantly when the language changes.
+    __registerLangChange(() => {
+        try { renderNotifications(); } catch (e) {}
+    });
 
     renderNotifications();
     setupRealtimeListener();

@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * KitchenShift Schema - Track kitchen staff shifts
@@ -13,13 +13,13 @@ const KitchenShiftSchema = new mongoose.Schema(
   {
     staffId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
     },
     shiftType: {
       type: String,
-      enum: ["morning", "afternoon", "evening", "night", "custom"],
-      default: "morning",
+      enum: ['morning', 'afternoon', 'evening', 'night', 'custom'],
+      default: 'morning',
     },
     startTime: {
       type: Date,
@@ -31,8 +31,8 @@ const KitchenShiftSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["scheduled", "active", "completed", "cancelled"],
-      default: "scheduled",
+      enum: ['scheduled', 'active', 'completed', 'cancelled'],
+      default: 'scheduled',
     },
     clockInTime: {
       type: Date,
@@ -63,7 +63,7 @@ const KitchenShiftSchema = new mongoose.Schema(
     },
     notes: {
       type: String,
-      default: "",
+      default: '',
     },
   },
   {
@@ -76,4 +76,4 @@ KitchenShiftSchema.index({ staffId: 1, status: 1 });
 KitchenShiftSchema.index({ startTime: 1 });
 KitchenShiftSchema.index({ status: 1 });
 
-module.exports = mongoose.model("KitchenShift", KitchenShiftSchema);
+module.exports = mongoose.model('KitchenShift', KitchenShiftSchema);

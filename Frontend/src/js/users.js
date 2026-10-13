@@ -1,3 +1,10 @@
+function __registerLangChange(fn) {
+  var reg = window.onLanguageChangeSafe || window.onLanguageChange || window.i18nOnLanguageChange;
+  if (typeof reg === 'function') reg(fn);
+  window.addEventListener('language:changed', fn);
+  window.addEventListener('languageChanged', fn);
+}
+
 /**
  * ================================================================
  * SMART CAFETERIA - USER MANAGEMENT (All 6 Actions)
@@ -20,6 +27,7 @@
   "use strict";
 
   var state = { page: 1, limit: 10, search: "", role: "", status: "", total: 0, pages: 1 };
+  var loadSeq = 0;
   var pendingToggleUser = null;
   var pendingDeleteUser = null;
 
@@ -28,11 +36,16 @@
    * ---------------------------------------------------------------- */
   var ROLE_LABELS = {
     customer: { key: "role_customer", en: "Customer" },
-    kitchen:  { key: "role_kitchen", en: "Kitchen Staff" },
+    kitchen:  { key: "admin_user_role_kitchen", en: "Kitchen Staff" },
     delivery: { key: "role_delivery", en: "Delivery Staff" },
+    cashier:  { key: "role_cashier", en: "Cashier" },
+    manager:  { key: "role_cafeteria_manager", en: "Cafeteria Manager" },
+    cafeteria_admin: { key: "role_cafeteria_admin", en: "Cafeteria Admin" },
+    system_admin: { key: "role_system_admin", en: "System Admin" },
+    admin:    { key: "role_system_admin", en: "System Admin" },
     staff:    { key: "role_staff", en: "Staff" },
     student:  { key: "role_student", en: "Student" },
-    admin:    { key: "role_admin", en: "Admin" }
+    tax_authority: { key: "role_tax_authority", en: "Tax Authority" }
   };
   var STATUS_LABELS = {
     ACTIVE:    { key: "status_active", en: "Active" },
@@ -45,10 +58,15 @@
     try { return (window.getCurrentLanguage && window.getCurrentLanguage()) || localStorage.getItem("scos_language") || "en"; }
     catch (e) { return "en"; }
   }
-  function t(key) {
-    try { if (window.getText) { var v = window.getText(key); if (v !== key) return v; } } catch (e) {}
-    return key;
+  function tr(key, fallback, vars) {
+    if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+    if (typeof window.getText === "function") {
+      var v = window.getText(key);
+      if (v && v !== key) return v;
+    }
+    return fallback != null ? fallback : key;
   }
+  function t(key, fallback) { return tr(key, fallback != null ? fallback : key); }
   function roleLabel(role) { var l = ROLE_LABELS[String(role).toLowerCase()]; if (l && l.key) { var v = t(l.key); if (v !== l.key) return v; } return l ? (l[getLang()] || l.en) : (role || "—"); }
   function statusLabel(s) { var l = STATUS_LABELS[String(s).toUpperCase()]; if (l && l.key) { var v = t(l.key); if (v !== l.key) return v; } return l ? (l[getLang()] || l.en) : (s || "—"); }
   function esc(str) { return window.esc ? window.esc(str) : String(str || ""); }
@@ -67,9 +85,10 @@
   function rolePill(role) {
     var r = String(role || "").toUpperCase();
     var cls = "role-pill";
-    if (r === "ADMIN") cls += " role-admin";
+    if (r === "ADMIN" || r === "SYSTEM_ADMIN") cls += " role-admin";
     else if (r === "KITCHEN") cls += " role-kitchen";
     else if (r === "DELIVERY") cls += " role-delivery";
+    else if (r === "CASHIER" || r === "MANAGER" || r === "CAFETERIA_ADMIN") cls += " role-admin";
     else cls += " role-customer";
     return '<span class="' + cls + '">' + esc(roleLabel(role)) + "</span>";
   }
@@ -111,18 +130,21 @@
   async function loadUsers() {
     var tbody = document.getElementById("usersTableBody");
     if (!tbody || !window.AdminAPI) return;
-    tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-spinner fa-spin"></i> Loading...</td></tr>';
+    var seq = ++loadSeq;
+    tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-spinner fa-spin"></i> ' + esc(t("loading", "Loading...")) + '</td></tr>';
     try {
       var data = await window.AdminAPI.get("/admin/users", {
         page: state.page, limit: state.limit, search: state.search, role: state.role, status: state.status
       });
+      if (seq !== loadSeq) return;
       state.total = data.total || 0;
       state.pages = data.pages || Math.max(Math.ceil(state.total / state.limit), 1);
       window.__usersCache = data.users || [];
       renderUsers(window.__usersCache);
       renderPagination();
     } catch (error) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-circle-exclamation"></i> ' + esc(error.message || "Server error") + "</td></tr>";
+      if (seq !== loadSeq) return;
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-circle-exclamation"></i> ' + esc(error.message || t("error_server", "Server error")) + "</td></tr>";
     }
   }
 
@@ -130,7 +152,7 @@
     var tbody = document.getElementById("usersTableBody");
     if (!tbody) return;
     if (!users.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-users"></i> No users found</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="table-empty"><i class="fa-solid fa-users"></i> ' + esc(t("no_users_found", tr('no_users_found', 'No users found'))) + '</td></tr>';
       return;
     }
     tbody.innerHTML = users.map(function (u) {
@@ -140,11 +162,11 @@
       // Button 5: Block/Unblock toggle
       var toggleBtn;
       if (isSelf) {
-        toggleBtn = '<button class="action-btn" title="Cannot block yourself" disabled><i class="fa-solid fa-lock"></i></button>';
+        toggleBtn = '<button class="action-btn" title="' + esc(t("cannot_block_self", "Cannot block yourself")) + '" disabled><i class="fa-solid fa-lock"></i></button>';
       } else if (isActive) {
-        toggleBtn = '<button class="action-btn" data-action="toggle" data-id="' + u.id + '" title="Block user"><i class="fa-solid fa-user-slash"></i></button>';
+        toggleBtn = '<button class="action-btn" data-action="toggle" data-id="' + u.id + '" title="' + esc(t("block_user", "Block user")) + '"><i class="fa-solid fa-user-slash"></i></button>';
       } else {
-        toggleBtn = '<button class="action-btn action-btn-success" data-action="toggle" data-id="' + u.id + '" title="Unblock user"><i class="fa-solid fa-user-check"></i></button>';
+        toggleBtn = '<button class="action-btn action-btn-success" data-action="toggle" data-id="' + u.id + '" title="' + esc(t("unblock_user", "Unblock user")) + '"><i class="fa-solid fa-user-check"></i></button>';
       }
 
       return (
@@ -164,17 +186,17 @@
           "<td>" +
             '<div class="table-actions">' +
               // 1. View
-              '<button class="action-btn" data-action="view" data-id="' + u.id + '" title="View details"><i class="fa-solid fa-eye"></i></button>' +
+              '<button class="action-btn" data-action="view" data-id="' + u.id + '" title="' + esc(t("view_details", "View details")) + '"><i class="fa-solid fa-eye"></i></button>' +
               // 2. Edit
-              '<button class="action-btn" data-action="edit" data-id="' + u.id + '" title="Edit user"><i class="fa-solid fa-pen"></i></button>' +
+              '<button class="action-btn" data-action="edit" data-id="' + u.id + '" title="' + esc(t("edit_user", "Edit user")) + '"><i class="fa-solid fa-pen"></i></button>' +
               // 3. ID Card
-              '<button class="action-btn" data-action="idcard" data-id="' + u.id + '" title="ID Badge"><i class="fa-solid fa-id-card"></i></button>' +
+              '<button class="action-btn" data-action="idcard" data-id="' + u.id + '" title="' + esc(t("id_badge", "ID Badge")) + '"><i class="fa-solid fa-id-card"></i></button>' +
               // 4. Reset Password
-              '<button class="action-btn" data-action="password" data-id="' + u.id + '" title="Reset password"><i class="fa-solid fa-key"></i></button>' +
+              '<button class="action-btn" data-action="password" data-id="' + u.id + '" title="' + esc(t("reset_password", "Reset password")) + '"><i class="fa-solid fa-key"></i></button>' +
               // 5. Block/Unblock
               toggleBtn +
               // 6. Delete
-              '<button class="action-btn danger" data-action="delete" data-id="' + u.id + '" title="Delete user"><i class="fa-solid fa-trash"></i></button>' +
+              '<button class="action-btn danger" data-action="delete" data-id="' + u.id + '" title="' + esc(t("delete_user", "Delete user")) + '"><i class="fa-solid fa-trash"></i></button>' +
             "</div>" +
           "</td>" +
         "</tr>"
@@ -186,7 +208,7 @@
     var info = document.getElementById("paginationInfo");
     var prev = document.getElementById("prevPageBtn");
     var next = document.getElementById("nextPageBtn");
-    if (info) info.textContent = "Page " + state.page + " of " + Math.max(state.pages, 1) + " (" + state.total + " users)";
+    if (info) info.textContent = tr('page_info', 'Page {page} of {pages} ({total} items)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prev) prev.disabled = state.page <= 1;
     if (next) next.disabled = state.page >= state.pages;
   }
@@ -411,7 +433,7 @@
     var user = pendingDeleteUser;
 
     var btn = document.getElementById("confirmDeleteBtn");
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...'; }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Deleting...'; }
 
     try {
       await window.AdminAPI.del("/admin/users/" + user.id);
@@ -607,6 +629,15 @@
     bindEvents();
     loadStats();
     loadUsers();
+
+    __registerLangChange(function () {
+        try {
+          if (!document.getElementById("usersTableBody")) return;
+          if (!window.__usersCache) return;
+          renderUsers(window.__usersCache);
+          renderPagination();
+        } catch (e) { /* best-effort re-render */ }
+    });
   }
 
   document.addEventListener("DOMContentLoaded", init);

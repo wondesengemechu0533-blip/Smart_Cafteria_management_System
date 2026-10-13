@@ -37,26 +37,35 @@ function isCustomer() {
 }
 
 /**
- * Convert the backend's canonical lowercase status into the display
- * status the customer UI already understands.
+ * Keep the backend's canonical status so every consumer (order-status.js
+ * timeline, order-history badges, active-order banner) can match it.
+ *
+ * The previous mapping rewrote `preparing` to the display label "In Progress",
+ * which is not a timeline key: renderTimeline() then found no matching step and
+ * left the Live Order Tracker completely unhighlighted. The delivery statuses
+ * (picked_up / out_for_delivery / arrived / delivered) were missing entirely,
+ * so a delivery order rendered as an unknown status too.
  */
 function toDisplayStatus(status) {
     const s = (status || "").toString().trim().toLowerCase();
+    // Normalize the legacy capitalized variants stored by older records.
     const map = {
-        pending: "Pending",
-        preparing: "In Progress",
-        ready: "Ready",
-        served: "Served",
-        completed: "Completed",
-        cancelled: "Cancelled",
-        canceled: "Cancelled"
+        received: "pending",
+        completed: "completed",
+        canceled: "cancelled",
+        in_progress: "preparing",
+        "in progress": "preparing"
     };
     return map[s] || s;
 }
 
+// `delivered` is not terminal: the courier still has to close the delivery out,
+// and that is the customer's final "Completed" step, so a delivered order must
+// keep syncing until it is genuinely completed.
+const TERMINAL_STATUSES = ["completed", "served", "cancelled", "canceled", "failed"];
+
 function isActive(status) {
-    const s = (status || "").toLowerCase();
-    return s !== "completed" && s !== "served" && s !== "cancelled" && s !== "canceled";
+    return !TERMINAL_STATUSES.includes(toDisplayStatus(status));
 }
 
 /**

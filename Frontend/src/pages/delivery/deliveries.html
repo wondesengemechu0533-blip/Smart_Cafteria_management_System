@@ -9,6 +9,12 @@
     <link rel="stylesheet" href="/src/css/style.css">
     <link rel="stylesheet" href="/src/css/admin.css">
     <link rel="stylesheet" href="/src/css/delivery.css">
+    <!-- Leaflet (OpenStreetMap) for the per-delivery live map. Vendored under
+         /public/assets/vendor/ so the page never depends on a CDN being
+         reachable; if the file is missing the dashboard still renders and the
+         GPS panel says the map is unavailable. -->
+    <link rel="stylesheet" href="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="/src/css/tracking-map.css?v=20261005-ethiopia">
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
 </head>
@@ -29,33 +35,64 @@
             <div id="errorBanner" class="error-banner" style="display:none;"></div>
 
             <div class="stats-row">
-                <div class="stat-card"><div class="num" id="statReady">0</div><div class="lbl">Ready for Pickup</div></div>
-                <div class="stat-card"><div class="num" id="statOut">0</div><div class="lbl">Out for Delivery</div></div>
-                <div class="stat-card"><div class="num" id="statAssignedMe">0</div><div class="lbl">Assigned to Me</div></div>
+                <div class="stat-card"><div class="num" id="statReady">0</div><div class="lbl" data-i18n="delivery_stat_ready">Ready for Pickup</div></div>
+                <div class="stat-card"><div class="num" id="statOut">0</div><div class="lbl" data-i18n="delivery_stat_out">Out for Delivery</div></div>
+                <div class="stat-card"><div class="num" id="statArrived">0</div><div class="lbl" data-i18n="delivery_stat_arrived">Arrived</div></div>
+                <div class="stat-card"><div class="num" id="statAwaitingComplete">0</div><div class="lbl" data-i18n="delivery_stat_awaiting_complete">Delivered</div></div>
+                <div class="stat-card"><div class="num" id="statCompleted">0</div><div class="lbl" data-i18n="delivery_stat_completed_past">Completed</div></div>
+                <div class="stat-card"><div class="num" id="statAssignedMe">0</div><div class="lbl" data-i18n="delivery_stat_assigned_me">Assigned to Me</div></div>
             </div>
 
+            <!-- Overview map: every visible delivery destination plus the rider's
+                 live position and the cafeteria, on one map. Hidden when
+                 Leaflet failed to load (the cards below still work). -->
+            <div class="delivery-map-card" id="overviewCard">
+                <div class="delivery-map-head">
+                    <h3><i class="fa-solid fa-map-location-dot" style="color:#2563eb;"></i> <span data-i18n="delivery_overview_title">Delivery Map</span></h3>
+                </div>
+                <div id="deliveryOverviewMap" class="delivery-map"></div>
+                <div class="delivery-map-status" id="deliveryOverviewStatus"></div>
+            </div>
+
+            <!-- The label lives in its own data-i18n span: i18n.js writes textContent, which
+                 would otherwise wipe the live count badge nested inside the button. -->
             <div class="delivery-tabs">
-                <button type="button" class="tab-btn" data-filter="ready"><i class="fa-solid fa-box-open"></i> Ready for Delivery</button>
-                <button type="button" class="tab-btn" data-filter="picked"><i class="fa-solid fa-hand-holding-hand"></i> Picked Up</button>
-                <button type="button" class="tab-btn" data-filter="out"><i class="fa-solid fa-truck"></i> Out for Delivery</button>
-                <button type="button" class="tab-btn active" data-filter="all"><i class="fa-solid fa-list"></i> All</button>
+                <button type="button" class="tab-btn active" data-filter="all"><span data-i18n="delivery_filter_all">All</span> <span class="tab-count" data-tab-count="all">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="ready"><span data-i18n="delivery_filter_ready">Ready for Delivery</span> <span class="tab-count" data-tab-count="ready">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="picked"><span data-i18n="delivery_filter_picked">Picked Up</span> <span class="tab-count" data-tab-count="picked">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="out"><span data-i18n="delivery_filter_out">Out for Delivery</span> <span class="tab-count" data-tab-count="out">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="arrived"><span data-i18n="delivery_filter_arrived">Arrived</span> <span class="tab-count" data-tab-count="arrived">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="delivered"><span data-i18n="delivery_filter_delivered">Delivered</span> <span class="tab-count" data-tab-count="delivered">&#8211;</span></button>
+                <button type="button" class="tab-btn" data-filter="past"><span data-i18n="delivery_filter_past">Completed</span> <span class="tab-count" data-tab-count="past">&#8211;</span></button>
             </div>
 
-            <div class="section-title"><h3><i class="fa-solid fa-boxes-stacked" style="color:#f97316;"></i> Delivery Queue</h3></div>
+            <div class="section-title"><h3><i class="fa-solid fa-boxes-stacked" style="color:#f97316;"></i> <span>Delivery Queue</span></h3></div>
             <div class="delivery-list" id="deliveryList">
-                <div class="empty-state"><i class="fa-solid fa-inbox"></i><p>No delivery orders at the moment.</p></div>
+                <div class="empty-state"><i class="fa-solid fa-inbox"></i><p data-i18n="delivery_empty_queue">No delivery orders at the moment.</p></div>
+            </div>
+
+            <!-- Unassigned, kitchen-ready orders awaiting dispatch. Shown to
+                 couriers only (managers already see them in the queue above).
+                 Read-only: dispatch stays management-only. -->
+            <div id="availableSection" style="display:none;">
+                <div class="section-title"><h3><i class="fa-solid fa-bell-concierge" style="color:#2563eb;"></i> <span data-i18n="delivery_section_available">Available Deliveries</span></h3></div>
+                <p class="gps-status gps-muted" style="margin:0 0 10px;" data-i18n="delivery_available_hint">These orders are ready at the kitchen and awaiting dispatch. Ask your manager to assign them.</p>
+                <div class="delivery-list" id="availableList"></div>
             </div>
 
         </main>
     </div>
 
     <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
+    <!-- Leaflet must be loaded before delivery/deliveries.js renders a map. -->
+    <script src="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.js"></script>
     <script src="../../js/config.js"></script>
-    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261005-ethiopia"></script>
     <script src="../../js/delivery-layout.js"></script>
     <script type="module" src="../../js/api.js"></script>
     <script type="module" src="../../js/socket.js"></script>
-    <script type="module" src="../../js/delivery/deliveries.js"></script>
+    <script type="module" src="../../js/delivery/live-map-global.js?v=20261005-ethiopia"></script>
+    <script type="module" src="../../js/delivery/deliveries.js?v=20261005-ethiopia"></script>
     <script type="module" src="../../js/components/unified-header.js"></script>
 
     <script>

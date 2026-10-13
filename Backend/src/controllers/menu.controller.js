@@ -31,7 +31,7 @@ exports.getAllMenuItems = async (req, res) => {
         { 'name.en': { $regex: search, $options: 'i' } },
         { 'name.am': { $regex: search, $options: 'i' } },
         { 'description.en': { $regex: search, $options: 'i' } },
-        { 'description.am': { $regex: search, $options: 'i' } }
+        { 'description.am': { $regex: search, $options: 'i' } },
       ];
     }
 
@@ -53,10 +53,7 @@ exports.getAllMenuItems = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const limitNum = parseInt(limit);
 
-    const items = await MenuItem.find(filter)
-      .sort(sortOption)
-      .skip(skip)
-      .limit(limitNum);
+    const items = await MenuItem.find(filter).sort(sortOption).skip(skip).limit(limitNum);
     const total = await MenuItem.countDocuments(filter);
 
     res.status(HTTP_STATUS.OK).json({
@@ -73,8 +70,8 @@ exports.getAllMenuItems = async (req, res) => {
         image: item.image,
         preparationTime: item.preparationTime,
         availability: item.availability,
-        isAvailable: item.isAvailable
-      }))
+        isAvailable: item.isAvailable,
+      })),
     });
   } catch (error) {
     console.error('❌ Get All Menu Items Error:', error);
@@ -107,8 +104,8 @@ exports.getMenuItemById = async (req, res) => {
         availability: item.availability,
         isAvailable: item.isAvailable,
         createdAt: item.createdAt,
-        updatedAt: item.updatedAt
-      }
+        updatedAt: item.updatedAt,
+      },
     });
   } catch (error) {
     console.error('❌ Get Menu Item By ID Error:', error);
@@ -139,8 +136,8 @@ exports.getMenuItemsByCategory = async (req, res) => {
         category: item.category,
         image: item.image,
         description: item.description,
-        preparationTime: item.preparationTime
-      }))
+        preparationTime: item.preparationTime,
+      })),
     });
   } catch (error) {
     console.error('❌ Get Menu Items By Category Error:', error);
@@ -156,9 +153,7 @@ exports.getMenuItemsByCategory = async (req, res) => {
 exports.getFeaturedItems = async (req, res) => {
   try {
     const { limit = 6 } = req.query;
-    const items = await MenuItem.find({ availability: true })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
+    const items = await MenuItem.find({ availability: true }).sort({ createdAt: -1 }).limit(parseInt(limit));
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: items.length,
@@ -168,8 +163,8 @@ exports.getFeaturedItems = async (req, res) => {
         category: item.category,
         price: item.price,
         image: item.image,
-        description: item.description.en
-      }))
+        description: item.description.en,
+      })),
     });
   } catch (error) {
     console.error('❌ Get Featured Items Error:', error);
@@ -193,7 +188,7 @@ exports.getRelatedItems = async (req, res) => {
     const items = await MenuItem.find({
       _id: { $ne: id },
       category: currentItem.category,
-      availability: true
+      availability: true,
     }).limit(parseInt(limit));
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -204,8 +199,8 @@ exports.getRelatedItems = async (req, res) => {
         category: item.category,
         price: item.price,
         image: item.image,
-        icon: item.icon
-      }))
+        icon: item.icon,
+      })),
     });
   } catch (error) {
     console.error('❌ Get Related Items Error:', error);
@@ -224,10 +219,14 @@ exports.createMenuItem = async (req, res) => {
     const { name, category, price, description, icon, image, preparationTime, available, isAvailable } = req.body;
 
     if (!name || !category || !price) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Name, category, and price are required' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Name, category, and price are required' });
     }
     if (!name.en || !name.am) {
-      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Both English and Amharic names are required' });
+      return res
+        .status(HTTP_STATUS.BAD_REQUEST)
+        .json({ success: false, error: 'Both English and Amharic names are required' });
     }
     if (price < 0) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Price cannot be negative' });
@@ -242,7 +241,7 @@ exports.createMenuItem = async (req, res) => {
       image: image || null,
       preparationTime: preparationTime || 10,
       availability: available !== undefined ? available : true,
-      isAvailable: isAvailable !== undefined ? isAvailable : true
+      isAvailable: isAvailable !== undefined ? isAvailable : true,
     });
 
     res.status(HTTP_STATUS.CREATED).json({
@@ -257,8 +256,8 @@ exports.createMenuItem = async (req, res) => {
         image: item.image,
         preparationTime: item.preparationTime,
         availability: item.availability,
-        isAvailable: item.isAvailable
-      }
+        isAvailable: item.isAvailable,
+      },
     });
   } catch (error) {
     console.error('❌ Create Menu Item Error:', error);
@@ -308,8 +307,8 @@ exports.updateMenuItem = async (req, res) => {
         image: item.image,
         preparationTime: item.preparationTime,
         availability: item.availability,
-        isAvailable: item.isAvailable
-      }
+        isAvailable: item.isAvailable,
+      },
     });
   } catch (error) {
     console.error('❌ Update Menu Item Error:', error);
@@ -356,7 +355,7 @@ exports.toggleAvailability = async (req, res) => {
     }
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      item: { id: item._id, name: item.name, availability: item.availability, isAvailable: item.isAvailable }
+      item: { id: item._id, name: item.name, availability: item.availability, isAvailable: item.isAvailable },
     });
   } catch (error) {
     console.error('❌ Toggle Availability Error:', error);
@@ -378,7 +377,7 @@ exports.getMenuStats = async (req, res) => {
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      stats: { totalItems, availableItems, outOfStockItems, totalCategories }
+      stats: { totalItems, availableItems, outOfStockItems, totalCategories },
     });
   } catch (error) {
     console.error('❌ Get Menu Stats Error:', error);

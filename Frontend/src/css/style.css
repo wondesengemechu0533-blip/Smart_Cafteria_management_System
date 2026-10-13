@@ -146,18 +146,32 @@ a {
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
-.btn-secondary {
-    background-color: var(--white);
-    color: var(--dark);
-    border-color: var(--border);
-    box-shadow: var(--shadow-sm);
-}
+ .btn-secondary {
+     background-color: var(--white);
+     color: var(--dark);
+     border-color: var(--border);
+     box-shadow: var(--shadow-sm);
+     transition: background-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+ }
 
-.btn-secondary:hover {
-    background-color: var(--bg-light);
-    border-color: var(--primary);
-    transform: translateY(-2px);
-}
+  .btn-secondary:hover {
+     background-color: #2563eb;
+     color: #ffffff;
+     cursor: pointer;
+     transform: translateY(-2px);
+     box-shadow: 0 6px 14px rgba(0, 0, 0, 0.15);
+     border-color: #2563eb;
+ }
+
+  .btn-secondary:active {
+     transform: translateY(0);
+     box-shadow: none;
+ }
+
+  .btn-secondary.loading {
+     pointer-events: none;
+     opacity: 0.7;
+ }
 
 .btn-outline {
     background: transparent;
@@ -751,7 +765,7 @@ a {
     text-align: center;
     z-index: 2;
     opacity: 0.4;
-    transition: opacity 0.4s ease, transform 0.4s ease;
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .timeline-step.active {
@@ -771,7 +785,7 @@ a {
     font-size: 1.2rem;
     color: var(--text-muted);
     margin-bottom: 8px;
-    transition: all 0.4s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .timeline-step.active .step-icon {
@@ -785,11 +799,51 @@ a {
     display: block;
     font-size: 0.85rem;
     color: var(--text-main);
+    transition: color 0.2s ease;
 }
 
 .step-label small {
     font-size: 0.75rem;
     color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+/* A reached milestone must read as finished as a whole, not just its dot: the
+   title, the sub-caption and the connector leading into the next step all turn
+   green once the courier acts, so a customer's tracker visibly confirms the
+   stage (Picked Up / Out for Delivery / Arrived / Delivered / Completed). */
+.timeline-step.active .step-label strong {
+    color: #16a34a;
+}
+
+.timeline-step.active .step-label small {
+    color: #15803d;
+}
+
+/* The newest reached milestone. Every step up to it already carries `.active`
+   (green = done), so without this the customer cannot tell "here it is now"
+   from "this already happened" once several steps are lit. A halo plus a slow
+   pulse marks it without changing the green, so the completed steps stay green
+   as required. */
+.timeline-step.current .step-icon {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.22), 0 0 16px rgba(22, 163, 74, 0.5);
+    animation: timelineCurrentPulse 2s ease-in-out infinite;
+}
+
+.timeline-step.current .step-label strong {
+    font-weight: 800;
+}
+
+@keyframes timelineCurrentPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.22), 0 0 16px rgba(22, 163, 74, 0.5); }
+    50%      { box-shadow: 0 0 0 7px rgba(22, 163, 74, 0.10), 0 0 22px rgba(22, 163, 74, 0.65); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .timeline-step.current .step-icon {
+        animation: none;
+    }
 }
 
 .timeline-line {
@@ -799,7 +853,7 @@ a {
     margin: 0 10px;
     margin-top: -28px;
     z-index: 1;
-    transition: background 0.4s ease;
+    transition: background 0.2s ease;
 }
 
 .timeline-line.active {
@@ -1362,6 +1416,64 @@ a {
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     font-size: 0.95rem;
+}
+
+/* "Use my current location" opt-in (checkout delivery step) - the browser
+   permission is only requested when the customer taps this button. */
+#location-permission-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.btn-use-location {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border: 1px solid #0ea5e9;
+    border-radius: 8px;
+    background: #f0f9ff;
+    color: #0369a1;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
+.btn-use-location:hover {
+    background: #e0f2fe;
+}
+.btn-clear-location {
+    border-color: #e11d48;
+    background: #fff1f2;
+    color: #be123c;
+}
+.btn-clear-location:hover {
+    background: #ffe4e6;
+}
+.location-status {
+    margin-top: 6px;
+    font-size: 0.85rem;
+}
+.location-status-ok {
+    color: #15803d;
+}
+.location-status-err {
+    color: #b91c1c;
+}
+
+/* Live cafeteria -> customer distance shown under the delivery location. */
+.delivery-distance {
+    margin-top: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.delivery-distance.ok {
+    color: #15803d;
+}
+.delivery-distance.bad {
+    color: #b91c1c;
+    font-weight: 700;
 }
 
 .form-divider {

@@ -1,3 +1,8 @@
+function tr(key, fallback, vars) {
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.getText === 'function') { var r = window.getText(key); if (r && r !== key) return r; }
+  return fallback;
+}
 /**
  * ==========================================================================
    SMART CAFETERIA ADMIN — SHARED UTILITIES
@@ -42,8 +47,8 @@
   function setFormLoading(form, loading) {
     var btn = form.querySelector('[type="submit"]');
     if (!btn) return;
-    if (loading) { btn.disabled = true; btn.dataset.originalText = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; }
-    else { btn.disabled = false; btn.innerHTML = btn.dataset.originalText || 'Save'; }
+    if (loading) { if (btn.disabled) return; btn.disabled = true; btn.dataset.originalText = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...'; }
+    else { btn.disabled = false; btn.innerHTML = btn.dataset.originalText || 'Save'; delete btn.dataset.originalText; }
   }
 
   // --- Table Helpers ---
@@ -59,7 +64,7 @@
     var prevBtn = paginationEl.querySelector('[data-action="prev"]');
     var nextBtn = paginationEl.querySelector('[data-action="next"]');
 
-    if (info) info.textContent = 'Page ' + state.page + ' of ' + Math.max(state.pages, 1) + ' (' + state.total + ' items)';
+    if (info) info.textContent = tr('page_info', 'Page {page} of {pages} ({total} items)').replace('{page}', state.page).replace('{pages}', Math.max(state.pages, 1)).replace('{total}', state.total);
     if (prevBtn) prevBtn.disabled = state.page <= 1;
     if (nextBtn) nextBtn.disabled = state.page >= state.pages;
 
@@ -75,8 +80,8 @@
   // --- Loading States ---
   function setLoading(btn, loading, originalText) {
     if (!btn) return;
-    if (loading) { btn.disabled = true; btn.dataset.originalText = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...'; }
-    else { btn.disabled = false; btn.innerHTML = btn.dataset.originalText || originalText || 'Save'; }
+    if (loading) { if (btn.disabled) return; btn.disabled = true; btn.dataset.originalText = btn.innerHTML; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Loading...'; }
+    else { btn.disabled = false; btn.innerHTML = btn.dataset.originalText || originalText || 'Save'; delete btn.dataset.originalText; }
   }
 
   // --- Debounce ---

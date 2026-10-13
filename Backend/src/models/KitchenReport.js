@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
 /**
  * KitchenReport Schema - Track kitchen performance metrics
@@ -18,12 +18,12 @@ const KitchenReportSchema = new mongoose.Schema(
     },
     reportType: {
       type: String,
-      enum: ["daily", "weekly", "monthly"],
-      default: "daily",
+      enum: ['daily', 'weekly', 'monthly'],
+      default: 'daily',
     },
     staffId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       default: null,
     },
     totalOrdersReceived: {
@@ -91,7 +91,7 @@ const KitchenReportSchema = new mongoose.Schema(
     },
     notes: {
       type: String,
-      default: "",
+      default: '',
     },
   },
   {
@@ -103,4 +103,4 @@ const KitchenReportSchema = new mongoose.Schema(
 KitchenReportSchema.index({ reportDate: -1, reportType: 1 });
 KitchenReportSchema.index({ staffId: 1, reportDate: -1 });
 
-module.exports = mongoose.model("KitchenReport", KitchenReportSchema);
+module.exports = mongoose.model('KitchenReport', KitchenReportSchema);

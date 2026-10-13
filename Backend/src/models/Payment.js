@@ -1,4 +1,5 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
+const { PAYMENT_METHOD_VALUES } = require('../config/constants');
 
 /**
  * Payment Schema - Track payments
@@ -16,13 +17,19 @@ const PaymentSchema = new mongoose.Schema(
     },
     orderId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Order",
+      ref: 'Order',
       required: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: 'User',
       required: true,
+    },
+    // Owning cafeteria (tenant). Inherited from the order server-side.
+    cafeteriaId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Cafeteria',
+      default: null,
     },
     amount: {
       type: Number,
@@ -31,22 +38,22 @@ const PaymentSchema = new mongoose.Schema(
     },
     provider: {
       type: String,
-      enum: ["CHAPA", "CASH", "BANK_TRANSFER"],
+      enum: PAYMENT_METHOD_VALUES,
       required: true,
     },
     method: {
       type: String,
-      enum: ["CHAPA", "CASH", "BANK_TRANSFER", "WALLET", "CARD"],
+      enum: PAYMENT_METHOD_VALUES,
       required: true,
     },
     currency: {
       type: String,
-      default: "ETB",
+      default: 'ETB',
     },
     status: {
       type: String,
-      enum: ["PENDING", "PAID", "FAILED", "CANCELLED", "REFUNDED"],
-      default: "PENDING",
+      enum: ['PENDING', 'PAID', 'FAILED', 'CANCELLED', 'REFUNDED'],
+      default: 'PENDING',
     },
     transactionId: {
       type: String,
@@ -55,11 +62,11 @@ const PaymentSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      default: "",
+      default: '',
     },
     reference: {
       type: String,
-      default: "",
+      default: '',
     },
     chapaReference: {
       type: String,
@@ -68,7 +75,7 @@ const PaymentSchema = new mongoose.Schema(
     },
     checkoutUrl: {
       type: String,
-      default: "",
+      default: '',
     },
     providerReference: {
       type: String,
@@ -105,8 +112,8 @@ const PaymentSchema = new mongoose.Schema(
     },
     refundStatus: {
       type: String,
-      enum: ["NONE", "PENDING", "REFUNDED", "FAILED"],
-      default: "NONE",
+      enum: ['NONE', 'PENDING', 'REFUNDED', 'FAILED'],
+      default: 'NONE',
     },
     refundReason: {
       type: String,
@@ -123,11 +130,11 @@ const PaymentSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  },
+  }
 );
 
 // Generate transaction ID and payment number before saving
-PaymentSchema.pre("save", function () {
+PaymentSchema.pre('save', function () {
   if (!this.transactionId) {
     const prefix = this.provider.toUpperCase();
     this.transactionId = `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -145,6 +152,6 @@ PaymentSchema.index({ paymentDate: -1 });
 PaymentSchema.index({ orderId: 1 });
 PaymentSchema.index({ userId: 1 });
 PaymentSchema.index({ providerEventId: 1 });
-PaymentSchema.index({ paymentNumber: 1 });
+PaymentSchema.index({ cafeteriaId: 1, paymentDate: -1 });
 
-module.exports = mongoose.model("Payment", PaymentSchema);
+module.exports = mongoose.model('Payment', PaymentSchema);

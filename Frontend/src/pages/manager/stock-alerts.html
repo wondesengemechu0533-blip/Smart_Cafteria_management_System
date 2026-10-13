@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="manager_stock_alerts_title">Stock Alerts - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css">
+
+    <!-- Shared Theme -->
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+
+    <style>
+        .stock-tabs {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .stock-tab {
+            padding: 8px 18px;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+            color: #6b7280;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .stock-tab.active {
+            background: #2563eb;
+            color: #fff;
+            border-color: #2563eb;
+        }
+        .stock-tab:hover:not(.active) { background: #f3f4f6; }
+        .stock-tab .tab-count {
+            display: inline-block;
+            min-width: 20px;
+            padding: 1px 6px;
+            margin-left: 6px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.08);
+            font-size: 0.75rem;
+        }
+        .stock-tab.active .tab-count { background: rgba(255,255,255,0.25); }
+
+        .stock-status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .stock-status-active { background: #fff3cd; color: #856404; }
+        .stock-status-acknowledged { background: #cfe2ff; color: #084298; }
+        .stock-status-resolved { background: #d1e7dd; color: #0f5132; }
+        .stock-status-cancelled { background: #e2e3e5; color: #383d41; }
+
+        .stock-priority-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .stock-priority-low { background: #e0f2fe; color: #075985; }
+        .stock-priority-medium { background: #fef3c7; color: #92400e; }
+        .stock-priority-high { background: #ffedd5; color: #9a3412; }
+        .stock-priority-critical { background: #fee2e2; color: #991b1b; }
+
+        .stock-type-chip {
+            display: inline-block;
+            padding: 3px 9px;
+            border-radius: 4px;
+            background: #f3f4f6;
+            color: #4b5563;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .stock-empty {
+            text-align: center;
+            padding: 48px 16px;
+            color: #6b7280;
+        }
+        .stock-empty i { font-size: 40px; margin-bottom: 12px; display: block; color: #9ca3af; }
+        .stock-error { color: #b91c1c; }
+
+        .stock-loading { text-align: center; padding: 40px; color: #6b7280; }
+
+        .stock-source-inventory td { opacity: 0.75; }
+
+        /* Detail modal */
+        .stock-modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .stock-modal-backdrop.active { display: flex; }
+        .stock-modal {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+            width: 100%;
+            max-width: 620px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 26px;
+        }
+        .stock-modal h2 { margin: 0 0 4px; font-size: 1.25rem; color: #0f172a; }
+        .stock-modal .modal-meta { margin-bottom: 16px; }
+        .stock-modal .detail-block { margin-bottom: 16px; }
+        .stock-modal .detail-block h4 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #9ca3af;
+            margin: 0 0 6px;
+        }
+        .stock-modal .detail-block p {
+            margin: 0;
+            font-size: 0.95rem;
+            color: #1f2937;
+            white-space: pre-wrap;
+        }
+        .stock-modal textarea {
+            width: 100%;
+            min-height: 90px;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.92rem;
+            resize: vertical;
+        }
+        .stock-modal input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.92rem;
+        }
+        .stock-modal .solution-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-left: 4px solid #22c55e;
+            border-radius: 8px;
+            padding: 14px;
+            font-size: 0.95rem;
+            color: #166534;
+            white-space: pre-wrap;
+        }
+        .stock-modal .solution-meta { font-size: 0.8rem; color: #6b7280; margin-top: 8px; }
+        .stock-modal .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .stock-modal .form-error { color: #b91c1c; font-size: 0.85rem; margin-top: 6px; min-height: 1.1em; }
+
+        [data-theme="dark"] .stock-tab { background: #1e293b; border-color: #334155; color: #94a3b8; }
+        [data-theme="dark"] .stock-tab.active { background: #2563eb; border-color: #2563eb; color: #fff; }
+        [data-theme="dark"] .stock-tab:hover:not(.active) { background: #0f172a; }
+        [data-theme="dark"] .stock-modal { background: #1e293b; }
+        [data-theme="dark"] .stock-modal h2 { color: #f8fafc; }
+        [data-theme="dark"] .stock-modal .detail-block p { color: #e2e8f0; }
+        [data-theme="dark"] .stock-modal textarea,
+        [data-theme="dark"] .stock-modal input {
+            background: #0f172a;
+            border-color: #334155;
+            color: #e2e8f0;
+        }
+        [data-theme="dark"] .stock-modal .solution-box {
+            background: #052e1f;
+            border-color: #065f46;
+            color: #6ee7b7;
+        }
+        [data-theme="dark"] .stock-type-chip { background: #334155; color: #cbd5e1; }
+        [data-theme="dark"] .stock-status-active { background: #422006; color: #fcd34d; }
+        [data-theme="dark"] .stock-status-acknowledged { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .stock-status-resolved { background: #052e1f; color: #6ee7b7; }
+        [data-theme="dark"] .stock-status-cancelled { background: #1f2937; color: #94a3b8; }
+        [data-theme="dark"] .stock-priority-low { background: #0c1e3f; color: #93c5fd; }
+        [data-theme="dark"] .stock-priority-medium { background: #422006; color: #fcd34d; }
+        [data-theme="dark"] .stock-priority-high { background: #431407; color: #fdba74; }
+        [data-theme="dark"] .stock-priority-critical { background: #3b0f0f; color: #fca5a5; }
+        [data-theme="dark"] .stock-empty { color: #94a3b8; }
+    </style>
+</head>
+
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="manager_stock_alerts_title"><i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts</h1>
+                    <p data-i18n="manager_stock_alerts_subtitle" style="color:#6b7280;font-size:0.9rem;margin:4px 0 0;">
+                        Kitchen stock issue reports for your cafeteria — review, assign responsibility, and record the resolution.
+                    </p>
+                </div>
+                <div class="page-actions">
+                    <button type="button" class="btn btn-secondary" id="refreshStockBtn">
+                        <i class="fa-solid fa-rotate"></i> <span data-i18n="report_refresh">Refresh</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATUS TABS -->
+            <div class="stock-tabs" id="stockTabs">
+                <button type="button" class="stock-tab active" data-status=""><span data-i18n="filter_all">All</span> <span class="tab-count" id="countAll">0</span></button>
+                <button type="button" class="stock-tab" data-status="active"><span data-i18n="status_active_filter">Active</span> <span class="tab-count" id="countActive">0</span></button>
+                <button type="button" class="stock-tab" data-status="acknowledged"><span data-i18n="status_acknowledged_filter">Acknowledged</span> <span class="tab-count" id="countAcknowledged">0</span></button>
+                <button type="button" class="stock-tab" data-status="resolved"><span data-i18n="status_resolved_filter">Resolved</span> <span class="tab-count" id="countResolved">0</span></button>
+            </div>
+
+            <!-- STOCK ALERTS TABLE -->
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title"><i class="fa-solid fa-list-check"></i> <span data-i18n="manager_stock_alerts_reports">Stock Issue Reports</span></h3>
+                </div>
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th data-i18n="stock_col_item">Item</th>
+                                <th data-i18n="stock_col_type">Alert Type</th>
+                                <th>Severity</th>
+                                <th data-i18n="issue_col_reported_by">Reported By</th>
+                                <th data-i18n="issue_col_status">Status</th>
+                                <th data-i18n="issue_col_reported_at">Reported At</th>
+                                <th data-i18n="admin_col_actions">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="stockTableBody">
+                            <tr><td colspan="7" class="stock-loading" data-i18n="issue_loading">Loading stock alerts…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- STOCK ALERT DETAILS MODAL (Acknowledge / Assign / Resolve) -->
+    <div class="stock-modal-backdrop" id="stockModalBackdrop">
+        <div class="stock-modal" id="stockModal" role="dialog" aria-modal="true">
+            <div id="stockModalContent"></div>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/manager-stock-alerts.js"></script>
+</body>
+</html>
