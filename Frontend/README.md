@@ -33,11 +33,11 @@ The system provides dedicated dashboards for customers, kitchen staff, and admin
 - JWT — Authentication
 - bcrypt — Password hashing
 
-### Deployment
+/* Deployment
 - Netlify — Frontend hosting
 - Render — Backend hosting
 - MongoDB Atlas — Cloud database
-
+*/
 ### Tools
 - VS Code — Code editor
 - Git & GitHub — Version control
@@ -145,4 +145,4 @@ For questions or contributions, please contact the development team.
 🎯 Project: Internship Project
 
 
-> © 2026 Smart Cafeteria Ordering System — Developed by Kidus Birhanu, Sintayehu Begashaw & Wondesen Gemechu
+> © 2026 Smart Cafeteria Ordering System  and delivery management system Developed by  Wondesen Gemechu
