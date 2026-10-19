@@ -2,7 +2,7 @@
 
 ## 📌 Project Overview
 
-The Smart Cafeteria Ordering System is a modern, responsive web-based application designed to digitalize and streamline cafeteria operations. It replaces traditional manual ordering processes with an efficient digital platform that enables customers to browse digital menus, place remote orders, simulate payments, and track order status in real-time.
+The Smart Cafeteria Ordering System is a modern, responsive web-based application designed to digitalize and streamline cafeteria operations. It replaces traditional manual ordering processes with an efficient digital platform that enables customers to browse digital menus, place remote orders,  chapa simulate payments, and track order status in real-time.
 
 The system provides dedicated dashboards for customers, kitchen staff, and administrators, making cafeteria management more efficient and organized. It is designed to be flexible and scalable, suitable for universities, hotels, restaurants, cafes, private cafeterias, company cafeterias, hospitals, and other food service organizations.
 
