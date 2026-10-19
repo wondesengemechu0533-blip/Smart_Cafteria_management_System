@@ -7,10 +7,6 @@ The Smart Cafeteria Ordering System is a modern, responsive web-based applicatio
 The system provides dedicated dashboards for customers, kitchen staff, and administrators, making cafeteria management more efficient and organized. It is designed to be flexible and scalable, suitable for universities, hotels, restaurants, cafes, private cafeterias, company cafeterias, hospitals, and other food service organizations.
 
 
-## 👥 developed by
-Wondesen Gemechu | Debre Tabor University |
-
-
 ## 🛠️ Technologies Used
 
 ### Frontend
@@ -140,4 +136,4 @@ For questions or contributions, please contact the development team.
 🎯 Project: Internship Project
 
 
-> © 2026 Smart Cafeteria Ordering System  and delivery management system Developed by  Wondesen Gemechu
+> © 2026 Smart Cafeteria Ordering System  and delivery management system Developed by  Wondesen Gemechu | Debre Tabor University |
