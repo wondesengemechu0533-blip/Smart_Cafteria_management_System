@@ -232,6 +232,9 @@ function ensureMap() {
   }
   clearMapError();
   map = created;
+  requestAnimationFrame(() => {
+    if (map) map.refreshSize();
+  });
   return map;
 }
 
@@ -381,7 +384,9 @@ export function renderCustomerTracking(order, point, liveFrame) {
       );
     }
     live.refreshSize();
-    if (gpsActive && serverDistance != null) live.drawRoute();
+    // Draw route whenever both customer and courier markers exist (not only when GPS is active)
+    // This ensures the route is visible for completed deliveries too
+    if (customer && courier) live.drawRoute();
   }
 
   // ---- 5. Stage heading / socket subscription ---------------------------------

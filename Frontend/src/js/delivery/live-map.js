@@ -234,6 +234,7 @@ export class LiveDeliveryMap {
       label || "Customer location"
     );
     this._fit();
+    this._maybeDrawRoute();
     return true;
   }
 
@@ -251,6 +252,7 @@ export class LiveDeliveryMap {
     this._drawAccuracy(next);
     this._drawLine();
     this._fit();
+    this._maybeDrawRoute();
     return true;
   }
 
@@ -273,7 +275,15 @@ export class LiveDeliveryMap {
     if (!this.init()) return false;
     this._place("cafeteria", point, "cafe", "fa-utensils", label || "Cafeteria");
     this._fit();
+    this._maybeDrawRoute();
     return true;
+  }
+
+  /** Draw route when both customer and courier markers exist. */
+  _maybeDrawRoute() {
+    if (this.customer && this.courier) {
+      this.drawRoute();
+    }
   }
 
   /**

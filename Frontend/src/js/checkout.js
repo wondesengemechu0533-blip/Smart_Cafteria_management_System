@@ -687,6 +687,113 @@ document.addEventListener("DOMContentLoaded", () => {
 
     initLocationPermission();
 
+    initCheckoutMap();
+
+    function initCheckoutMap() {
+        const mapContainer = document.getElementById("checkout-map");
+        const toggleBtn = document.getElementById("btn-toggle-map");
+        const mapStatus = document.getElementById("map-status");
+        if (!mapContainer || !toggleBtn || typeof window.L === "undefined") return;
+
+        let map = null;
+        let marker = null;
+        let mapInitialized = false;
+
+        function setMapStatusText(text, tone) {
+            if (!mapStatus) return;
+            mapStatus.style.display = "block";
+            mapStatus.textContent = text;
+            mapStatus.className = "form-hint " + (tone ? "location-status-" + tone : "");
+        }
+
+        function initMap() {
+            if (mapInitialized) return true;
+            try {
+                map = window.L.map(mapContainer, {
+                    zoomControl: true,
+                    attributionControl: true,
+                    scrollWheelZoom: true,
+                    tap: true,
+                });
+                window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                    maxZoom: 19,
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+                }).addTo(map);
+
+                // Try to center on Ethiopia initially
+                map.setView([9.145, 40.489673], 6);
+
+                const latEl = document.getElementById("delivery-lat");
+                const lngEl = document.getElementById("delivery-lng");
+                if (latEl && latEl.value && lngEl && lngEl.value) {
+                    const lat = parseFloat(latEl.value);
+                    const lng = parseFloat(lngEl.value);
+                    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                        map.setView([lat, lng], 15);
+                        marker = window.L.marker([lat, lng]).addTo(map)
+                            .bindPopup("Your selected location").openPopup();
+                    }
+                }
+
+                map.on("click", (e) => {
+                    const { lat, lng } = e.latlng;
+                    setMapCoordinates(lat, lng);
+                });
+
+                mapInitialized = true;
+                mapContainer.style.display = "block";
+                toggleBtn.innerHTML = '<i class="fa-solid fa-map"></i> <span data-i18n="checkout_hide_map">Hide Map</span>';
+                setMapStatusText("Tap the map to select your delivery location.", "ok");
+                requestAnimationFrame(() => map.invalidateSize());
+                return true;
+            } catch (e) {
+                console.error("[checkout-map] init failed:", e);
+                setMapStatusText("Map unavailable. Please use address fields or GPS button.", "err");
+                return false;
+            }
+        }
+
+        function destroyMap() {
+            if (map) {
+                map.remove();
+                map = null;
+                marker = null;
+                mapInitialized = false;
+            }
+            mapContainer.style.display = "none";
+            toggleBtn.innerHTML = '<i class="fa-solid fa-map"></i> <span data-i18n="checkout_show_map">Show Map</span>';
+            setMapStatusText("", "");
+        }
+
+        function setMapCoordinates(lat, lng) {
+            const latEl = document.getElementById("delivery-lat");
+            const lngEl = document.getElementById("delivery-lng");
+            if (latEl) latEl.value = Math.round(lat * 1e6) / 1e6;
+            if (lngEl) lngEl.value = Math.round(lng * 1e6) / 1e6;
+
+            if (marker) {
+                marker.setLatLng([lat, lng]);
+            } else if (map) {
+                marker = window.L.marker([lat, lng]).addTo(map)
+                    .bindPopup("Your selected location").openPopup();
+            }
+            if (map) map.setView([lat, lng], 15);
+
+            invalidateQuote();
+            refreshDeliveryQuote();
+            renderDeliveryDistance();
+            setMapStatusText(`Location set: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, "ok");
+        }
+
+        toggleBtn.addEventListener("click", () => {
+            if (mapInitialized) {
+                destroyMap();
+            } else {
+                initMap();
+            }
+        });
+    }
+
 
     function getCart() {
 

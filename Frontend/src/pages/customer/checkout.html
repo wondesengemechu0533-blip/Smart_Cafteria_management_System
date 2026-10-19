@@ -9,8 +9,10 @@
     <link rel="stylesheet" href="/src/css/style.css">
      <link rel="stylesheet" href="/src/css/cart.css">
        <link rel="stylesheet" href="/src/css/menu.css">
-<link rel="stylesheet" href="/src/css/searchable-dropdown.css">
+ <link rel="stylesheet" href="/src/css/searchable-dropdown.css">
 <link rel="stylesheet" href="/src/css/themes/dark-theme.css">
+    <!-- Leaflet (OpenStreetMap) for map-based location selection -->
+    <link rel="stylesheet" href="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.css" />
     <script src="../../js/config.js"></script>
 <script src="../../js/theme.js"></script>
 </head>
@@ -150,6 +152,14 @@
                             <p id="location-status" class="location-status" style="display:none;"></p>
                             <p id="delivery-distance" class="form-hint delivery-distance" style="display:none;"></p>
                         </div>
+                        <div class="form-group">
+                            <label><span data-i18n="checkout_map_pick_location">Pick location on map</span> <span class="required">*</span></label>
+                            <div id="checkout-map" class="delivery-map" style="height: 300px; display: none;"></div>
+                            <p id="map-status" class="form-hint" style="display:none;"></p>
+                            <button type="button" id="btn-toggle-map" class="btn btn-secondary btn-sm" style="margin-top: 8px;">
+                                <i class="fa-solid fa-map"></i> <span data-i18n="checkout_show_map">Show Map</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -249,7 +259,9 @@
 
     </main>
 
-    <!-- Connect scripts -->
+<!-- Connect scripts -->
+    <!-- Leaflet (OpenStreetMap) for map-based location selection -->
+    <script src="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.js"></script>
     <script type="module" src="../../js/utils/i18n.js?v=20261005-ethiopia"></script>
     <script type="module" src="../../js/checkout.js?v=20261017-table"></script>
     <script type="module" src="../../js/utils/storage.js"></script>
@@ -257,7 +269,7 @@
     <script type="module" src="../../js/utils/formatters.js"></script>
 <script src="/public/assets/vendor/js/socket.io-4.7.5.min.js"></script>
 <script type="module" src="../../js/customer-realtime.js"></script>
-   
+
 <script type="module" src="../../js/components/unified-header.js"></script>
 <script type="module" src="../../js/components/customer-sidebar.js"></script>
 </body>
