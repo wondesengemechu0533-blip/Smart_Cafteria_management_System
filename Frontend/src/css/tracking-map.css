@@ -441,6 +441,7 @@ body.dark-theme .refund-notice.is-refunded #refund-notice-title {
 .geocode-search-result[hidden],
 .geocode-search-copy[hidden],
 .geocode-search-clear[hidden],
+.geocode-search-pick[hidden],
 .geocode-suggestions[hidden] {
   display: none;
 }
@@ -471,6 +472,65 @@ body.dark-theme .refund-notice.is-refunded #refund-notice-title {
 .geocode-search-clear {
   font-size: 0.85rem;
   line-height: 1;
+}
+
+/* Unified courier map search (delivery/dashboard-map.js): the clear button sits
+   inside the search row, and results are grouped Deliveries / Places. */
+.delivery-search .geocode-search-clear {
+  flex: 0 0 auto;
+}
+
+/* Manual "set location on map" fallback shown when a place is not found. */
+.geocode-search-pick,
+.delivery-search-pick {
+  margin-top: 6px;
+  align-self: flex-start;
+  padding: 4px 10px;
+  border: 1px solid #7c3aed;
+  border-radius: 8px;
+  background: #f5f3ff;
+  color: #5b21b6;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.geocode-search-pick:hover,
+.delivery-search-pick:hover {
+  background: #ede9fe;
+}
+
+body.dark-theme .geocode-search-pick,
+body.dark-theme .delivery-search-pick {
+  background: #2e1065;
+  border-color: #a78bfa;
+  color: #ddd6fe;
+}
+
+.geocode-group {
+  padding: 6px 9px 2px;
+  list-style: none;
+  cursor: default;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #7c3aed;
+}
+
+body.dark-theme .geocode-group {
+  color: #a78bfa;
+}
+
+.geocode-alt {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: #b45309;
+  margin-left: 6px;
+}
+
+body.dark-theme .geocode-alt {
+  color: #fbbf24;
 }
 
 .geocode-search-copy:hover,

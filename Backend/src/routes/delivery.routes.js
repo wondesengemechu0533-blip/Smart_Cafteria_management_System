@@ -97,6 +97,21 @@ router.get('/my-history', authorize(...DELIVERY_ROLES), deliveryController.getMy
  *          single-delivery lookup.
  */
 router.get('/available', authorize(...STAFF_OR_MANAGEMENT), deliveryController.getAvailableDeliveries);
+
+/**
+ * @route   GET /api/v1/deliveries/board
+ * @desc    The courier's whole Active Deliveries board in ONE response:
+ *          `assigned` (live work attached to the caller) + `available`
+ *          (cafeteria-wide, unassigned, kitchen-ready, claimable by anyone).
+ *          This is what the Delivery Staff Dashboard renders, so a newly
+ *          dispatched order appears for every eligible rider even before it is
+ *          attached to one of them, without two sequential requests that can
+ *          half-fail.
+ *          Declared before /:id so "board" is never swallowed by the
+ *          single-delivery lookup.
+ */
+router.get('/board', authorize(...STAFF_OR_MANAGEMENT), deliveryController.getDeliveryBoard);
+
 router.patch('/:id/claim', authorize(...DELIVERY_ROLES), deliveryController.claimDelivery);
 
 /**

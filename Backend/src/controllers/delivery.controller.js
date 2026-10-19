@@ -323,6 +323,106 @@ function buildDestination(order) {
 }
 
 /**
+ * Exactly the Order fields serializeDelivery() and its helpers read, and nothing
+ * more.
+ *
+ * WHY: GET /deliveries/board pulls up to 200 assigned + 100 shared rows and
+ * re-reads it every 30s (plus on every socket event and tab refocus). Fetched
+ * unprojected that is ~1.1 KB of document per row - the items array, the embedded
+ * payment object, a dozen timestamps - so one board poll drags several hundred KB
+ * off Mongo. The Atlas route from this host is BANDWIDTH-bound (~8 KB/s), and the
+ * client's own timeout is 15s, so the courier saw
+ *
+ *   [delivery-board] FAILED status=network message=Request timed out.
+ *
+ * while the database was answering the same query in milliseconds. This is the
+ * identical bug (and the identical fix) as the kitchen board - see
+ * KITCHEN_ORDER_FIELDS in kitchen.controller.js.
+ *
+ * The dropped keys are the ones serializeDelivery() never reads: the embedded
+ * payment object, the kitchen/audit timestamp trails and the cancellation block.
+ * The response shape is unchanged, so nothing on the client can tell.
+ *
+ * RULE: if serializeDelivery() starts reading a new field, add it here. A missing
+ * field silently renders as an empty cell, not as an error.
+ */
+const BOARD_ORDER_FIELDS = [
+  'orderId',
+  'userId',
+  'customerName',
+  'customerPhone',
+  'orderType',
+  'items.itemId',
+  'items.name',
+  'items.quantity',
+  'items.price',
+  'items.notes',
+  'subtotal',
+  'serviceFee',
+  'deliveryFee',
+  'totalAmount',
+  'status',
+  'orderStatus',
+  'deliveryInfo',
+  'deliveryStaffAssigned',
+  'deliveryAcceptanceStatus',
+  'deliveryAssignedAt',
+  'deliveryAcceptedAt',
+  'readyForDeliveryAt',
+  'pickedUpTime',
+  'deliveryStartedAt',
+  'deliveryArrivedAt',
+  'deliveredAt',
+  'completedTime',
+  'deliveryFailureReason',
+  'currentLocation',
+  'paymentStatus',
+  'paymentMethod',
+  'orderDate',
+  'orderTime',
+  'createdAt',
+].join(' ');
+
+/**
+ * The Delivery half of the same projection. Only the fields serializeDelivery()
+ * reads are fetched - it drops the proof-of-delivery OTP material, the money
+ * mirror and the hold bookkeeping, none of which any board consumer looks at.
+ *
+ * statusHistory IS kept: serializeDelivery() emits it verbatim, and including it
+ * here keeps the board's response byte-identical to before.
+ *
+ * RULE: same as BOARD_ORDER_FIELDS - keep this in step with serializeDelivery().
+ */
+const BOARD_DELIVERY_FIELDS = [
+  'order',
+  'status',
+  'deliveryPerson',
+  'assignedAt',
+  'acceptedAt',
+  'pickedUpAt',
+  'outForDeliveryAt',
+  'arrivedAt',
+  'deliveredAt',
+  'completedAt',
+  'currentLocation',
+  'pickupLocation',
+  'destination',
+  'distanceKm',
+  'etaMinutes',
+  'feeMode',
+  'failureReason',
+  'failureNote',
+  'failedAt',
+  'retryCount',
+  'statusHistory',
+].join(' ');
+
+/** Apply the lean board projection to an Order query. */
+function leanBoardQuery(query) {
+  return query.select(BOARD_ORDER_FIELDS);
+}
+
+/**
  * One canonical delivery payload for every consumer (courier dashboard,
  * manager table, customer tracking). The legacy keys (`status`, `deliveryInfo`,
  * `deliveryStaffAssigned`, ...) are preserved verbatim so no existing screen
@@ -445,18 +545,31 @@ function serializeDelivery(order, delivery) {
   };
 }
 
-/** Attach the Delivery record to a list of orders in one extra query. */
-async function attachDeliveries(orders) {
+/**
+ * Attach the Delivery record to a list of orders in one extra query.
+ *
+ * `select` is opt-in: callers that poll hard pass BOARD_DELIVERY_FIELDS so the
+ * unneeded half of each Delivery document is never pulled off the wire. Omit it
+ * for the one-shot endpoints (e.g. the manager delivery table, which renders the
+ * full statusHistory trail).
+ */
+async function attachDeliveries(orders, select) {
   if (!orders || !orders.length) return new Map();
   const orderIds = orders.map((o) => o._id);
-  const deliveries = await Delivery.find({ order: { $in: orderIds } });
+  const query = Delivery.find({ order: { $in: orderIds } });
+  if (select) query.select(select);
+  const deliveries = await query;
   const map = new Map();
   for (const d of deliveries) map.set(String(d.order), d);
   return map;
 }
 
-async function serializeOrders(orders) {
-  const map = await attachDeliveries(orders);
+/**
+ * `select` is forwarded to attachDeliveries() - see BOARD_ORDER_FIELDS /
+ * BOARD_DELIVERY_FIELDS for why the polled endpoints need it.
+ */
+async function serializeOrders(orders, select) {
+  const map = await attachDeliveries(orders, select);
   return orders.map((o) => serializeDelivery(o, map.get(String(o._id)) || null));
 }
 
@@ -770,6 +883,15 @@ exports.getMyDeliveries = async (req, res) => {
 
     await deliveryService.touchCourier(req.user.id);
 
+    // Diagnostics. "My Active Deliveries is empty" has three very different
+    // causes (nothing assigned / assigned but not PAID / assigned and terminal)
+    // and the response body alone cannot tell them apart, so the count is logged
+    // next to the reason it can be zero.
+    console.log(
+      `[deliveries/mine] staff=${req.user.id} cafeteria=${req.user.cafeteriaId || 'unset'} ` +
+      `active=${orders.length} ids=[${orders.map((o) => o.orderId).join(', ')}]`
+    );
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: orders.length,
@@ -803,12 +925,18 @@ exports.getAvailableDeliveries = async (req, res) => {
         .json({ success: false, error: scopeError.message });
     }
 
-    // Kitchen-ready only: the food must exist before a courier can act.
-    // Pending/preparing orders are the kitchen's work, not the rider's.
+    // Kitchen-ready, and NOT yet accepted by any rider. This deliberately does NOT
+    // require `deliveryStaffAssigned: null`.
+    //
+    // That field is set within milliseconds of the kitchen tap, because
+    // sendOrderToDelivery() auto-dispatches to the least busy rider. Filtering on
+    // `deliveryStaffAssigned: null` therefore made this endpoint return [] for
+    // almost every real order - the exact "new delivery orders do not appear"
+    // symptom. Ownership of a delivery is decided by ACCEPTANCE, not by the
+    // auto-dispatch attachment.
     const orders = await Order.find({
       orderType: 'delivery',
       ...cafeteriaFilter(scope),
-      deliveryStaffAssigned: null,
       $or: [
         { orderStatus: { $in: ['READY', 'READY_FOR_DELIVERY'] } },
         { status: { $in: ['ready', 'ready_for_delivery'] } },
@@ -818,18 +946,88 @@ exports.getAvailableDeliveries = async (req, res) => {
       .sort({ orderTime: 1 })
       .limit(50);
 
+    // WHY the Delivery rows are consulted but NOT used as a gate.
+    //
+    // This used to be:
+    //     eligible = deliveries.filter(d => !d.deliveryPerson &&
+    //               (d.status === REQUESTED || d.status === ASSIGNED))
+    //     return orders.filter(o => eligible.has(String(o._id)))
+    //
+    // which silently threw away every order that had NO Delivery row at all, and
+    // every row that had already advanced past REQUESTED/ASSIGNED. Two real
+    // scenarios hit that:
+    //
+    //   1. ensureDeliveryForOrder() is best-effort on the checkout path (its
+    //      error is caught + logged, never surfaced), so a delivery order can
+    //      legitimately exist with order.delivery = null. The order-level query
+    //      above still matched it, and then this filter deleted it again - so a
+    //      perfectly claimable order was invisible on every courier's board.
+    //   2. Kitchen "Send to Delivery" reuses an existing Delivery row and only
+    //      moves the ORDER to READY_FOR_DELIVERY. A row left at ACCEPTED (or any
+    //      non-REQUESTED/ASSIGNED state) while still unclaimed matched the order
+    //      filter and was dropped here.
+    //
+    // The ORDER document is the source of truth for "is there food waiting, and
+    // is anybody holding it" - that is exactly what the query above already
+    // asked MongoDB. The Delivery row is now used only to DROP rows that are
+    // provably not claimable (a courier is attached, or the delivery already
+    // reached a terminal state), which is a strictly smaller exclusion set and
+    // can never invent a new reason to hide an order.
     const deliveries = await Delivery.find({ order: { $in: orders.map((o) => o._id) } })
       .select('order status deliveryPerson');
-    const eligible = new Set(
-      deliveries
-        .filter((d) => !d.deliveryPerson && (d.status === DELIVERY_STATUS.REQUESTED || d.status === DELIVERY_STATUS.ASSIGNED))
-        .map((d) => String(d.order))
+    const byOrder = new Map();
+    deliveries.forEach((d) => byOrder.set(String(d.order), d));
+
+    const dropped = { alreadyAccepted: 0, alreadyClosed: 0 };
+    const claimable = orders.filter((order) => {
+      const delivery = byOrder.get(String(order._id));
+      // No Delivery row at all: the order is kitchen-ready and unaccepted, so it
+      // is claimable. resolveDeliveryPair() / ensureDeliveryForOrder() build the
+      // row on demand when the courier claims it. (This case was previously
+      // deleted by a filter that required the row to already exist.)
+      if (!delivery) return true;
+
+      const dState = deliveryService.normalizeStatus(delivery.status);
+      if (deliveryService.isTerminal(dState)) {
+        dropped.alreadyClosed++;
+        return false;
+      }
+      // Only a rider who has ACCEPTED owns the job. `deliveryPerson` alone only
+      // means auto-dispatch attached them a moment ago, which must NOT hide the
+      // order from the rest of the cafeteria - that is the reported bug.
+      const ACCEPTED_OR_LATER = [
+        deliveryService.DELIVERY_STATUS.ACCEPTED,
+        deliveryService.DELIVERY_STATUS.PICKED_UP,
+        deliveryService.DELIVERY_STATUS.OUT_FOR_DELIVERY,
+        deliveryService.DELIVERY_STATUS.ARRIVED,
+        deliveryService.DELIVERY_STATUS.DELIVERED,
+      ];
+      if (ACCEPTED_OR_LATER.includes(dState)) {
+        dropped.alreadyAccepted++;
+        return false;
+      }
+      return true;
+    });
+
+    console.log(
+      `[deliveries/available] role=${scope.role} cafeteria=${scope.cafeteriaId || 'global'} ` +
+      `kitchenReady=${orders.length} sharedClaimable=${claimable.length} ` +
+      `droppedAccepted=${dropped.alreadyAccepted} droppedClosed=${dropped.alreadyClosed} ` +
+      `orders=[${claimable.map((o) => o.orderId).join(', ')}]`
     );
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      count: orders.filter((o) => eligible.has(String(o._id))).length,
-      orders: await serializeOrders(orders.filter((o) => eligible.has(String(o._id)))),
+      count: claimable.length,
+      // Lets the dashboard say WHY the board is empty instead of showing a bare
+      // "no deliveries", which is indistinguishable from a broken filter.
+      diagnostics: {
+        kitchenReadyUnassigned: orders.length,
+        claimable: claimable.length,
+        droppedAlreadyAccepted: dropped.alreadyAccepted,
+        droppedAlreadyClosed: dropped.alreadyClosed,
+      },
+      orders: await serializeOrders(claimable),
     });
   } catch (error) {
     console.error('❌ Get Available Deliveries Error:', error);
@@ -838,7 +1036,206 @@ exports.getAvailableDeliveries = async (req, res) => {
 };
 
 /**
- * @desc    Get completed delivery history for the current delivery staff
+ * @desc    The courier's Active Deliveries board, in ONE request
+ * @route   GET /api/v1/deliveries/board
+ * @access  Private/Delivery + Management
+ *
+ * WHY this exists.
+ *
+ * The dashboard used to compose this view client-side from two calls:
+ *
+ *   GET /deliveries/mine       -> only rows where deliveryStaffAssigned = me
+ *   GET /deliveries/available  -> only rows where deliveryStaffAssigned = null
+ *
+ * Two failure modes follow from that, and both have actually been reported as
+ * "new delivery orders do not appear in Active Deliveries":
+ *
+ *   1. Kitchen "Send to Delivery" auto-dispatches to the least busy rider. The
+ *      instant it succeeds, `deliveryStaffAssigned` is set, so the order leaves
+ *      /available and only that ONE rider's /mine returns it. Every other rider
+ *      correctly sees nothing - which is right for dispatch but is exactly the
+ *      "it vanished from my dashboard" report.
+ *   2. The two calls are sequential and independent, so any failure in the
+ *      second left the page rendering a half board, and a failure in the first
+ *      (e.g. a transient 5xx) rendered an empty queue with no explanation.
+ *
+ * This endpoint resolves the whole board server-side and returns both halves in
+ * one response, each row already tagged with which bucket it came from:
+ *
+ *   assigned  - live work attached to the caller (every active stage)
+ *   available - cafeteria-wide, unassigned, kitchen-ready, claimable by anyone
+ *
+ * Ownership is STILL enforced against the JWT: a courier never receives another
+ * rider's in-progress run (their customer data stays private), they only see the
+ * shared claimable board. Management gets the full cafeteria queue as `assigned`.
+ *
+ * @query status=ACTIVE|ALL   Default ACTIVE (what Active Deliveries renders).
+ */
+exports.getDeliveryBoard = async (req, res) => {
+  try {
+    const role = normalizeRole(req.user.role);
+    const isCourier = role === 'delivery';
+
+    let scope;
+    try {
+      scope = resolveDeliveryListScope(req);
+    } catch (scopeError) {
+      return res
+        .status(scopeError.statusCode || HTTP_STATUS.FORBIDDEN)
+        .json({ success: false, error: scopeError.message });
+    }
+
+    const activeOr = [
+      { orderStatus: { $in: MY_ACTIVE_STATUSES_UPPER } },
+      { status: { $in: MY_ACTIVE_STATUSES_LOWER } },
+    ];
+    const wantAll = String(req.query.status || 'ACTIVE').toUpperCase() === 'ALL';
+
+    // ---- half 1: work attached to the caller -------------------------------
+    const mineFilter = wantAll
+      ? { orderType: 'delivery', deliveryStaffAssigned: req.user.id }
+      : myActiveDeliveryFilter(req.user.id, {});
+    if (isCourier) {
+      mineFilter.deliveryStaffAssigned = req.user.id;
+    } else if (!isCourier) {
+      // Management: the whole cafeteria queue, so they can dispatch from here.
+      delete mineFilter.deliveryStaffAssigned;
+      mineFilter.orderType = 'delivery';
+      Object.assign(mineFilter, cafeteriaFilter(scope));
+      if (!wantAll) mineFilter.$or = activeOr;
+    }
+
+    const mine = await leanBoardQuery(
+      Order.find(mineFilter)
+        .populate('deliveryStaffAssigned', 'name phone role')
+        .sort({ orderTime: 1 })
+        .limit(200)
+    );
+
+    // ---- half 2: the shared board ---------------------------------------------
+    // Kitchen-ready work ANY eligible rider of this cafeteria can see, whether
+    // it is still unclaimed or was just auto-dispatched but nobody has accepted
+    // it yet.
+    //
+    // THIS is the fix for the reported symptom, and it is verified, not
+    // theoretical. `Send to Delivery` auto-dispatches to the least busy rider
+    // (pickFreeRiders + assignStaffToDelivery), so `deliveryStaffAssigned` is
+    // set within milliseconds of the kitchen tap. The old pair of endpoints then
+    // behaved like this for every OTHER rider:
+    //
+    //   /deliveries/mine      -> deliveryStaffAssigned = me        -> EMPTY
+    //   /deliveries/available -> deliveryStaffAssigned = null     -> EMPTY
+    //
+    // An auto-assigned order matched NEITHER, so a real, paid, kitchen-ready
+    // order was invisible on every courier's Active Deliveries except the single
+    // rider the kitchen happened to pick. Adding NOT-ACCEPTED to the shared board
+    // is what makes it appear for all eligible staff.
+    //
+    // Once a rider has ACCEPTED (or the order has moved past the pass), the row
+    // stops being shared: it belongs to that rider and their customer data is
+    // private again. That boundary is enforced below on the Delivery record.
+    const READY_STATES = [
+      { orderStatus: { $in: ['READY', 'READY_FOR_DELIVERY'] } },
+      { status: { $in: ['ready', 'ready_for_delivery'] } },
+    ];
+    const sharedFilter = {
+      orderType: 'delivery',
+      ...cafeteriaFilter(scope),
+      $or: wantAll
+        ? activeOr
+        : READY_STATES,
+    };
+    const shared = await leanBoardQuery(
+      Order.find(sharedFilter)
+        .populate('deliveryStaffAssigned', 'name phone role')
+        .sort({ orderTime: 1 })
+        .limit(100)
+    );
+
+    const sharedDeliveries = shared.length
+      ? await Delivery.find({ order: { $in: shared.map((o) => o._id) } })
+          .select('order status deliveryPerson')
+      : [];
+    const deliveryByOrder = new Map();
+    sharedDeliveries.forEach((d) => deliveryByOrder.set(String(d.order), d));
+
+    const mineIds = new Set(mine.map((o) => String(o._id)));
+    const dropped = { accepted: 0, terminal: 0 };
+
+    const claimable = shared.filter((order) => {
+      if (mineIds.has(String(order._id))) return false; // already in `assigned`
+      const delivery = deliveryByOrder.get(String(order._id));
+
+      // No Delivery row: nothing has accepted it, so it is shared/claimable.
+      if (!delivery) return true;
+
+      const dState = deliveryService.normalizeStatus(delivery.status);
+      // Terminal: closed out, nothing for anyone to do.
+      if (deliveryService.isTerminal(dState)) {
+        dropped.terminal++;
+        return false;
+      }
+      // ACCEPTED (or PICKED_UP) means this rider owns it now - their customer,
+      // address and phone stop being broadcast to the whole cafeteria.
+      if (dState === deliveryService.DELIVERY_STATUS.ACCEPTED ||
+          dState === deliveryService.DELIVERY_STATUS.PICKED_UP ||
+          dState === deliveryService.DELIVERY_STATUS.OUT_FOR_DELIVERY ||
+          dState === deliveryService.DELIVERY_STATUS.ARRIVED ||
+          dState === deliveryService.DELIVERY_STATUS.DELIVERED) {
+        dropped.accepted++;
+        return false;
+      }
+      // REQUESTED / ASSIGNED and anything unknown-but-not-accepted stays shared.
+      return true;
+    });
+
+    // Newest work first so a freshly dispatched order is always on top.
+    const sortNewestFirst = (a, b) => {
+      const at = new Date(a.createdAt || a.orderTime || 0).getTime();
+      const bt = new Date(b.createdAt || b.orderTime || 0).getTime();
+      return bt - at;
+    };
+    mine.sort(sortNewestFirst);
+    claimable.sort(sortNewestFirst);
+
+    const [assignedOut, availableOut] = await Promise.all([
+      serializeOrders(mine, BOARD_DELIVERY_FIELDS),
+      serializeOrders(claimable, BOARD_DELIVERY_FIELDS),
+    ]);
+
+    console.log(
+      `[deliveries/board] role=${role} cafeteria=${scope.cafeteriaId || 'global'} ` +
+      `assigned=${assignedOut.length} shared=${availableOut.length} ` +
+      `droppedAcceptedByOthers=${dropped.accepted} droppedTerminal=${dropped.terminal} ` +
+      `status=${wantAll ? 'ALL' : 'ACTIVE'}`
+    );
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      count: assignedOut.length + availableOut.length,
+      orders: [...assignedOut, ...availableOut],
+      assigned: assignedOut,
+      available: availableOut,
+      diagnostics: {
+        assigned: assignedOut.length,
+        available: availableOut.length,
+        // Kept under the old name as well: the empty state reads it to explain
+        // "ready at the kitchen but owned by another rider".
+        kitchenReadyUnassigned: availableOut.length + dropped.accepted,
+        sharedCandidates: availableOut.length,
+        droppedAlreadyAccepted: dropped.accepted,
+        droppedTerminal: dropped.terminal,
+        status: wantAll ? 'ALL' : 'ACTIVE',
+      },
+    });
+  } catch (error) {
+    console.error('❌ Get Delivery Board Error:', error);
+    sendError(res, error, MESSAGES.SERVER_ERROR);
+  }
+};
+
+/**
+ * @desc    Completed delivery history for the current delivery staff
  * @route   GET /api/v1/deliveries/my-history
  * @access  Private/Delivery
  */
@@ -859,19 +1256,21 @@ exports.getMyDeliveryHistory = async (req, res) => {
             { status: { $in: FINAL_STATUSES_LOWER } },
           ];
 
-    const orders = await Order.find({
-      orderType: 'delivery',
-      deliveryStaffAssigned: req.user.id,
-      $or: terminalOr,
-    })
-      .populate('deliveryStaffAssigned', 'name phone role')
-      .sort({ orderTime: -1 })
-      .limit(50);
+    const orders = await leanBoardQuery(
+      Order.find({
+        orderType: 'delivery',
+        deliveryStaffAssigned: req.user.id,
+        $or: terminalOr,
+      })
+        .populate('deliveryStaffAssigned', 'name phone role')
+        .sort({ orderTime: -1 })
+        .limit(50)
+    );
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: orders.length,
-      orders: await serializeOrders(orders),
+      orders: await serializeOrders(orders, BOARD_DELIVERY_FIELDS),
     });
   } catch (error) {
     console.error('❌ Get My Delivery History Error:', error);
@@ -1565,19 +1964,77 @@ exports.claimDelivery = async (req, res) => {
     if (order.orderType !== 'delivery') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Order is not a delivery order' });
     }
-    const alreadyAssigned = assignedStaffId(order) || deliveryStaffId(delivery);
-    if (alreadyAssigned) {
-      if (alreadyAssigned === String(req.user.id)) {
+    // Is this delivery already OWNED, or only auto-dispatched and unaccepted?
+    //
+    // `deliveryStaffAssigned` / `deliveryPerson` is set within milliseconds of
+    // the kitchen tapping "Send to Delivery" (auto-dispatch picks the least busy
+    // rider). Treating that as "already assigned" made Claim Delivery return 409
+    // for exactly the orders the shared board advertises as claimable - the two
+    // endpoints disagreed, and the button on the card could never work.
+    //
+    // Ownership is decided by ACCEPTANCE. Until the attached rider accepts, the
+    // job is still up for grabs by any eligible rider of the cafeteria, and the
+    // first claim wins (assignStaffToDelivery handles the race: it re-reads and
+    // guards, and two simultaneous claims cannot both win).
+    const currentOwnerId = assignedStaffId(order) || deliveryStaffId(delivery);
+    const deliveryStateNow = deliveryService.normalizeStatus(delivery.status);
+    const ACCEPTED_OR_LATER = [
+      DELIVERY_STATUS.ACCEPTED,
+      DELIVERY_STATUS.PICKED_UP,
+      DELIVERY_STATUS.OUT_FOR_DELIVERY,
+      DELIVERY_STATUS.ARRIVED,
+      DELIVERY_STATUS.DELIVERED,
+    ];
+    const isAcceptedOrLater = ACCEPTED_OR_LATER.includes(deliveryStateNow);
+    const isTerminalState = deliveryService.isTerminal(deliveryStateNow);
+
+    if (isTerminalState && !isAcceptedOrLater) {
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: `This delivery is already ${humanize(deliveryStateNow).toLowerCase()}`,
+      });
+    }
+
+    if (isAcceptedOrLater) {
+      // Somebody owns it. Claiming is only a no-op when it is already ours.
+      if (currentOwnerId === String(req.user.id)) {
         const summary = serializeDelivery(order, delivery);
         return res.status(HTTP_STATUS.OK).json({
           success: true,
-          message: `Order #${order.orderId} is already assigned to you`,
+          message: `Order #${order.orderId} is already yours`,
           order: summary,
           delivery: summary,
         });
       }
-      return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'This delivery is already assigned' });
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        error: 'Another delivery staff member has already accepted this delivery',
+      });
     }
+
+    // Not accepted yet: fall through and let this courier claim it, even if
+    // auto-dispatch had pre-attached somebody else.
+    if (currentOwnerId === String(req.user.id)) {
+      // Already pointed at us but never accepted - just accept it.
+      await deliveryService.applyDeliveryStatus({
+        delivery,
+        status: DELIVERY_STATUS.ACCEPTED,
+        actor: req.user,
+        reason: 'Delivery staff claimed and accepted this delivery',
+        allowTerminal: true,
+      });
+      await order.populate('deliveryStaffAssigned', 'name phone role');
+      const summary = serializeDelivery(order, delivery);
+      emitLifecycleEvent(summary, 'delivery:accepted');
+      broadcastStatus(summary);
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        message: `Order #${order.orderId} claimed`,
+        order: summary,
+        delivery: summary,
+      });
+    }
+
     const staff = await User.findById(req.user.id);
     if (!staff) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Delivery staff not found' });
@@ -1656,8 +2113,16 @@ exports.respondToAssignment = async (req, res) => {
     } else {
       delivery.acceptanceStatus = 'DECLINED';
       delivery.declineReason = reason || 'Declined by delivery staff';
+      delivery.deliveryPerson = null;
+      delivery.assignedAt = null;
+      delivery.assignedBy = null;
+      delivery.status = DELIVERY_STATUS.REQUESTED;
       await delivery.save();
-      order.deliveryAcceptanceStatus = 'DECLINED';
+      order.deliveryStaffAssigned = null;
+      order.deliveryAcceptanceStatus = 'PENDING_ACCEPTANCE';
+      order.deliveryAssignedAt = null;
+      order.deliveryAcceptedAt = null;
+      order.deliveryAcceptedBy = null;
       await order.save();
       await OrderStatusHistory.create({
         orderId: order._id,

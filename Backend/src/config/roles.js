@@ -3,8 +3,8 @@
  * and role-assignment (privilege) rules.
  *
  * Canonical roles stored in MongoDB (User.role? enum):
- *   customer, kitchen, admin, system_admin, cafeteria_admin, manager, cashier,
- *   delivery, tax_authority
+  *   customer, kitchen, admin, system_admin, cafeteria_admin, manager, cashier,
+  *   delivery
  *
  * Aliases are normalized to canonical values so that legacy/alternate
  * spellings (e.g. system_admin, cafeteria_manager, kitchen_staff,
@@ -20,7 +20,6 @@ const ROLES = [
   'manager',
   'cashier',
   'delivery',
-  'tax_authority',
 ];
 
 // Legacy / alternative spellings -> canonical role
@@ -48,10 +47,6 @@ const ROLE_ALIASES = {
   'delivery person': 'delivery',
   driver: 'delivery',
   rider: 'delivery',
-  tax_authority: 'tax_authority',
-  'tax authority': 'tax_authority',
-  government: 'tax_authority',
-  'government authority': 'tax_authority',
 };
 
 // Role values keyed for convenient access (ROLES.CUSTOMER, ROLES.ADMIN, ...)
@@ -80,7 +75,7 @@ const CAFETERIA_ADMIN_ROLES = ['cafeteria_admin'];
 const MANAGEMENT_ROLES = ['cafeteria_admin', 'manager'];
 const CASHIER_ROLES = ['cafeteria_admin', 'manager', 'cashier'];
 const OPERATIONS_ROLES = ['cafeteria_admin', 'manager', 'kitchen'];
-const TAX_AUTHORITY_ROLES = ['tax_authority', 'cafeteria_admin'];
+const TAX_AUTHORITY_ROLES = ['cafeteria_admin'];
 const ALL_STAFF_ROLES = [
   'admin',
   'system_admin',
@@ -89,7 +84,6 @@ const ALL_STAFF_ROLES = [
   'cashier',
   'kitchen',
   'delivery',
-  'tax_authority',
 ];
 
 const ROLE_GROUPS = {
@@ -114,12 +108,11 @@ const ALL_ROLES_IGNORING_ACTOR = ROLES;
 const ASSIGNMENT_MATRIX = {
   admin: ALL_ROLES_IGNORING_ACTOR,
   system_admin: ALL_ROLES_IGNORING_ACTOR,
-  cafeteria_admin: ['manager', 'cashier', 'kitchen', 'delivery', 'customer'],
+  cafeteria_admin: ['kitchen', 'delivery', 'cashier'],
   manager: ['delivery'],
   cashier: [],
   kitchen: [],
   delivery: [],
-  tax_authority: [],
   customer: [],
 };
 

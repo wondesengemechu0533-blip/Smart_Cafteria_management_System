@@ -48,12 +48,19 @@ function showToast(notification) {
     const container = ensureToastContainer();
     const toast = document.createElement("div");
     const isReady = notification.type === "ready" || (notification.message && notification.message.includes("ready for pickup"));
+    // A completed refund reads as a money event, so it gets its own colour +
+    // icon instead of the generic blue "bell" used for everything else.
+    const isRefund = notification.type === "refund";
     const am = typeof window.getCurrentLanguage === "function" && window.getCurrentLanguage() === "am";
     const title = notification.title || crTr('notif_order_ready', am ? "ትዕዛዝ ዝግጁ!" : "Order Ready!");
     const message = notification.message || crTr('notif_ready_for_pickup', am ? "ትዕዛዝዎ ለመውሰድ ዝግጁ ነው።" : "Your order is ready for pickup.");
+
+    const accent = isRefund ? "#15803d" : isReady ? "#16a34a" : "#2563eb";
+    const iconBg = isRefund ? "#dcfce7" : isReady ? "#dcfce7" : "#dbeafe";
+
     toast.style.cssText = `
         background:#ffffff;
-        border-left:4px solid ${isReady ? "#16a34a" : "#2563eb"};
+        border-left:4px solid ${accent};
         border-radius:10px;
         box-shadow:0 10px 25px rgba(0,0,0,0.15);
         padding:16px 20px;
@@ -66,9 +73,8 @@ function showToast(notification) {
         animation: slideIn 0.3s ease;
         font-family: inherit;
     `;
-    const icon = isReady ? "fa-utensils" : "fa-bell";
-    const iconBg = isReady ? "#dcfce7" : "#dbeafe";
-    const iconColor = isReady ? "#16a34a" : "#2563eb";
+    const icon = isRefund ? "fa-arrow-rotate-left" : isReady ? "fa-utensils" : "fa-bell";
+    const iconColor = isRefund ? "#15803d" : isReady ? "#16a34a" : "#2563eb";
     toast.innerHTML = `
         <div style="width:40px;height:40px;border-radius:50%;background:${iconBg};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
             <i class="fa-solid ${icon}" style="color:${iconColor};font-size:18px;"></i>
@@ -99,7 +105,7 @@ function showToast(notification) {
 
     // Also update document title briefly
     const originalTitle = document.title;
-    if (isReady) {
+    if (isReady || isRefund) {
         document.title = "🔔 " + notification.title + " - " + originalTitle;
         setTimeout(() => { document.title = originalTitle; }, 6000);
     }

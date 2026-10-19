@@ -14,6 +14,8 @@ const {
 } = require('../config/constants');
 const { isAdminRole } = require('../config/roles');
 const { logAction } = require('../utils/audit');
+const { computeRefundSummary, resolveRefundAmount } = require('../utils/money');
+const { describeOrderAccess } = require('../utils/order-access');
 const svc = require('../services/cancellation.service');
 
 /**
@@ -118,10 +120,16 @@ exports.requestCancellation = async (req, res) => {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
     }
 
-    let isOwner = false;
-    if (order.userId) isOwner = String(order.userId) === String(req.user.id);
-    if (!isOwner && !isAdminRole(req.user.role)) {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'You can only cancel your own orders' });
+    // Ownership / permission. This used to be `owner OR admin`, which was
+    // narrower than the rule that let the same person LOAD this order
+    // (GET /orders/:id = owner OR assigned courier OR operations). The result
+    // was a manager or the assigned courier opening the cancellation page,
+    // being shown "Confirm Cancellation", clicking it, and being refused with
+    // "You can only cancel your own orders" - a message that is simply false
+    // for them. Both rules now come from utils/order-access.js.
+    const access = describeOrderAccess(order, req.user);
+    if (!access.canCancel) {
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: access.reason });
     }
 
     const current = String(order.orderStatus || order.status || '').toUpperCase();
@@ -185,17 +193,22 @@ exports.requestCancellation = async (req, res) => {
     // 2. Handle refund: if payment was PAID, leave the refund for admin
     //    review and processing. If unpaid, mark as not required.
     const paid = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
+    // The refundable amount is the order Subtotal. Total Paid (Subtotal +
+    // Service Fee) is what the customer handed over; VAT is not part of the
+    // refund and never appears in the summary shown to either side.
+    const refundSummary = computeRefundSummary(order);
+    const refundQueued = paid && refundSummary.refundAmount > 0;
 
-    if (paid && Number(order.totalAmount) > 0) {
+    if (refundQueued) {
       // Mark refund as requested but do NOT process it yet — the admin must
       // review the cancellation and process the refund from the admin panel.
       cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
-      cancellation.refundAmount = order.totalAmount;
+      cancellation.refundAmount = refundSummary.refundAmount;
       await cancellation.save();
 
       // Sync order refund fields so admin panel sees the request.
       order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
-      order.refundAmount = order.totalAmount;
+      order.refundAmount = refundSummary.refundAmount;
       await order.save();
 
       // The cancellation frame above was broadcast before the refund fields
@@ -206,7 +219,7 @@ exports.requestCancellation = async (req, res) => {
       try {
         await Payment.findOneAndUpdate(
           { orderId: order._id },
-          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount }
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: refundSummary.refundAmount }
         );
       } catch (_) {
         /* best effort */
@@ -215,7 +228,7 @@ exports.requestCancellation = async (req, res) => {
       await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
-        message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly. You will be notified once the refund is complete.`,
+        message: `Your order #${order.orderId} has been cancelled. Your refund of ${refundSummary.refundAmount} ETB will be processed shortly. You will be notified once the refund is complete.`,
         type: 'order',
         orderId: order.orderId,
         isRead: false,
@@ -227,10 +240,15 @@ exports.requestCancellation = async (req, res) => {
       cancellation.refundStatus = REFUND_STATUS.NOT_REQUIRED;
       cancellation.refundAmount = 0;
       await cancellation.save();
-      try {
-        await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
-      } catch (_) {
-        /* best effort */
+      // Only an order that was never paid gets its payment voided. A paid order
+      // whose refundable subtotal works out to zero must keep its payment
+      // record exactly as the gateway left it.
+      if (!paid) {
+        try {
+          await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
+        } catch (_) {
+          /* best effort */
+        }
       }
       await Notification.create({
         userId: order.userId,
@@ -255,7 +273,9 @@ exports.requestCancellation = async (req, res) => {
         action: 'CANCELLATION_AUTO_FULFILLED',
         entityType: 'Cancellation',
         entityId: String(cancellation.cancellationNumber || cancellation._id),
-        description: `Pending order #${order.orderId} cancelled immediately by customer. Refund: ${paid ? cancellation.refundAmount + ' ETB pending admin processing' : 'not required'}`,
+        description: `Pending order #${order.orderId} cancelled immediately by customer. Refund: ${
+          refundQueued ? cancellation.refundAmount + ' ETB pending admin processing' : 'not required'
+        }`,
       });
     } catch (_) {
       /* audit is best effort */
@@ -263,11 +283,11 @@ exports.requestCancellation = async (req, res) => {
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      message: paid
+      message: refundQueued
         ? `Order cancelled successfully. A refund of ${cancellation.refundAmount} ETB will be processed by an administrator.`
         : 'Order cancelled successfully.',
       refunded: false,
-      refundRequested: paid && Number(order.totalAmount) > 0,
+      refundRequested: refundQueued,
       cancellation: await svc.serializeCancellation(cancellation, order),
     });
   } catch (error) {
@@ -521,32 +541,27 @@ exports.approveCancellation = async (req, res) => {
       source: 'admin',
     });
 
-    try {
-      await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
-    } catch (_) {
-      /* best effort */
+    const paid = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
+
+    // Only void the payment of an order that was never paid. A PAID payment is
+    // a real gateway transaction: it stays PAID until the refund actually
+    // completes, otherwise the payments page would report a captured payment as
+    // cancelled and the refund would appear to have nothing to pay out against.
+    if (!paid) {
+      try {
+        await Payment.findOneAndUpdate({ orderId: order._id }, { status: 'CANCELLED', cancelledAt: new Date() });
+      } catch (_) {
+        /* best effort */
+      }
     }
 
     // 3. Refund if payment was successful, otherwise complete immediately.
-    //    Refund amount is admin-controlled (full, partial, or none). If the
-    //    admin supplies a valid refundAmount (e.g. 0 for no refund, or a partial
-    //    amount), it is honored; otherwise it defaults to the full total.
-    // Refund amount is admin-controlled (partial, or none). If the admin
-    // supplies a valid refundAmount (e.g. 0 for no refund, or a partial
-    // amount), it is honored; otherwise it defaults to Total Paid - VAT, so
-    // the VAT portion is never refunded.
-    const paid = String(order.paymentStatus || '').toUpperCase() === PAYMENT_STATUS.PAID;
-    const vatCut = Number(order.vatAmount) > 0 ? Number(order.vatAmount) : 0;
-    let refundAmountUsed =
-      Number(order.subtotal) > 0
-        ? Number(order.subtotal)
-        : Math.max(0, (Number(order.totalAmount) || 0) - vatCut);
-    if (refundAmount !== undefined && refundAmount !== null && refundAmount !== '') {
-      const num = Number(refundAmount);
-      if (Number.isFinite(num) && num >= 0) {
-        refundAmountUsed = num;
-      }
-    }
+    //    The default refund is the order Subtotal (Refund Amount = Subtotal);
+    //    Total Paid (Subtotal + Service Fee) is what the customer paid and VAT
+    //    is never part of the refund summary. The admin may still override with
+    //    an explicit amount - 0 for no refund, or a partial amount - which is
+    //    honored but never allowed to exceed the subtotal.
+    const refundAmountUsed = paid ? resolveRefundAmount(order, refundAmount) : 0;
 
     if (paid && refundAmountUsed > 0) {
       await svc.requestRefund({ order, cancellation, amount: refundAmountUsed, actorId: req.user.id });
@@ -698,10 +713,7 @@ exports.requestRefund = async (req, res) => {
     const result = await svc.requestRefund({
       order,
       cancellation,
-      amount:
-        Number(order.subtotal) > 0
-          ? Number(order.subtotal)
-          : Math.max(0, (Number(order.totalAmount) || 0) - (Number(order.vatAmount) || 0)),
+      amount: computeRefundSummary(order).refundAmount,
       actorId: req.user.id,
     });
     await svc.markRefundProcessing({ order, cancellation, reference: cancellation.refundReference });
@@ -739,23 +751,12 @@ exports.confirmRefund = async (req, res) => {
     const order = await Order.findById(cancellation.orderId);
 
     await svc.confirmRefund({ cancellation, order, providerReference, actorId: req.user && req.user.id });
-
-    if (order) {
-      try {
-        await Payment.findOneAndUpdate(
-          { orderId: order._id },
-          {
-            status: 'REFUNDED',
-            refundStatus: 'REFUNDED',
-            refundedAt: new Date(),
-            refundAmount: cancellation.refundAmount,
-            refundReference: cancellation.refundReference,
-          }
-        );
-      } catch (_) {
-        /* best effort */
-      }
-    }
+    // NOTE: the order, the cancellation AND the Payment record are all marked
+    // REFUNDED inside svc.confirmRefund, before the customer is notified. This
+    // controller used to flip the Payment itself *after* the success
+    // notification had already gone out, inside a swallowing try/catch - so the
+    // customer could be told "refunded successfully" while Payment.status was
+    // still PAID. That write now lives with the rest of the refund.
 
     // Refund resolved => cancellation is complete.
     cancellation.status = CANCELLATION_FLOW_STATUS.COMPLETED;
@@ -836,7 +837,11 @@ exports.checkCancellationEligibility = async (req, res) => {
     const order = await svc.resolveOrder(orderId);
     if (!order) return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Order not found' });
 
-    if (order.userId && String(order.userId) !== String(req.user.id) && !isAdminRole(req.user.role)) {
+    // Same shared policy as the cancellation request itself, so this endpoint
+    // never tells a manager "yes you can cancel" right before POST /request
+    // refuses them (or vice versa).
+    const access = describeOrderAccess(order, req.user);
+    if (!access.canView) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'Unauthorized to check this order' });
     }
 
@@ -844,7 +849,11 @@ exports.checkCancellationEligibility = async (req, res) => {
     let message = '';
     const current = String(order.orderStatus || order.status || '').toUpperCase();
 
-    if (['CANCELLED', 'COMPLETED', 'SERVED'].includes(current)) {
+    if (!access.canCancel) {
+      // Viewable but not cancellable (the assigned courier). Say so plainly
+      // rather than pretending the order is not theirs.
+      message = access.reason;
+    } else if (['CANCELLED', 'COMPLETED', 'SERVED'].includes(current)) {
       message = `Order has already been ${current.toLowerCase()} and cannot be cancelled`;
     } else if (order.cancellationRequested) {
       const cancellation = await svc.findActiveCancellation(order);
@@ -855,6 +864,10 @@ exports.checkCancellationEligibility = async (req, res) => {
     }
 
     const activeCancellation = await svc.findActiveCancellation(order);
+    // Ship the authoritative refund summary (Subtotal / Service Fee / Total Paid
+    // / Refund Amount, VAT excluded) so the cancellation page never has to
+    // re-derive the numbers the backend will actually refund.
+    const refundSummary = computeRefundSummary(order);
     res.status(HTTP_STATUS.OK).json({
       success: true,
       canCancel,
@@ -863,9 +876,14 @@ exports.checkCancellationEligibility = async (req, res) => {
       cancellationNumber: activeCancellation ? activeCancellation.cancellationNumber : null,
       cancellationStatus: activeCancellation ? activeCancellation.status : null,
       refundStatus: activeCancellation ? activeCancellation.refundStatus : null,
+      refundSummary,
       orderSummary: {
         orderId: order.orderId,
         totalAmount: order.totalAmount,
+        subtotal: refundSummary.subtotal,
+        serviceFee: refundSummary.serviceFee,
+        totalPaid: refundSummary.totalPaid,
+        refundAmount: refundSummary.refundAmount,
         items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, price: item.price })),
       },
     });

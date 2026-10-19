@@ -16,7 +16,7 @@ function tr(key, fallback, vars) {
   'use strict';
 
   var API = window.__API_URL || 'http://localhost:5000/api/v1';
-  var ALLOWED = ['tax_authority', 'admin', 'cafeteria_admin'];
+  var ALLOWED = ['admin', 'cafeteria_admin'];
 
   function esc(value) {
     if (value === null || value === undefined) return '';

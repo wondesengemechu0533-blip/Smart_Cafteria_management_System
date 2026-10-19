@@ -66,8 +66,9 @@ function formatCategory(category) {
 
 function statusLabel(status) {
     const map = {
-        PENDING: 'issue_status_pending',
-        ACCEPTED: 'issue_status_accepted',
+        OPEN: 'issue_status_open',
+        UNDER_REVIEW: 'issue_status_under_review',
+        REQUEST_SENT: 'issue_status_request_sent',
         RESOLVED: 'issue_status_resolved'
     };
     if (typeof window.translateStatus === 'function') {
@@ -205,7 +206,7 @@ function renderIssues() {
         const card = document.createElement('div');
         const priority = issue.priority || 'medium';
         card.className = `alert-card ${escapeHtml(priority)}`;
-        const status = issue.status || 'PENDING';
+        const status = issue.status || 'OPEN';
         const hasSolution = Boolean(issue.solution);
         const sevKey = 'severity_' + priority;
 
@@ -230,10 +231,10 @@ function renderIssues() {
                         <span class="detail-label">${escapeHtml(tr('issue_col_status', 'Status'))}</span>
                         <span class="detail-value">${escapeHtml(statusLabel(status))}</span>
                     </div>
-                    ${issue.acceptedAt ? `
+                    ${issue.investigatedAt ? `
                     <div class="detail-item">
-                        <span class="detail-label">${escapeHtml(tr('issue_title_accepted', 'Accepted At'))}</span>
-                        <span class="detail-value">${formatDateTime(issue.acceptedAt)}</span>
+                        <span class="detail-label">${escapeHtml(tr('issue_title_reviewed', 'Reviewed At'))}</span>
+                        <span class="detail-value">${formatDateTime(issue.investigatedAt)}</span>
                     </div>` : ''}
                     ${issue.repliedAt ? `
                     <div class="detail-item">
@@ -365,7 +366,7 @@ async function openIssueDetails(issueId) {
         }
 
         const issue = data.issue;
-        const status = issue.status || 'PENDING';
+        const status = issue.status || 'OPEN';
         titleEl.textContent = issue.title || tr('issue_title_details', 'Issue Details');
         const sevKey = 'severity_' + (issue.priority || 'medium');
 
@@ -391,14 +392,14 @@ async function openIssueDetails(issueId) {
                         <span class="detail-label">${escapeHtml(tr('issue_col_reported_at', 'Reported At'))}</span>
                         <span class="detail-value">${formatDateTime(issue.createdAt)}</span>
                     </div>
-                    ${issue.acceptedAt ? `
+                    ${issue.investigatedAt ? `
                     <div class="detail-item">
-                        <span class="detail-label">${escapeHtml(tr('issue_title_accepted', 'Accepted By'))}</span>
-                        <span class="detail-value">${escapeHtml(personName(issue.acceptedBy, tr('role_manager', 'Manager')))}</span>
+                        <span class="detail-label">${escapeHtml(tr('issue_title_reviewed_by', 'Reviewed By'))}</span>
+                        <span class="detail-value">${escapeHtml(personName(issue.investigatedBy, tr('role_manager', 'Manager')))}</span>
                     </div>
                     <div class="detail-item">
-                        <span class="detail-label">${escapeHtml(tr('issue_title_accepted', 'Accepted At'))}</span>
-                        <span class="detail-value">${formatDateTime(issue.acceptedAt)}</span>
+                        <span class="detail-label">${escapeHtml(tr('issue_title_reviewed', 'Reviewed At'))}</span>
+                        <span class="detail-value">${formatDateTime(issue.investigatedAt)}</span>
                     </div>` : ''}
                     ${issue.repliedAt ? `
                     <div class="detail-item">
@@ -411,17 +412,19 @@ async function openIssueDetails(issueId) {
                     </div>` : ''}
                 </div>
             </div>
+            ${issue.resolutionReason ? `<div class="detail-section"><h4>${escapeHtml(tr('resolution_reason_label','Resolution Reason'))}</h4><p style="font-size:14px;color:#333;">${escapeHtml(issue.resolutionReason)}</p></div>` : ''}
+            ${issue.resolutionSolution ? `<div class="detail-section"><h4>${escapeHtml(tr('resolution_solution_label','Solution / Corrective Action'))}</h4><p style="font-size:14px;color:#333;">${escapeHtml(issue.resolutionSolution)}</p></div>` : ''}
             ${issue.solution ? `
             <div class="detail-section">
-                <h4>${escapeHtml(tr('issue_title_solution', "Manager's Solution"))}</h4>
+                <h4>${escapeHtml(tr('issue_title_solution', "Additional Details"))}</h4>
                 <div class="solution-box">${escapeHtml(issue.solution)}</div>
                 <div class="solution-meta">
                     ${escapeHtml(tr('issue_by', 'By {name}', { name: personName(issue.repliedBy, tr('role_cafeteria_manager', 'Cafeteria Manager')) }))} · ${formatDateTime(issue.repliedAt)}
                 </div>
             </div>` : `
             <div class="detail-section">
-                <h4>${escapeHtml(tr('issue_title_solution', "Manager's Solution"))}</h4>
-                <p style="font-size:14px;color:#999;">${escapeHtml(tr('issue_empty_status', 'No solution yet — the cafeteria manager has not replied.'))}</p>
+                <h4>${escapeHtml(tr('issue_title_solution', "Manager's Resolution"))}</h4>
+                <p style="font-size:14px;color:#999;">${escapeHtml(tr('issue_empty_status', 'No resolution details yet — the cafeteria manager has not replied.'))}</p>
             </div>`}
         `;
     } catch (error) {

@@ -167,7 +167,7 @@ function tr(key, fallback, vars) {
    * ROLE DETECTION
    * ============================================================ */
   var CAFETERIA_ROLES = ['cafeteria_admin', 'manager'];
-  var SYSTEM_ROLES = ['admin', 'system_admin', 'tax_authority'];
+  var SYSTEM_ROLES = ['admin', 'system_admin'];
   var role = getRole();
   var isCafeteria = CAFETERIA_ROLES.indexOf(role) !== -1;
   var isSystem = SYSTEM_ROLES.indexOf(role) !== -1;

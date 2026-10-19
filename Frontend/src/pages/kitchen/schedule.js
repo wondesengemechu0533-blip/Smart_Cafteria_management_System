@@ -49,16 +49,77 @@ function statusBadge(status) {
 
 function updateStats() {
     const today = new Date().toDateString();
-    const scheduled = allShifts.filter(s => s.status === 'scheduled').length;
-    const active = allShifts.filter(s => s.status === 'active' || s.status === 'clocked_in').length;
+    const todayStart = startOfToday();
+    const scheduled = allShifts.filter(s =>
+        s.status === 'scheduled' && Number.isFinite(shiftStart(s)) && shiftStart(s) >= todayStart).length;
+    const active = allShifts.filter(s => s.status === 'active').length;
     const completed = allShifts.filter(s => s.status === 'completed' && new Date(s.date || s.startTime).toDateString() === today).length;
     scheduledCountEl.textContent = scheduled;
     activeCountEl.textContent = active;
     completedCountEl.textContent = completed;
 }
 
+function shiftTypeLabel(t) {
+    const key = String(t || '').toLowerCase();
+    if (key === 'morning') return tr('shift_morning', 'Morning');
+    if (key === 'afternoon') return tr('shift_afternoon', 'Afternoon');
+    if (key === 'evening') return tr('shift_evening', 'Evening');
+    if (key === 'night') return tr('shift_night', 'Night');
+    if (key === 'custom') return tr('shift_custom', 'Custom');
+    return t || '--';
+}
+
+/** Is `s` the shift happening at this moment? */
+function isLiveNow(s) {
+    // Completed / cancelled shifts are never "live", even inside their window.
+    if (s.status === 'completed' || s.status === 'cancelled') return false;
+    const now = Date.now();
+    const start = new Date(s.startTime).getTime();
+    if (!Number.isFinite(start) || start > now) return false;
+    if (!s.endTime) return true;
+    const end = new Date(s.endTime).getTime();
+    return !Number.isFinite(end) || end > now;
+}
+
+/**
+ * Every shift this cook has on ONE day, morning -> evening.
+ *
+ * The /shifts/current response carries `dayShifts`, resolved server-side
+ * against the signed-in account and ordered morning -> evening, so this
+ * card never has to group the roster list in the browser.
+ */
+let dayShifts = [];
+let dayShiftsDay = null;
+
+/** Local-time YYYY-MM-DD key for a Date (or date string). */
+function localDateKey(d) {
+    const date = d instanceof Date ? d : new Date(d);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+}
+
+// The server resolves `dayShifts` against the day of whichever shift the
+// ladder picked (today when one is live, otherwise the next/last one). The
+// card heading must say WHICH day it is showing, or "Today's Shifts" lies
+// on evenings when only tomorrow's roster is left.
+function updateCurrentShiftTitle() {
+    const titleEl = document.getElementById('currentShiftTitle');
+    if (!titleEl) return;
+    if (!dayShiftsDay || dayShiftsDay === localDateKey(new Date())) {
+        titleEl.textContent = tr('schedule_today_shifts', "Today's Shifts");
+    } else {
+        titleEl.textContent = tr('schedule_shifts_for', 'Shifts for {date}')
+            .replace('{date}', fmtDate(dayShiftsDay + 'T00:00:00'));
+    }
+}
+
 function renderCurrentShift() {
-    if (!currentShift) {
+    const rows = dayShifts;
+    updateCurrentShiftTitle();
+
+    if (!rows.length) {
         currentShiftBody.innerHTML = `
             <div class="empty-state" style="padding:20px;">
                 <i class="fa-solid fa-calendar-xmark"></i>
@@ -66,41 +127,68 @@ function renderCurrentShift() {
             </div>`;
         return;
     }
-    const s = currentShift;
-    const isClockedIn = s.status === 'clocked_in' || s.clockInTime;
-    const clockActionBtn = isClockedIn
-        ? `<button class="btn btn-danger" onclick="window.clockOut('${s._id}')"><i class="fa-solid fa-right-from-bracket"></i> ${tr('clock_out', 'Clock Out')}</button>`
-        : `<button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button>`;
 
     currentShiftBody.innerHTML = `
         <div class="shift-details">
-            <div class="shift-detail-item">
-                <div class="shift-detail-label">${tr('shift_type', 'Shift Type')}</div>
-                <div class="shift-detail-value">${s.shiftType || '--'}</div>
-            </div>
-            <div class="shift-detail-item">
-                <div class="shift-detail-label">${tr('start_time', 'Start Time')}</div>
-                <div class="shift-detail-value">${fmtTime(s.startTime)}</div>
-            </div>
-            <div class="shift-detail-item">
-                <div class="shift-detail-label">${tr('end_time', 'End Time')}</div>
-                <div class="shift-detail-value">${fmtTime(s.endTime)}</div>
-            </div>
-            <div class="shift-detail-item">
-                <div class="shift-detail-label">${tr('status', 'Status')}</div>
-                <div class="shift-detail-value">${statusBadge(s.status)}</div>
-            </div>
-            ${s.clockInTime ? `<div class="shift-detail-item"><div class="shift-detail-label">Clocked In</div><div class="shift-detail-value">${fmtTime(s.clockInTime)}</div></div>` : ''}
-            ${s.clockOutTime ? `<div class="shift-detail-item"><div class="shift-detail-label">Clocked Out</div><div class="shift-detail-value">${fmtTime(s.clockOutTime)}</div></div>` : ''}
+            ${rows.map((s) => {
+                const live = s.status === 'active' || (s.status === 'scheduled' && isLiveNow(s));
+                // The card renders the whole day, so the action belongs to each
+                // shift - and the backend only accepts clock-in from `scheduled`
+                // and clock-out from `active`, so anything else would 400.
+                // (A completed shift keeps its old clockInTime forever; only
+                // status may decide, otherwise every past shift shows Clock Out.)
+                const action = !canClock() ? ''
+                    : s.status === 'active'
+                    ? `<button class="btn btn-danger" onclick="window.clockOut('${s._id}')"><i class="fa-solid fa-right-from-bracket"></i> ${tr('clock_out', 'Clock Out')}</button>`
+                    : s.status === 'scheduled'
+                        ? `<button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button>`
+                        : '';
+                return `
+                <div class="shift-detail-item" style="${live ? 'border-left:3px solid #f97316;padding-left:10px;' : ''}">
+                    <div class="shift-detail-label">
+                        ${shiftTypeLabel(s.shiftType)}${live ? ' <span class="status-badge active">LIVE</span>' : ''}
+                    </div>
+                    <div class="shift-detail-value">
+                        ${fmtTime(s.startTime)} &ndash; ${fmtTime(s.endTime)}
+                    </div>
+                    <div class="shift-detail-label" style="margin-top:4px;">${tr('status', 'Status')}</div>
+                    <div class="shift-detail-value">${statusBadge(s.status)}</div>
+                    ${s.clockInTime ? `<div class="shift-detail-label" style="margin-top:4px;">Clocked In</div><div class="shift-detail-value">${fmtTime(s.clockInTime)}</div>` : ''}
+                    ${s.clockOutTime ? `<div class="shift-detail-label" style="margin-top:4px;">Clocked Out</div><div class="shift-detail-value">${fmtTime(s.clockOutTime)}</div>` : ''}
+                    ${action ? `<div class="shift-actions">${action}</div>` : ''}
+                </div>`;
+            }).join('')}
         </div>
-        <div class="shift-actions">${clockActionBtn}</div>
     `;
 }
 
+// Clock in/out is kitchen-only on the backend (authorize('kitchen')); managers
+// may open this page to view the roster, so hide the buttons for them.
+function canClock() {
+    const role = String(localStorage.getItem('userRole') || localStorage.getItem('role') || '')
+        .toLowerCase().replace(/-/g, '_');
+    return ['kitchen', 'kitchen_staff', 'staff', 'foodmaker'].indexOf(role) !== -1;
+}
+
+function startOfToday() {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+}
+
+function shiftStart(s) {
+    return new Date(s.startTime).getTime();
+}
+
 function renderUpcomingShifts() {
-    const upcoming = allShifts.filter(s => s.status === 'scheduled');
+    // Only future/today shifts that are still waiting to be worked. The
+    // seeder leaves shifts `scheduled` forever, so a status-only filter
+    // used to list last week's shifts under "Upcoming".
+    const today = startOfToday();
+    const upcoming = allShifts.filter(s =>
+        s.status === 'scheduled' && Number.isFinite(shiftStart(s)) && shiftStart(s) >= today);
     if (upcoming.length === 0) {
-        upcomingShiftsBody.innerHTML = '<div class="empty-state"><i class="fa-solid fa-calendar"></i><p>No upcoming shifts</p></div>';
+        upcomingShiftsBody.innerHTML = `<div class="empty-state"><i class="fa-solid fa-calendar"></i><p>${tr('schedule_no_upcoming', 'No upcoming shifts')}</p></div>`;
         return;
     }
     upcomingShiftsBody.innerHTML = `
@@ -113,7 +201,7 @@ function renderUpcomingShifts() {
                         <td>${s.shiftType || '--'}</td>
                         <td>${s.staffName || s.staff?.name || '--'}</td>
                         <td>${statusBadge(s.status)}</td>
-                        <td class="text-center"><button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button></td>
+                        <td class="text-center">${canClock() ? `<button class="btn btn-primary" onclick="window.clockIn('${s._id}')"><i class="fa-solid fa-right-to-bracket"></i> ${tr('clock_in', 'Clock In')}</button>` : '--'}</td>
                     </tr>
                 `).join('')}
             </tbody>
@@ -122,9 +210,15 @@ function renderUpcomingShifts() {
 }
 
 function renderPastShifts() {
-    const past = allShifts.filter(s => s.status === 'completed' || s.status === 'cancelled');
+    // Completed / cancelled, plus stale `scheduled` shifts nobody clocked
+    // into (otherwise they would vanish from the page entirely).
+    const today = startOfToday();
+    const past = allShifts.filter(s =>
+        s.status === 'completed' ||
+        s.status === 'cancelled' ||
+        (s.status === 'scheduled' && Number.isFinite(shiftStart(s)) && shiftStart(s) < today));
     if (past.length === 0) {
-        pastShiftsBody.innerHTML = '<div class="empty-state"><i class="fa-solid fa-calendar"></i><p>No past shifts</p></div>';
+        pastShiftsBody.innerHTML = `<div class="empty-state"><i class="fa-solid fa-calendar"></i><p>${tr('schedule_no_past', 'No past shifts')}</p></div>`;
         return;
     }
     pastShiftsBody.innerHTML = `
@@ -154,6 +248,27 @@ function renderAll() {
     renderPastShifts();
 }
 
+// Stop the 60s poll once the session is unusable (expired token / wrong
+// role) - otherwise the page keeps firing requests that all fail silently.
+function stopPolling() {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+}
+
+function handleAuthError(err) {
+    const status = err && err.status;
+    if (status === 401 || status === 403) {
+        stopPolling();
+        showToast(status === 401
+            ? tr('schedule_session_expired', 'Session expired. Please log in again.')
+            : tr('schedule_access_denied', 'You do not have access to this page.'), 'error');
+        return true;
+    }
+    return false;
+}
+
 async function fetchShifts() {
     try {
         const data = await api.get('/kitchen-staff/shifts');
@@ -163,6 +278,7 @@ async function fetchShifts() {
         }
     } catch (err) {
         console.error('Failed to load shifts:', err);
+        handleAuthError(err);
     }
 }
 
@@ -171,32 +287,49 @@ async function fetchCurrentShift() {
         const data = await api.get('/kitchen-staff/shifts/current');
         if (data.success) {
             currentShift = data.shift || null;
+            // The day's full roster, resolved server-side against this account.
+            // Fall back to the single `shift` pick so older backends that do not
+            // send `dayShifts` still populate the card.
+            dayShifts = Array.isArray(data.dayShifts)
+                ? data.dayShifts
+                : (data.shift ? [data.shift] : []);
+            dayShiftsDay = data.day || null;
             renderCurrentShift();
         }
     } catch (err) {
-        console.error('Failed to load current shift:', err);
+        // 404 is this endpoint's way of saying "no shift", not a failure.
+        currentShift = null;
+        dayShifts = [];
+        dayShiftsDay = null;
+        renderCurrentShift();
+        if (err && err.status !== 404) {
+            console.error('Failed to load current shift:', err);
+            handleAuthError(err);
+        }
     }
 }
 
 window.clockIn = async function (shiftId) {
     try {
         await api.patch(`/kitchen-staff/shifts/${shiftId}/clock-in`);
-        showToast('Clocked in successfully');
+        showToast(tr('clock_in_success', 'Clocked in successfully'));
         await Promise.all([fetchShifts(), fetchCurrentShift()]);
     } catch (err) {
         console.error('Clock in error:', err);
-        showToast('Failed to clock in', 'error');
+        if (handleAuthError(err)) return;
+        showToast((err && err.message) || tr('clock_in_failed', 'Failed to clock in'), 'error');
     }
 };
 
 window.clockOut = async function (shiftId) {
     try {
         await api.patch(`/kitchen-staff/shifts/${shiftId}/clock-out`);
-        showToast('Clocked out successfully');
+        showToast(tr('clock_out_success', 'Clocked out successfully'));
         await Promise.all([fetchShifts(), fetchCurrentShift()]);
     } catch (err) {
         console.error('Clock out error:', err);
-        showToast('Failed to clock out', 'error');
+        if (handleAuthError(err)) return;
+        showToast((err && err.message) || tr('clock_out_failed', 'Failed to clock out'), 'error');
     }
 };
 

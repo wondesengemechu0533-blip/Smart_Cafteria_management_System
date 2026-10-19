@@ -1278,6 +1278,36 @@
                 </div>
             </div>
 
+            <!-- Refund summary: Subtotal / Service Fee / Total Paid (Subtotal +
+                 Service Fee, VAT excluded) / Refund Amount (= Subtotal). -->
+            <div
+                style="
+                    background:#f8fafc;
+                    border:1px solid #e2e8f0;
+                    border-radius:8px;
+                    padding:14px;
+                    margin-bottom:16px;
+                    font-size:14px;
+                "
+            >
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <span class="label" style="color:#64748b;" data-i18n="refund_subtotal">Subtotal</span>
+                    <strong id="mRefundSubtotal">-</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <span class="label" style="color:#64748b;" data-i18n="refund_service_fee">Service Fee</span>
+                    <strong id="mRefundServiceFee">-</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+                    <span class="label" style="color:#64748b;" data-i18n="refund_total_paid">Total Paid</span>
+                    <strong id="mRefundTotalPaid">-</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <span class="label" style="color:#15803d; font-weight:600;" data-i18n="refund_amount">Refund Amount</span>
+                    <strong id="mRefundAmount" style="color:#15803d;">-</strong>
+                </div>
+            </div>
+
             <div style="margin-bottom:6px;">
                 <span class="label" style="color:#334155; font-weight:600;" data-i18n="cancel_reason">
                     Cancellation Reason
@@ -1303,6 +1333,26 @@
                 <i class="fas fa-exclamation-triangle"></i>
                 Important: This order may have already been prepared. Cancellation
                 / refund may require cafeteria approval.
+            </div>
+
+            <div
+                id="mModalAlert"
+                role="alert"
+                aria-live="assertive"
+                style="
+                    display:none;
+                    font-size:13px;
+                    color:#991b1b;
+                    background:#fef2f2;
+                    border:1px solid #fecaca;
+                    border-radius:6px;
+                    padding:10px 12px;
+                    margin-bottom:16px;
+                    line-height:1.5;
+                "
+            >
+                <i class="fas fa-circle-exclamation" style="margin-right:6px;"></i>
+                <span id="mModalAlertText"></span>
             </div>
 
             <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -1358,6 +1408,14 @@
             formatDate,
             formatTime
         } from '../../js/utils/formatters.js';
+
+        import { computeRefundSummary } from '../../js/utils/refund-summary.js';
+
+        // Refund summary shown in the confirmation modal.
+        // Subtotal / Service Fee / Total Paid (Subtotal + Service Fee, VAT
+        // excluded) / Refund Amount (= Subtotal). Mirrors the backend helper so
+        // the amount quoted here is exactly the amount that gets refunded.
+        const getRefundSummary = (order) => computeRefundSummary(order);
 
 
         // =========================================================
@@ -2048,7 +2106,21 @@
                         ''
                     ).toUpperCase();
 
+                // The backend also tells us whether THIS viewer is allowed to
+                // cancel at all (owner, or a manager/admin acting on a
+                // customer's order). Reading the order is not the same as being
+                // able to cancel it - an assigned courier can read the order to
+                // deliver it - so without this the page renders a "Confirm
+                // Cancellation" button that is guaranteed to come back 403.
+                const viewerCanCancel =
+                    order.canCancel !== false;
+
+                const viewerCancelBlockedReason =
+                    order.cancelBlockedReason ||
+                    'You are not allowed to cancel this order. Ask a manager or the cafeteria administrator.';
+
                 const cancellable =
+                    viewerCanCancel &&
                     ['PENDING', 'RECEIVED']
                         .includes(orderStatusValue);
 
@@ -2091,16 +2163,28 @@
                                 "
                             >
 
-                                This order is already
+                                ${
+                                    // Say the real reason. When the viewer simply
+                                    // is not permitted to cancel (they can read
+                                    // the order but do not own it), "this order
+                                    // is already X" would be nonsense.
+                                    !viewerCanCancel
+                                        ? viewerCancelBlockedReason
+                                        : `This order is already
                                 <strong>
                                     ${(window.translateStatus || (v => String(v).toLowerCase().replace(/^./, c => c.toUpperCase())))(String(order.status || order.orderStatus || ''))}
                                 </strong>
-                                and can no longer be cancelled.
+                                and can no longer be cancelled.`
+                                }
 
-                                <br><br>
+                                ${
+                                    viewerCanCancel
+                                        ? `<br><br>
 
                                 Cancellation is only available before the kitchen
-                                begins preparing your order.
+                                begins preparing your order.`
+                                        : ''
+                                }
 
                                 ${
                                     order.status === 'served'
@@ -2336,9 +2420,9 @@
                                 Refund Policy: Cancellation is only available
                                 before the kitchen begins preparing your order.
                                 Since your order has not been prepared yet, it
-                                will be cancelled immediately and a full refund
-                                will be processed automatically if you have
-                                paid.
+                                will be cancelled immediately and a refund of
+                                the order subtotal will be processed
+                                automatically if you have paid.
                             </p>
 
 
@@ -2445,8 +2529,9 @@ Confirm Cancellation
                                 <i class="fas fa-info-circle"></i>
 
                                 Your order will be cancelled immediately.
-                                Any payment you have made will be fully
-                                refunded.
+                                Any payment you have made will be refunded up
+                                to the order subtotal shown in the
+                                confirmation summary.
 
                             </p>
 
@@ -2504,6 +2589,26 @@ Confirm Cancellation
                             'mOrderTotal'
                         );
 
+                    const mRefundSubtotal =
+                        document.getElementById(
+                            'mRefundSubtotal'
+                        );
+
+                    const mRefundServiceFee =
+                        document.getElementById(
+                            'mRefundServiceFee'
+                        );
+
+                    const mRefundTotalPaid =
+                        document.getElementById(
+                            'mRefundTotalPaid'
+                        );
+
+                    const mRefundAmount =
+                        document.getElementById(
+                            'mRefundAmount'
+                        );
+
                     const mOrderReason =
                         document.getElementById(
                             'mOrderReason'
@@ -2524,6 +2629,51 @@ Confirm Cancellation
                             'modalKeepOrderBtn'
                         );
 
+                    const mModalAlert =
+                        document.getElementById(
+                            'mModalAlert'
+                        );
+
+                    const mModalAlertText =
+                        document.getElementById(
+                            'mModalAlertText'
+                        );
+
+                    // Errors raised while the confirmation modal is open must be
+                    // rendered INSIDE the modal. The page-level #alertMessage
+                    // lives in normal document flow, and the modal is a
+                    // position:fixed overlay with z-index:10000 — so anything
+                    // shown there is completely hidden behind the dark backdrop.
+                    // That is why a failed cancellation used to look like the
+                    // Confirm button had done nothing at all.
+
+                    const showModalAlert = function (
+                        message
+                    ) {
+
+                        if (!mModalAlert || !mModalAlertText) return;
+
+                        mModalAlertText.textContent =
+                            message ||
+                            'The cancellation could not be completed. Please try again.';
+
+                        mModalAlert.style.display =
+                            'block';
+
+                    };
+
+                    const clearModalAlert = function () {
+
+                        if (!mModalAlert || !mModalAlertText) return;
+
+                        mModalAlert.style.display =
+                            'none';
+
+                        mModalAlertText.textContent =
+                            '';
+
+                    };
+
                     let pendingCancel = {
                         reason: '',
                         details: ''
@@ -2535,6 +2685,60 @@ Confirm Cancellation
                         confirmModal.style.justifyContent = 'center';
                         modalConfirmBtn.disabled = false;
                         modalConfirmBtn.classList.remove('loading');
+                        clearModalAlert();
+                    };
+
+                    // Always returns the button to a usable state. Previously a
+                    // single missed branch left it permanently disabled, so the
+                    // modal could not be submitted again.
+                    const resetConfirmBtn = function () {
+                        modalConfirmBtn.disabled = false;
+                        modalConfirmBtn.classList.remove('loading');
+                    };
+
+                    // Turn an API rejection into something the customer can act
+                    // on. ApiClient throws on every non-2xx and attaches the
+                    // server's own `error` string to Error.message, so that
+                    // message is the real reason (e.g. "this order has already
+                    // entered the PREPARING stage") rather than a generic
+                    // apology that told the user nothing.
+                    const describeCancelError = function (
+                        error
+                    ) {
+
+                        const status =
+                            error && error.status;
+
+                        const serverMessage =
+                            error &&
+                            (
+                                error.message ||
+                                error.rawMessage ||
+                                error.data?.error
+                            );
+
+                        if (status === 409) {
+                            return serverMessage ||
+                                'This order already has a cancellation in progress.';
+                        }
+
+                        if (status === 403) {
+                            return serverMessage ||
+                                'You can only cancel your own orders.';
+                        }
+
+                        if (status === 401) {
+                            return 'Your session has expired. Please sign in again and retry.';
+                        }
+
+                        if (status === 400 || status === 404) {
+                            return serverMessage ||
+                                'This order can no longer be cancelled.';
+                        }
+
+                        return serverMessage ||
+                            'The cancellation could not be completed. Please try again.';
+
                     };
 
                     const statusIsPreparing = function (s) {
@@ -2589,6 +2793,26 @@ Confirm Cancellation
                                     ? `${order.totalAmount} ETB`
                                     : '-');
 
+                            // Refund summary. The backend ships `refundSummary`
+                            // on the order summary (Subtotal / Service Fee /
+                            // Total Paid = Subtotal + Service Fee / Refund
+                            // Amount = Subtotal, VAT excluded); the local helper
+                            // mirrors it for payloads that predate the field.
+                            const refundSummary =
+                                getRefundSummary(order);
+
+                            mRefundSubtotal.textContent =
+                                `${refundSummary.subtotal.toFixed(2)} ETB`;
+
+                            mRefundServiceFee.textContent =
+                                `${refundSummary.serviceFee.toFixed(2)} ETB`;
+
+                            mRefundTotalPaid.textContent =
+                                `${refundSummary.totalPaid.toFixed(2)} ETB`;
+
+                            mRefundAmount.textContent =
+                                `${refundSummary.refundAmount.toFixed(2)} ETB`;
+
                             mOrderReason.textContent =
                                 reason +
                                 (details
@@ -2611,6 +2835,8 @@ Confirm Cancellation
 
                             // Show modal
 
+                            clearModalAlert();
+
                             confirmModal.style.display = 'flex';
                             confirmModal.style.alignItems = 'center';
                             confirmModal.style.justifyContent = 'center';
@@ -2627,7 +2853,7 @@ Confirm Cancellation
                     );
 
 
-                    // "Request Cancellation" → actually submit
+                    // "Confirm Cancellation" → actually submit
 
                     modalConfirmBtn.addEventListener(
                         'click',
@@ -2635,12 +2861,19 @@ Confirm Cancellation
 
                             if (modalConfirmBtn.disabled) return;
 
+                            // Guard against a double submit before the first
+                            // request settles (fast double-click / Enter held
+                            // down), which would otherwise create a cancellation
+                            // and then trip the backend's own duplicate guard.
+
+                            modalConfirmBtn.disabled =
+                                true;
+
                             modalConfirmBtn.classList.add(
                                 'loading'
                             );
 
-                            modalConfirmBtn.disabled =
-                                true;
+                            clearModalAlert();
 
                             try {
 
@@ -2657,12 +2890,32 @@ Confirm Cancellation
 
                                 if (result.success) {
 
-                                    // Show success inside the modal
-
                                     const modalBox =
                                         modalConfirmBtn.closest(
                                             '.cancel-modal'
                                         );
+
+                                    // Show what actually happened to the money,
+                                    // using the same refund summary the
+                                    // confirmation step quoted.
+
+                                    const summary =
+                                        getRefundSummary(order);
+
+                                    const refundLine =
+                                        result.refunded
+                                            ? `<p style="margin:10px 0 0; color:#15803d; background:#dcfce7; border:1px solid #86efac; border-radius:6px; padding:8px 10px; font-size:13px;">
+                                                   <i class="fas fa-circle-check"></i>
+                                                   Your payment has been refunded successfully.
+                                               </p>`
+                                            : (result.refundRequested
+                                                ? `<p style="margin:10px 0 0; color:#92400e; background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:8px 10px; font-size:13px;">
+                                                       <i class="fas fa-money-bill-transfer"></i>
+                                                       A refund of ${(result.cancellation?.refundAmount ?? summary.refundAmount).toFixed(2)} ETB is required. Our team will review and process it - you will be notified as soon as it is complete.
+                                                   </p>`
+                                                : `<p style="margin:10px 0 0; color:#475569; font-size:13px;">
+                                                       No payment was involved, so no refund is needed.
+                                                   </p>`);
 
                                     modalBox.innerHTML =
                                         `
@@ -2676,51 +2929,36 @@ Confirm Cancellation
                                             <p style="margin:0 0 4px; color:#475569;">
                                                 Your order has been cancelled and will not be prepared.
                                             </p>
-                                            ${
-                                                result.refunded
-                                                    ? `<p style="margin:10px 0 0; color:#15803d; background:#dcfce7; border:1px solid #86efac; border-radius:6px; padding:8px 10px; font-size:13px;">
-                                                           <i class="fas fa-circle-check"></i>
-                                                           Your payment has been refunded successfully.
-                                                       </p>`
-                                                    : (result.refundRequested
-                                                        ? `<p style="margin:10px 0 0; color:#92400e; background:#fef3c7; border:1px solid #fcd34d; border-radius:6px; padding:8px 10px; font-size:13px;">
-                                                               <i class="fas fa-money-bill-transfer"></i>
-                                                               A refund of ${result.cancellation?.refundAmount ?? ''} ETB is required. Our team will review and process it - you will be notified as soon as it is complete.
-                                                           </p>`
-                                                        : `<p style="margin:10px 0 0; color:#475569; font-size:13px;">
-                                                               No payment was involved, so no refund is needed.
-                                                           </p>`)
-                                            }
+                                            ${refundLine}
+                                            <div style="margin-top:16px;">
+                                                <a href="order-tracking.html?orderId=${encodeURIComponent(orderId)}"
+                                                   style="display:inline-block; padding:9px 18px; border-radius:6px; background:#16a34a; color:#fff; font-weight:600; text-decoration:none; font-size:14px;">
+                                                    View Order
+                                                </a>
+                                            </div>
                                         </div>
                                         `;
 
-                                    setTimeout(() => {
-                                        window.location.href =
-                                            `order-tracking.html?id=${orderId}`;
-                                    }, 2200);
+                                    // Navigating automatically would yank the
+                                    // page away before the customer can read the
+                                    // refund outcome, so hand them the button
+                                    // instead.
+
+                                    return;
 
                                 }
 
                                 // =============================
-                                // Error
+                                // Reached only when the API resolved
+                                // 2xx with success:false.
                                 // =============================
 
-                                else {
+                                showModalAlert(
+                                    result.error ||
+                                    'The cancellation could not be completed. Please try again.'
+                                );
 
-                                    showAlert(
-                                        result.error ||
-                                        'Failed to submit cancellation request',
-                                        'error'
-                                    );
-
-                                    modalConfirmBtn.classList.remove(
-                                        'loading'
-                                    );
-
-                                    modalConfirmBtn.disabled =
-                                        false;
-
-                                }
+                                resetConfirmBtn();
 
                             }
 
@@ -2731,17 +2969,17 @@ Confirm Cancellation
                                     error
                                 );
 
-                                showAlert(
-                                    'An unexpected error occurred. Please try again.',
-                                    'error'
+                                // ApiClient throws on every non-2xx, so this is
+                                // the ONLY path a real failure can take - and
+                                // previously it showed a hardcoded generic
+                                // message in a container hidden behind the modal
+                                // overlay, so the button looked inert.
+
+                                showModalAlert(
+                                    describeCancelError(error)
                                 );
 
-                                modalConfirmBtn.classList.remove(
-                                    'loading'
-                                );
-
-                                modalConfirmBtn.disabled =
-                                    false;
+                                resetConfirmBtn();
 
                             }
 

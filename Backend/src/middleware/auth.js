@@ -64,6 +64,18 @@ const authorize =
     const allowedRoles = roles.map((r) => r.toLowerCase());
 
     if (!allowedRoles.includes(userRole)) {
+      // Log what was actually needed and what the caller holds.
+      //
+      // WHY: the response body can only say "Forbidden" - it is the same for
+      // every role gate in the app, and the client collapses it into one generic
+      // "You do not have permission" string. That made a 403 undiagnosable from
+      // the browser console: the kitchen dashboard was logging the same error
+      // every 15s with nothing to say WHICH role was missing. This one line is
+      // the difference between "some account is wrong" and knowing which one.
+      console.warn(
+        `⛔ 403 ${req.method} ${req.originalUrl || req.url} — role="${userRole}" ` +
+          `not in [${allowedRoles.join(', ')}] (user=${req.user.email || req.user.id})`
+      );
       return res.status(403).json({ success: false, error: 'Forbidden' });
     }
     next();

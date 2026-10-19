@@ -2,9 +2,11 @@ const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const MenuItem = require('../models/MenuItem');
 const StockTransaction = require('../models/StockTransaction');
-const Notification = require('../models/Notification');
+const Payment = require('../models/Payment');
 const Cancellation = require('../models/Cancellation');
 const { CANCELLATION_STATUS, CANCELLATION_FLOW_STATUS, REFUND_STATUS } = require('../config/constants');
+const { computeRefundSummary, resolveRefundAmount } = require('../utils/money');
+const { notifyRefundProcessed } = require('./refund-notification.service');
 
 const CANCELLATION_REASON_VALUES = new Set([
   'CUSTOMER_CHANGED_MIND',
@@ -134,6 +136,16 @@ async function restoreStock(order, actorId) {
       orderId: order._id,
     });
 
+    // Re-run the stock-alert lifecycle: a restored item may drop back out of
+    // the low-stock band (alert resolved) or still be below threshold (alert
+    // stays active). Best-effort - never fail the cancellation restore.
+    try {
+      const { syncStockAlertsForItem } = require('./stock-alert.service');
+      await syncStockAlertsForItem(food);
+    } catch (e) {
+      console.warn('⚠️ Stock alert sync after cancellation restore failed:', e.message);
+    }
+
     restoredItems.push({ itemId: food._id, quantity: orderItem.quantity });
   }
 
@@ -180,15 +192,12 @@ async function requestRefund({ order, cancellation, amount, actorId }) {
     });
   }
 
-  // Refund is the original order SUBTOTAL only: the VAT portion (and fees)
-  // are never refunded. Prefer the stored subtotal; fall back to
-  // Total Paid - VAT if the subtotal is missing/legacy zero. An explicit
-  // admin-set amount (including 0) is honored with no double VAT deduction.
-  const subtotal = order && Number(order.subtotal) > 0 ? Number(order.subtotal) : null;
-  const vatCut = order && Number(order.vatAmount) > 0 ? Number(order.vatAmount) : 0;
-  const fallback = order ? Math.max(0, (Number(order.totalAmount) || 0) - vatCut) : 0;
-  const defaultRefund = subtotal != null ? subtotal : fallback;
-  const refundAmount = Number.isFinite(Number(amount)) ? Number(amount) : defaultRefund;
+  // Refund is the original order SUBTOTAL only. Total Paid (Subtotal + Service
+  // Fee) is what the customer handed over, and the refund is always Subtotal -
+  // VAT is never part of a refund summary and is never paid back. An explicit
+  // admin-set amount (including 0) is honored, but is still clamped to the
+  // subtotal so no path can pay out more than the food is worth.
+  const refundAmount = resolveRefundAmount(order, amount);
 
   cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
   cancellation.refundAmount = refundAmount;
@@ -225,6 +234,10 @@ async function markRefundProcessing({ cancellation, order, reference }) {
 /**
  * Complete a refund — ONLY after the payment provider confirms it.
  * Never called as part of the initial approve flow.
+ *
+ * Ordering is load-bearing: every REFUNDED write (order, cancellation, payment)
+ * is persisted BEFORE the customer is told anything. A success notification
+ * therefore cannot exist for a refund that did not actually complete.
  */
 async function confirmRefund({ cancellation, order, providerReference, actorId }) {
   if (!cancellation) throw Object.assign(new Error('Cancellation record not found'), { statusCode: 404 });
@@ -254,22 +267,38 @@ async function confirmRefund({ cancellation, order, providerReference, actorId }
     order.paymentStatus = 'REFUNDED';
     order.refundStatus = REFUND_STATUS.REFUNDED;
     order.refundReference = cancellation.refundReference;
-    order.refundAmount = Number(cancellation.refundAmount) || order.totalAmount || 0;
+    order.refundAmount = Number(cancellation.refundAmount) || computeRefundSummary(order).refundAmount;
     order.refundedAt = new Date();
     await order.save();
   }
   await cancellation.save();
 
-  let createdNotification = null;
+  // The standalone Payment record is part of the refund, not a follow-up task:
+  // it used to be flipped by each caller AFTER this function had already told
+  // the customer "refunded successfully", inside a swallowing try/catch. Doing
+  // it here means the notice below is only ever sent once the payment agrees.
+  let paymentSynced = false;
   if (order) {
-    createdNotification = await Notification.create({
-      userId: order.userId,
-      title: 'Payment Refunded',
-      message: 'Your payment has been refunded successfully.',
-      type: 'order',
-      orderId: order.orderId,
-      isRead: false,
-    });
+    try {
+      await Payment.findOneAndUpdate(
+        { orderId: order._id },
+        {
+          status: 'REFUNDED',
+          refundStatus: 'REFUNDED',
+          refundedAt: order.refundedAt || new Date(),
+          refundAmount: Number(order.refundAmount) || Number(cancellation.refundAmount) || 0,
+          refundReference: cancellation.refundReference,
+        }
+      );
+      paymentSynced = true;
+    } catch (paymentError) {
+      // The order is already REFUNDED, so this is a bookkeeping gap, not a
+      // reason to withhold the customer's notice - but it must be loud.
+      console.error('❌ Payment refund sync failed during confirmRefund:', paymentError.message);
+    }
+  }
+  if (order && !paymentSynced) {
+    console.warn(`⚠️ Order #${order.orderId} is REFUNDED but its Payment record is not yet in sync.`);
   }
 
   // Real-time half of the refund: the customer's tracker and the Manager/Admin
@@ -278,22 +307,13 @@ async function confirmRefund({ cancellation, order, providerReference, actorId }
   // after the money went back.
   await emitRefundStatus(order, actorId ? 'admin' : 'refund');
 
-  try {
-    const { emitSocketEvent } = require('../utils/socket');
-    if (order && createdNotification) {
-      emitSocketEvent(`user:${order.userId}`, 'notification:new', {
-        id: createdNotification._id,
-        title: createdNotification.title,
-        message: createdNotification.message,
-        type: createdNotification.type,
-        orderId: createdNotification.orderId,
-        link: `/src/pages/customer/order-tracking.html?orderId=${order.orderId}`,
-        isRead: createdNotification.isRead,
-        createdAt: createdNotification.createdAt,
-      });
-    }
-  } catch (_) {
-    /* realtime is best effort */
+  // Durable half of the refund: persists the notice in Mongo AND pushes it over
+  // Socket.IO. Deduplicated on refund:processed:<orderId>, so a retried
+  // confirm cannot double-notify the customer. Never throws - the money has
+  // already moved by this point.
+  const notified = await notifyRefundProcessed({ order, cancellation });
+  if (order && notified.reason && notified.reason !== 'duplicate') {
+    console.warn(`Refund notice not delivered for order #${order.orderId}: ${notified.reason}`);
   }
 
   return cancellation;
@@ -561,6 +581,12 @@ async function syncDeliveryCancellation(order, { actorId, adminNote, source } = 
  */
 async function serializeCancellation(cancellation, order) {
   const itemPrice = (i) => (Number(i.price) || 0) * (Number(i.quantity) || 0);
+  // Single source of truth for the money shown on the Manager/Admin refund
+  // dashboard: Subtotal, Service Fee, Total Paid (Subtotal + Service Fee, no
+  // VAT) and Refund Amount (= Subtotal). The dashboard renders these verbatim
+  // instead of re-deriving them, so the display can never drift from the
+  // amount the backend actually refunds.
+  const refundSummary = computeRefundSummary(order);
   return {
     id: cancellation._id,
     cancellationNumber: cancellation.cancellationNumber,
@@ -578,10 +604,12 @@ async function serializeCancellation(cancellation, order) {
     completedAt: cancellation.completedAt,
     adminNote: cancellation.adminNote,
     processedBy: cancellation.processedBy,
+    // The amount actually charged at the gateway, untouched by any refund math.
     orderAmount: order ? order.totalAmount : 0,
-    orderSubtotal: order ? order.subtotal : 0,
-    orderVatAmount: order ? Number(order.vatAmount) || 0 : 0,
-    serviceFee: order ? order.serviceFee : 0,
+    orderSubtotal: refundSummary.subtotal,
+    serviceFee: refundSummary.serviceFee,
+    totalPaid: refundSummary.totalPaid,
+    refundSummary,
     paymentStatus: order ? order.paymentStatus : cancellation.paymentStatus,
     paymentMethod: order ? order.paymentMethod : null,
     refundStatus: cancellation.refundStatus,

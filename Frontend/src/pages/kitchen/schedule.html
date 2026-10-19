@@ -13,11 +13,15 @@
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
 
     <script>
-    const userRole = localStorage.getItem('userRole');
-    const role = localStorage.getItem('role');
-    const isKitchenStaff = userRole === 'STAFF' || userRole === 'KITCHEN_STAFF' || role === 'KITCHEN_STAFF';
-    const isAdmin = userRole === 'ADMIN' || role === 'ADMIN';
-    if (!isKitchenStaff && !isAdmin) {
+    /*
+     * Allowed kitchen schedule roles (case-insensitive, same as dashboard):
+     * kitchen, kitchen_staff, staff, foodmaker, admin, manager, cafeteria_admin
+     */
+    const userRole = String(localStorage.getItem('userRole') || '');
+    const role = String(localStorage.getItem('role') || '');
+    const normalizedRole = (userRole || role).toLowerCase().replace(/-/g, '_');
+    const allowedRoles = ['kitchen', 'kitchen_staff', 'staff', 'foodmaker', 'admin', 'manager', 'cafeteria_admin'];
+    if (allowedRoles.indexOf(normalizedRole) === -1) {
         alert('Access denied. Kitchen staff and Admins only.');
         window.location.href = '../common/login.html';
     }
@@ -223,9 +227,6 @@
                     <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
                     </a>
-                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
-                        <i class="fa-solid fa-flag"></i> Issue Reports
-                    </a>
                     <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
                         <i class="fa-solid fa-bell"></i> Notifications
                     </a>
@@ -264,7 +265,7 @@
             </div>
 
             <div class="current-shift-card" id="currentShiftCard">
-                <h3><i class="fa-solid fa-sun"></i> Current Shift</h3>
+                <h3><i class="fa-solid fa-sun"></i> <span id="currentShiftTitle">Today's Shifts</span></h3>
                 <div id="currentShiftBody">
                     <div class="empty-state" style="padding:20px;">
                         <i class="fa-solid fa-calendar-xmark"></i>
@@ -294,7 +295,7 @@
     <script type="module" src="../../js/utils/i18n.js?v=20261013b"></script>
     <script type="module" src="../../js/api.js?v=20260907"></script>
     <script type="module" src="../../js/auth.js?v=20260907"></script>
-    <script type="module" src="./schedule.js"></script>
+    <script type="module" src="./schedule.js?v=20261015"></script>
 
     <script>
         function toggleUserMenu() { document.getElementById('userDropdownMenu').classList.toggle('active'); }
@@ -329,7 +330,8 @@
         function viewProfile() { alert('Profile page coming soon'); document.getElementById('userDropdownMenu').classList.remove('active'); }
         function viewCurrentShift() {
             const token = localStorage.getItem('auth_token');
-            fetch('http://localhost:5000/api/v1/kitchen-staff/shifts/current', {
+            const apiBase = window.__API_URL || '/api/v1';
+            fetch(`${apiBase}/kitchen-staff/shifts/current`, {
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
             }).then(r => r.json()).then(d => {
                 if (d.shift) {

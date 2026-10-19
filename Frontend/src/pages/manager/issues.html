@@ -134,7 +134,8 @@
             color: #1f2937;
             white-space: pre-wrap;
         }
-        .issue-modal textarea {
+        .issue-modal textarea,
+        .issue-modal select {
             width: 100%;
             min-height: 110px;
             padding: 10px 12px;
@@ -164,6 +165,19 @@
         }
         .issue-modal .form-error { color: #b91c1c; font-size: 0.85rem; margin-top: 6px; min-height: 1.1em; }
 
+        .quality-hold-warning {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 4px solid #dc2626;
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #991b1b;
+            font-size: 0.88rem;
+        }
+
         [data-theme="dark"] .issue-tab { background: #1e293b; border-color: #334155; color: #94a3b8; }
         [data-theme="dark"] .issue-tab.active { background: #2563eb; border-color: #2563eb; color: #fff; }
         [data-theme="dark"] .issue-tab:hover:not(.active) { background: #0f172a; }
@@ -180,6 +194,7 @@
             border-color: #065f46;
             color: #6ee7b7;
         }
+        [data-theme="dark"] .quality-hold-warning { background: #3b0f0f; border-color: #7f1d1d; color: #fca5a5; }
         [data-theme="dark"] .issue-category-chip { background: #334155; color: #cbd5e1; }
         [data-theme="dark"] .issue-status-PENDING { background: #422006; color: #fcd34d; }
         [data-theme="dark"] .issue-status-ACCEPTED { background: #0c1e3f; color: #93c5fd; }
@@ -203,7 +218,7 @@
                 <div>
                     <h1 data-i18n="manager_issue_reports_title"><i class="fa-solid fa-flag"></i> Issue Reports</h1>
                     <p data-i18n="manager_issue_reports_subtitle" style="color:#6b7280;font-size:0.9rem;margin:4px 0 0;">
-                        Kitchen staff issue reports for your cafeteria — accept and reply with a solution.
+                        Kitchen staff issue reports for your cafeteria — review, investigate, and submit restock requests; the Cafeteria Admin records the resolution.
                     </p>
                 </div>
                 <div class="page-actions">
@@ -215,10 +230,11 @@
 
             <!-- STATUS TABS -->
             <div class="issue-tabs" id="issueTabs">
-                <button type="button" class="issue-tab active" data-status=""><span data-i18n="filter_all">All</span> <span class="tab-count" id="countAll">0</span></button>
-                <button type="button" class="issue-tab" data-status="PENDING"><span data-i18n="issue_status_pending">Pending</span> <span class="tab-count" id="countPending">0</span></button>
-                <button type="button" class="issue-tab" data-status="ACCEPTED"><span data-i18n="issue_status_accepted">Accepted</span> <span class="tab-count" id="countAccepted">0</span></button>
-                <button type="button" class="issue-tab" data-status="RESOLVED"><span data-i18n="issue_status_resolved">Resolved</span> <span class="tab-count" id="countResolved">0</span></button>
+<button type="button" class="issue-tab active" data-status=""><span data-i18n="filter_all">All</span> <span class="tab-count" id="countAll">0</span></button>
+<button type="button" class="issue-tab" data-status="OPEN"><span data-i18n="issue_status_open">Open</span> <span class="tab-count" id="countOpen">0</span></button>
+<button type="button" class="issue-tab" data-status="UNDER_REVIEW"><span data-i18n="issue_status_under_review">Under Review</span> <span class="tab-count" id="countUnderReview">0</span></button>
+<button type="button" class="issue-tab" data-status="REQUEST_SENT"><span data-i18n="issue_status_request_sent">Request Sent</span> <span class="tab-count" id="countRequestSent">0</span></button>
+<button type="button" class="issue-tab" data-status="RESOLVED"><span data-i18n="issue_status_resolved">Resolved</span> <span class="tab-count" id="countResolved">0</span></button>
             </div>
 
             <!-- ISSUES TABLE -->
@@ -260,6 +276,7 @@
     <script src="../../js/admin-api.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/utils/resolution-options.js?v=20261015"></script>
     <script src="../../js/manager-issues.js"></script>
 </body>
 </html>

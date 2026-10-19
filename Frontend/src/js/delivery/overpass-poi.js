@@ -20,11 +20,16 @@
  *   worship     -> amenity=place_of_worship
  *   parks       -> leisure=park
  *   stadiums    -> leisure=stadium|sports_centre
+ *
+ * Also supports free-text name search via Overpass regex.
  */
 
 const OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter";
 const OVERPASS_TIMEOUT = 25;
 const MAX_POIS = 200;
+
+// Ethiopia bounding box for Overpass searches (same as Google Places bias)
+export const ETHIOPIA_BOUNDS = { south: 3.2, west: 32.8, north: 15.0, east: 48.2 };
 
 const CATEGORY_TAGS = {
   hotels: ['["tourism"="hotel"]'],
@@ -213,4 +218,95 @@ export function getAllCategories() {
 
 export function cancelPending() {
   if (requestController) requestController.abort();
+}
+
+/**
+ * Free-text POI search using Overpass API name regex.
+ * Searches for any OSM element (node/way/relation) with a name matching
+ * the query (case-insensitive) within the given bounding box.
+ *
+ * @param {number} minLat - Minimum latitude of search box
+ * @param {number} minLon - Minimum longitude of search box
+ * @param {number} maxLat - Maximum latitude of search box
+ * @param {number} maxLon - Maximum longitude of search box
+ * @param {string} query - Search query (will be escaped for regex)
+ * @param {number} [limit=20] - Maximum results
+ * @returns {Promise<{pois: Array, error: string|null}>}
+ */
+export async function searchPOIsByName(minLat, minLon, maxLat, maxLon, query, limit = 20) {
+  // Escape special regex characters in the query
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = escaped; // case-insensitive regex via ~"query",i
+  const overpassQuery = `
+    [out:json][timeout:25];
+    (
+      node["name"~"${regex}",i](${minLat},${minLon},${maxLat},${maxLon});
+      way["name"~"${regex}",i](${minLat},${minLon},${maxLat},${maxLon});
+      relation["name"~"${regex}",i](${minLat},${minLon},${maxLat},${maxLon});
+    );
+    out center ${limit};
+  `;
+  if (requestController) requestController.abort();
+  requestController = new AbortController();
+  try {
+    const res = await fetch(OVERPASS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(overpassQuery),
+      signal: requestController.signal,
+    });
+    if (!res.ok) throw new Error(`Overpass HTTP ${res.status}`);
+    const data = await res.json();
+    // Reuse the existing parser but adapt for name search results
+    const pois = parseOverpassNameSearch(data);
+    return { pois: pois.slice(0, limit), error: null };
+  } catch (e) {
+    if (e.name === 'AbortError') return { pois: [], error: 'aborted' };
+    return { pois: [], error: e.message };
+  }
+}
+
+/**
+ * Parse Overpass response for name search results.
+ * Returns POIs with name, coordinate, and basic tags.
+ */
+function parseOverpassNameSearch(data) {
+  if (!data || !data.elements) return [];
+  const pois = [];
+  for (const el of data.elements) {
+    let lat = el.lat;
+    let lon = el.lon;
+    if (el.center) {
+      lat = el.center.lat;
+      lon = el.center.lon;
+    }
+    const latitude = Number(lat);
+    const longitude = Number(lon);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue;
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) continue;
+    const tags = el.tags || {};
+    const name = tags.name || tags['name:en'] || tags['name:am'] || 'Unnamed';
+    // Determine a basic type/category from tags
+    let type = 'poi';
+    if (tags.amenity) type = tags.amenity;
+    else if (tags.tourism) type = tags.tourism;
+    else if (tags.shop) type = tags.shop;
+    else if (tags.leisure) type = tags.leisure;
+    else if (el.type === 'way') type = 'way';
+    else if (el.type === 'relation') type = 'relation';
+    pois.push({
+      id: `${el.type}/${el.id}`,
+      name,
+      type,
+      latitude,
+      longitude,
+      tags: {
+        addr: [tags['addr:street'], tags['addr:housenumber'], tags['addr:city'], tags['addr:suburb']].filter(Boolean).join(', '),
+        phone: tags.phone || tags['contact:phone'] || '',
+        website: tags.website || tags['contact:website'] || '',
+        opening_hours: tags.opening_hours || '',
+      },
+    });
+  }
+  return pois;
 }

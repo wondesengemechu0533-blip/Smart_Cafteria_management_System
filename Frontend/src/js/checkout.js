@@ -61,6 +61,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const tableNumberInput =
         document.getElementById("table-number");
 
+    const tableSelect =
+        document.getElementById("table-select");
+
+    const tableLoadingEl =
+        document.getElementById("table-loading");
+
+    const tableEmptyEl =
+        document.getElementById("table-empty");
+
+    const tableErrorEl =
+        document.getElementById("table-error");
+
+    const tableRetryBtn =
+        document.getElementById("table-retry-btn");
+
     function normalizeTableSelection(table) {
         if (!table) return null;
         const tableId = String(table.tableId || table.id || "").trim();
@@ -123,6 +138,128 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (initialTableSelection && initialTableSelection.tableNumber) {
         updateCheckoutTableBadge(initialTableSelection.tableNumber);
+    }
+
+
+    // --- Available-table dropdown (Dine-In) ---------------------------------
+    // The list is always read from the backend (/api/v1/tables/available), never
+    // from localStorage or a hardcoded list, so it reflects the real, current
+    // availability in MongoDB. Only 'available' + enabled tables are returned.
+    let tablesRequestId = 0;
+    let lastTablesLoadAt = 0;
+
+    function setTableLoadingState(state) {
+        if (tableLoadingEl) tableLoadingEl.style.display = state === "loading" ? "block" : "none";
+        if (tableEmptyEl) tableEmptyEl.style.display = state === "empty" ? "block" : "none";
+        if (tableErrorEl) tableErrorEl.style.display = state === "error" ? "block" : "none";
+        if (tableSelect) tableSelect.disabled = state === "loading";
+    }
+
+    function tableOptionLabel(table) {
+        const isAm = getLang() === "am";
+        const zone = table.zone ? " — " + table.zone : "";
+        const seats = table.seats
+            ? " · " + table.seats + " " + ct("seats_short_label", isAm ? "ወንበር" : "seats")
+            : "";
+        return ct("table", isAm ? "ጠረጴዛ" : "Table") + " " + table.tableNumber + zone + seats;
+    }
+
+    function getSelectedTable() {
+        if (!tableSelect) return null;
+        const option = tableSelect.selectedOptions && tableSelect.selectedOptions[0];
+        const tableId = String(tableSelect.value || "").trim();
+        const tableNumber = option && option.dataset ? String(option.dataset.tableNumber || "").trim() : "";
+        if (!tableId || !tableNumber) return null;
+        return { tableId, tableNumber };
+    }
+
+    function syncSelectedTable() {
+        const selected = getSelectedTable();
+        if (tableNumberInput) tableNumberInput.value = selected ? selected.tableNumber : "";
+        if (selected) updateCheckoutTableBadge(selected.tableNumber);
+        return selected;
+    }
+
+    function populateTableOptions(tables) {
+        if (!tableSelect) return;
+        const previous = tableSelect.value;
+        tableSelect.innerHTML = "";
+        const placeholder = document.createElement("option");
+        placeholder.value = "";
+        placeholder.textContent = ct("select_table_placeholder", getLang() === "am" ? "ጠረጴዛ ይምረጡ" : "Select a table");
+        tableSelect.appendChild(placeholder);
+
+        tables.forEach((table) => {
+            const option = document.createElement("option");
+            option.value = String(table.id);
+            option.dataset.tableNumber = String(table.tableNumber || "");
+            option.textContent = tableOptionLabel(table);
+            tableSelect.appendChild(option);
+        });
+
+        // Keep the customer's choice across a refresh when it is still valid.
+        let restore = previous;
+        if (!restore && initialTableSelection) {
+            const byId = tables.find((t) => String(t.id) === String(initialTableSelection.tableId || ""));
+            const byNumber = !byId && tables.find(
+                (t) => String(t.tableNumber).toLowerCase() === String(initialTableSelection.tableNumber || "").toLowerCase()
+            );
+            restore = byId ? String(byId.id) : byNumber ? String(byNumber.id) : "";
+        }
+        if (restore && tables.some((t) => String(t.id) === restore)) {
+            tableSelect.value = restore;
+        }
+        syncSelectedTable();
+    }
+
+    async function loadAvailableTables() {
+        if (!tableSelect) return;
+        const requestId = ++tablesRequestId;
+        lastTablesLoadAt = Date.now();
+        setTableLoadingState("loading");
+        try {
+            const response = await api.get("/tables/available", { timeout: 15000 });
+            if (requestId !== tablesRequestId) return;
+            const list = response && Array.isArray(response.tables) ? response.tables : [];
+            populateTableOptions(list);
+            setTableLoadingState(list.length ? "ready" : "empty");
+        } catch (error) {
+            if (requestId !== tablesRequestId) return;
+            setTableLoadingState("error");
+            console.warn("Could not load available tables:", error && error.message);
+        }
+    }
+
+    function resetTableSelection() {
+        if (tableSelect) tableSelect.value = "";
+        if (tableNumberInput) tableNumberInput.value = "";
+        verifiedTableSelection = null;
+    }
+
+    if (tableSelect) {
+        tableSelect.addEventListener("change", () => {
+            syncSelectedTable();
+            const selected = getSelectedTable();
+            if (selected) {
+                verifiedTableSelection = selected;
+                persistTableSelection(selected);
+            }
+        });
+        // Re-opening the selector refreshes availability so a table taken since
+        // the page loaded disappears from the list. Only when the list is stale
+        // (>15s) so a normal click-open never flickers mid-selection.
+        tableSelect.addEventListener("focus", () => {
+            const orderType = (document.querySelector('input[name="orderType"]:checked') || {}).value;
+            if (orderType !== "dine-in") return;
+            const stale = Date.now() - lastTablesLoadAt > 15000;
+            if (stale) loadAvailableTables();
+        });
+    }
+    if (tableRetryBtn) {
+        tableRetryBtn.addEventListener("click", (event) => {
+            event.preventDefault();
+            loadAvailableTables();
+        });
     }
 
 
@@ -776,10 +913,13 @@ document.addEventListener("DOMContentLoaded", () => {
                             "block";
                     }
 
-                    if (tableNumberInput) {
-                        tableNumberInput.required =
-                            true;
+                    if (tableSelect) {
+                        tableSelect.required = true;
                     }
+
+                    // Refresh straight from the API every time dine-in is
+                    // (re)selected so the list reflects current availability.
+                    loadAvailableTables();
 
                 } else {
 
@@ -788,11 +928,12 @@ document.addEventListener("DOMContentLoaded", () => {
                             "none";
                     }
 
-                    if (tableNumberInput) {
-
-                        tableNumberInput.required =
-                            false;
+                    if (tableSelect) {
+                        tableSelect.required = false;
                     }
+
+                    // Never carry a stale dine-in table into takeaway/delivery.
+                    resetTableSelection();
                 }
 
                 if (
@@ -1088,47 +1229,24 @@ document.addEventListener("DOMContentLoaded", () => {
                             : "N/A (Takeaway)";
 
 
-                if (
-                    orderType === "dine-in" &&
-                    !tableNumber &&
-                    !(initialTableSelection && initialTableSelection.tableId)
-                ) {
-
-                    alert(
-                        ct("checkout_enter_table", getLang() === "am" ? "እባክዎ የጠረጴዛ ቁጥርዎን ያስገቡ።" : "Please enter your table number.")
-                    );
-
-                    if (tableNumberInput) {
-                        tableNumberInput.focus();
-                    }
-
-                    return;
-                }
-
                 if (orderType === "dine-in") {
-                    const typedTable = tableNumberInput ? tableNumberInput.value.trim() : "";
-                    // Skip the server round trip when the typed number matches
-                    // a table already verified this session. The backend
-                    // re-validates authoritatively at order creation, so a
-                    // stale selection can only fail fast with a clear error.
-                    const alreadyVerified = [verifiedTableSelection, initialTableSelection].find((sel) =>
-                        sel && sel.tableId && sel.tableNumber &&
-                        sel.tableNumber.toLowerCase() === typedTable.toLowerCase()
-                    );
-                    if (alreadyVerified) {
-                        tableId = alreadyVerified.tableId;
-                        tableNumber = alreadyVerified.tableNumber;
-                        if (tableNumberInput) tableNumberInput.value = tableNumber;
-                        updateCheckoutTableBadge(tableNumber);
-                    } else {
-                        // No pre-flight lookup: the backend resolves and
-                        // validates the table authoritatively when the order is
-                        // created, and its error is surfaced to the customer.
-                        tableId = "";
-                        tableNumber = typedTable;
-                        if (tableNumberInput) tableNumberInput.value = tableNumber;
-                        updateCheckoutTableBadge(tableNumber);
+                    // The customer picks from the live, backend-sourced list, so
+                    // the real table id (never just the label) is submitted. The
+                    // backend re-validates and atomically reserves it, and any
+                    // race is reported back as TABLE_UNAVAILABLE below.
+                    const selectedTable = getSelectedTable();
+                    if (!selectedTable) {
+                        alert(
+                            ct("checkout_select_table_required", getLang() === "am" ? "እባክዎ ጠረጴዛ ይምረጡ።" : "Please select a table.")
+                        );
+                        if (tableSelect) tableSelect.focus();
+                        return;
                     }
+                    tableId = selectedTable.tableId;
+                    tableNumber = selectedTable.tableNumber;
+                    verifiedTableSelection = selectedTable;
+                    persistTableSelection(selectedTable);
+                    updateCheckoutTableBadge(tableNumber);
                 }
 
 
@@ -1643,6 +1761,25 @@ document.addEventListener("DOMContentLoaded", () => {
                         setSubmitting(false);
                         submitUiSettled = true;
 
+                        // The chosen table was taken (or went out of service)
+                        // between load and submit. Nothing was persisted, so
+                        // clear the dead choice, re-fetch the live list and let
+                        // the customer pick again.
+                        if (error && error.code === "TABLE_UNAVAILABLE") {
+                            alert(
+                                ct(
+                                    "checkout_table_unavailable",
+                                    getLang() === "am"
+                                        ? "ይህ ጠረጴዛ ከእንግዲህ አይገኝም። እባክዎ ሌላ ጠረጴዛ ይምረጡ።"
+                                        : "That table is no longer available. Please choose another table."
+                                )
+                            );
+                            resetTableSelection();
+                            loadAvailableTables();
+                            if (tableSelect) tableSelect.focus();
+                            return;
+                        }
+
                         // A delivery-range rejection is the one authoritative
                         // "nothing was persisted" outcome the customer can act on
                         // immediately: move the pin and retry. Surface the
@@ -1702,6 +1839,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     }
 
+
+    // Dine-In is the default order type, so populate the table picker on load.
+    if ((document.querySelector('input[name="orderType"]:checked') || {}).value === "dine-in") {
+        loadAvailableTables();
+    }
 
     renderOrderReview();
 

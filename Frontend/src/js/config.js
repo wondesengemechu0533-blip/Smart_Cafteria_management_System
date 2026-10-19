@@ -18,6 +18,22 @@ if (__isLocalHost) {
 window.__API_BASE = API_BASE_URL;
 window.__API_URL = API_BASE_URL + '/api/v1';
 
+// Google Places for the map search (delivery/google-places.js).
+//
+// This is a PUBLIC browser key (not a secret): set it to the key created in
+// Google Cloud Console and RESTRICT it to the site's HTTP referrers and to the
+// Maps JavaScript API + Places API + Place Details. Leave it empty to keep the
+// search on the offline Ethiopia dataset + OpenStreetMap Nominatim fallback
+// (the search keeps working, just with thinner POI coverage).
+//
+// It is read at search time; an inline script that sets
+// window.SCOS_GOOGLE_MAPS_API_KEY BEFORE this file wins, so a deployment can
+// inject the key without editing this file.
+window.SCOS_GOOGLE_MAPS_API_KEY = window.SCOS_GOOGLE_MAPS_API_KEY || '';
+// Default country context for a place search (ISO-3166-1 alpha-2). The search
+// is biased here first and widened to the whole world when nothing matches.
+window.SCOS_GOOGLE_SEARCH_COUNTRY = window.SCOS_GOOGLE_SEARCH_COUNTRY || 'et';
+
 // Named constants used by ES module files that previously tried to import
 // from this file.  Because this script is loaded as a classic <script> (not
 // type="module") it cannot use export; consumers read from window instead.

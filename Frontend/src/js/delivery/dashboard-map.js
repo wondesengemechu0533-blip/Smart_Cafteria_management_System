@@ -20,9 +20,10 @@
  * load, and it never invents a coordinate.
  */
 
-import { LiveDeliveryMap, mapAvailable } from "./live-map.js";
-import { normalizePoint, measureToCustomer, formatDistance } from "./geo.js";
-import { mountGeocodeSearch, searchPlaces } from "./geocode-search.js";
+import { LiveDeliveryMap, mapAvailable, fetchRoadRoute } from "./live-map.js";
+import { normalizePoint, measureToCustomer, formatDistance, haversineMeters } from "./geo.js";
+import { mountGeocodeSearch, searchPlaces, searchPlaceSuggestions, resolvePlaceResult, newSessionToken } from "./geocode-search.js";
+import { gpsTracker } from "./gps.js";
 import { tr } from "../utils/i18n.js";
 import { statusLabel, deliveryState, deliveryAddress } from "./shared.js";
 
@@ -175,6 +176,7 @@ export function syncDashboardMaps(orders, trackState) {
     // form is a fresh node on every pass - mounting is idempotent per node.
     mountGeocodeSearch(document.getElementById("geocodeSearch-" + orderId), {
       getMap: () => maps.get(orderId),
+      context: contextFromOrder(order),
     });
 
     const customer = customerPoint(order);
@@ -311,6 +313,28 @@ let overviewCafeteria = null; // window.L marker for the pickup point
 let overviewSignature = ""; // last fitted set of points
 let overviewCafeteriaKey = ""; // last drawn cafeteria (rebuilt only on change)
 
+// Selected-delivery focus (the order/customer search above the map).
+let overviewOrders = [];      // last synced card list (fresh on every refresh)
+let overviewTrackState = null; // gpsTracker.getState
+let overviewLabelFn = null;    // (order) => short status string for popups
+let overviewSelectedId = null; // orderId currently focused, or null
+let overviewSelected = null;   // the focused order object
+let overviewSelectedDest = null; // L.marker for the focused customer
+let overviewPick = null;         // L.marker for a hand-picked destination
+let overviewSearchMark = null;   // L.marker for a searched city/place
+let overviewSearchPickHandler = null; // click handler for "drop a pin by hand"
+let overviewRoute = null;        // L.polyline for the focused road route
+let selectedRouteToken = 0;
+let selectedRouteFrom = null;
+let selectedRouteAt = 0;
+let selectedRouteOrderId = null;
+let pickMode = false;
+let pickHandler = null;
+
+/** Same throttle policy as the per-card maps (metres / ms). */
+const SEL_ROUTE_REFRESH_M = 75;
+const SEL_ROUTE_MAX_AGE_MS = 60000;
+
 /** Marker glyphs, same `.map-pin*` classes as the per-card maps. */
 function overviewPin(kind, icon) {
   return window.L.divIcon({
@@ -340,13 +364,764 @@ function overviewStatus(el, text, tone) {
 }
 
 /**
+ * The delivery-person's current fix, permission-gated. Never throws.
+ * `allowPrompt=false` only returns a fix the browser already granted, so the
+ * live reconciliation pass can never pop a permission dialog on its own.
+ */
+async function safeCurrentFix(allowPrompt) {
+  try {
+    return await gpsTracker.currentFix({ allowPrompt: !!allowPrompt });
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Customer name for the search result / focused marker. */
+function customerNameOf(order) {
+  if (!order) return "";
+  return (
+    order.customerName ||
+    (order.deliveryInfo && order.deliveryInfo.name) ||
+    tr("delivery_customer", "Customer")
+  );
+}
+
+/** Everything a rider might type to find an order (id / name / phone / address). */
+function orderSearchText(order) {
+  if (!order) return "";
+  const info = order.deliveryInfo || {};
+  return [
+    order.orderId,
+    order.customerName,
+    order.customerPhone,
+    info.name,
+    info.phone,
+    deliveryAddress(order),
+    info.city,
+    info.area,
+    info.kebele,
+    info.landmark,
+    info.subCity,
+    info.location,
+  ]
+    .filter(Boolean)
+    .map((v) => String(v).toLowerCase())
+    .join(" ");
+}
+
+/**
+ * Search context for ONE order: its own city, so a bare local place name
+ * ("Kesi Alemayehu") is queried as "Kesi Alemayehu, Debre Tabor, Ethiopia"
+ * instead of losing the city hint. Never returns a coordinate - only text.
+ */
+function contextFromOrder(order) {
+  const info = (order && order.deliveryInfo) || {};
+  const city = info.city || info.subCity || info.area || "";
+  return city ? { city: String(city), country: "Ethiopia" } : null;
+}
+
+/**
+ * Search context for the WHOLE queue: the most common city among the loaded
+ * orders, so the shared Delivery Map search is biased to where the work is
+ * without hardcoding any city. Returns null when no order names a city.
+ */
+function contextCityOf(orders) {
+  const counts = new Map();
+  (Array.isArray(orders) ? orders : []).forEach((o) => {
+    const info = (o && o.deliveryInfo) || {};
+    const city = info.city || info.subCity || "";
+    if (!city) return;
+    const key = String(city).trim();
+    if (!key) return;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+  let best = "";
+  let top = 0;
+  counts.forEach((n, city) => {
+    if (n > top) {
+      top = n;
+      best = city;
+    }
+  });
+  return best ? { city: best, country: "Ethiopia" } : null;
+}
+
+/** Awaitable version of resolveCustomerAddress() for the focused order. */
+async function resolveCustomerPoint(order) {
+  const direct = customerLocationOf(order);
+  if (direct) return direct;
+  const orderId = String(order && order.orderId);
+  if (!orderId) return null;
+  if (geocodedCustomers.has(orderId)) return geocodedCustomers.get(orderId) || null;
+  const address = customerAddressText(order);
+  if (!address) return null;
+  try {
+    const results = await searchPlaces(address, { limit: 1 });
+    const best = Array.isArray(results) && results.length ? results[0] : null;
+    const point =
+      best && Number.isFinite(Number(best.latitude)) && Number.isFinite(Number(best.longitude))
+        ? { latitude: Number(best.latitude), longitude: Number(best.longitude) }
+        : false;
+    geocodedCustomers.set(orderId, point);
+    return point || null;
+  } catch (e) {
+    geocodedCustomers.set(orderId, false);
+    return null;
+  }
+}
+
+/** Publish a line of feedback under the search box (with an optional tone class). */
+function setSearchStatus(text, tone) {
+  const el = document.getElementById("deliveryOrderSearchStatus");
+  if (!el) return;
+  el.textContent = text || "";
+  el.className = "geocode-search-status" + (tone ? " " + tone : "");
+}
+
+/** "11.85659, 38.00831" - the exact numbers behind a searched place. */
+function formatCoord(latitude, longitude) {
+  return `${Number(latitude).toFixed(5)}, ${Number(longitude).toFixed(5)}`;
+}
+
+/**
+ * Drop the city/place search marker (distinct from the customer destination
+ * marker: the search marker answers "where did I look?"; the destination marker
+ * is an order fact).
+ */
+function clearOverviewSearchMarker() {
+  if (overviewSearchMark && overviewMap) overviewMap.removeLayer(overviewSearchMark);
+  overviewSearchMark = null;
+  disableOverviewSearchPick();
+  const clearBtn = document.getElementById("deliveryOrderSearchClear");
+  if (clearBtn) clearBtn.hidden = true;
+}
+
+/**
+ * Paint the shared search pin: a distinct (purple) marker + popup + camera.
+ * Used both for a searched place (focusPlace) and for a hand-dropped pin.
+ */
+function showOverviewSearchPin(point, title, address, kind) {
+  clearOverviewSearchMarker();
+  overviewSearchMark = window.L.marker([point.latitude, point.longitude], {
+    icon: overviewPin("search", "fa-location-dot"),
+    keyboard: true,
+    title,
+    zIndexOffset: 700,
+  })
+    .bindPopup(
+      `<strong>${escapeHtml(title)}</strong><br><small>${escapeHtml(address || "")}</small><br>` +
+        `<small>${formatCoord(point.latitude, point.longitude)}</small>`
+    )
+    .addTo(overviewMap);
+  try {
+    overviewSearchMark.openPopup();
+  } catch (e) {
+    /* popup may be unsupported in a torn-down map */
+  }
+  const zoom = kind === "city" ? 13 : kind === "subcity" ? 15 : 16;
+  overviewMap.setView([point.latitude, point.longitude], zoom);
+  try {
+    overviewMap.invalidateSize();
+  } catch (e) {
+    /* ignore */
+  }
+  const clearBtn = document.getElementById("deliveryOrderSearchClear");
+  if (clearBtn) clearBtn.hidden = false;
+}
+
+/**
+ * Show a searched place: a visible, named marker + the camera zoomed to it.
+ * City hits open wide; a school/hospital/street opens close.
+ */
+export function focusPlace(place) {
+  if (!overviewMap || !place) return false;
+  const point = normalizePoint(place);
+  if (!point) return false;
+  showOverviewSearchPin(point, place.title || place.address || "", place.address || "", place.kind);
+  return true;
+}
+
+/** Arm click-to-pick: the next map tap drops the shared search pin. */
+function enableOverviewSearchPick() {
+  if (!overviewMap || overviewSearchPickHandler) return false;
+  try {
+    overviewMap.getContainer().style.cursor = "crosshair";
+  } catch (e) {
+    /* detached node */
+  }
+  overviewSearchPickHandler = (e) => {
+    if (!e || !e.latlng) return;
+    dropOverviewSearchPin({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+  };
+  overviewMap.on("click", overviewSearchPickHandler);
+  return true;
+}
+
+function disableOverviewSearchPick() {
+  if (overviewMap && overviewSearchPickHandler) overviewMap.off("click", overviewSearchPickHandler);
+  overviewSearchPickHandler = null;
+  if (overviewMap) {
+    try {
+      overviewMap.getContainer().style.cursor = "";
+    } catch (e) {
+      /* ignore */
+    }
+  }
+}
+
+/** Apply a hand-dropped search pin and report it in the status line. */
+function dropOverviewSearchPin(point) {
+  if (!overviewMap || !point) return;
+  disableOverviewSearchPick();
+  const coordText = formatCoord(point.latitude, point.longitude);
+  showOverviewSearchPin(point, tr("map_search_dropped", "Dropped pin"), coordText, "pin");
+  setSearchStatus(tr("map_search_picked", "Location found"), "is-ok");
+}
+
+/**
+ * The single search box above the overview map: Ethiopian cities / kebeles /
+ * landmarks (via delivery/geocode-search.js, the one geocoder) AND the rider's
+ * own delivery orders. Both result kinds are selectable; a place drops the
+ * purple search marker, an order drops the customer destination marker + route.
+ */
+function deliverySearchHtml() {
+  return `
+    <form class="geocode-search delivery-search" id="deliveryOrderSearch" role="search" autocomplete="off">
+      <div class="geocode-search-row">
+        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="deliveryOrderSearchInput" class="geocode-search-input" type="search"
+               aria-label="${escapeAttr(tr("delivery_search_label", "Search a city, place or delivery"))}"
+               placeholder="${escapeAttr(
+                 tr("delivery_search_placeholder", "Search a city, place or delivery (Debre Tabor, kebele, order #)…")
+               )}" />
+        <button type="button" class="geocode-search-clear delivery-search-clear" id="deliveryOrderSearchClear"
+                hidden aria-label="${escapeAttr(tr("map_search_clear", "Clear search result"))}">&times;</button>
+      </div>
+      <ul class="geocode-suggestions delivery-search-suggestions" id="deliveryOrderSearchResults" role="listbox" hidden></ul>
+      <p class="geocode-search-status" id="deliveryOrderSearchStatus" aria-live="polite"></p>
+      <button type="button" class="btn btn-sm btn-outline-secondary delivery-search-pick" id="deliveryOrderSearchPick" hidden>${escapeAttr(
+        tr("map_search_pick_on_map", "Set location on map")
+      )}</button>
+    </form>`;
+}
+
+/** Bind the unified search box once (the order list it reads stays fresh via sync). */
+function mountDeliverySearch() {
+  const form = document.getElementById("deliveryOrderSearch");
+  if (!form || form.dataset.bound === "1") return;
+  form.dataset.bound = "1";
+  const input = form.querySelector("#deliveryOrderSearchInput");
+  const list = form.querySelector("#deliveryOrderSearchResults");
+  const clearBtn = form.querySelector("#deliveryOrderSearchClear");
+  const pickBtn = form.querySelector("#deliveryOrderSearchPick");
+
+  let token = 0;
+  let timer = null;
+  let items = [];
+  let active = -1;
+  let controller = null;
+  let sessionToken = null;
+  const refreshSession = () => {
+    try {
+      sessionToken = newSessionToken();
+    } catch (e) {
+      sessionToken = null;
+    }
+  };
+  refreshSession();
+  const revealPick = (show) => {
+    if (pickBtn) pickBtn.hidden = !show;
+  };
+
+  const setStatus = (text, tone) => setSearchStatus(text, tone);
+  const closeList = () => {
+    if (list) {
+      list.hidden = true;
+      list.innerHTML = "";
+    }
+    items = [];
+    active = -1;
+    if (input && input.removeAttribute) input.removeAttribute("aria-activedescendant");
+  };
+
+  const setActive = (index) => {
+    active = index;
+    if (!list || typeof list.querySelectorAll !== "function") return;
+    const nodes = list.querySelectorAll(".geocode-suggestion[data-index]");
+    for (let i = 0; i < nodes.length; i++) {
+      if (nodes[i].classList) nodes[i].classList.toggle("is-active", Number(nodes[i].getAttribute("data-index")) === index);
+    }
+  };
+
+  const renderList = (orders, places) => {
+    items = [];
+    let html = "";
+    if (orders.length) {
+      html += `<li class="geocode-group" role="presentation">${escapeHtml(
+        tr("delivery_search_orders_group", "Deliveries")
+      )}</li>`;
+      orders.forEach((o) => {
+        const index = items.push({ kind: "order", orderId: String(o.orderId) }) - 1;
+        const label = typeof overviewLabelFn === "function" ? overviewLabelFn(o) : statusLabel(deliveryState(o));
+        html +=
+          `<li role="option" tabindex="0" class="geocode-suggestion" data-index="${index}" ` +
+          `data-order-id="${escapeAttr(o.orderId)}">` +
+          `<span class="geocode-suggestion-title">#${escapeHtml(o.orderId)} · ${escapeHtml(customerNameOf(o))}</span>` +
+          `<small>${escapeHtml(deliveryAddress(o))}</small>` +
+          `<small>${escapeHtml(label || "")}</small>` +
+          `</li>`;
+      });
+    }
+    if (places.length) {
+      html += `<li class="geocode-group" role="presentation">${escapeHtml(
+        tr("delivery_search_places_group", "Places")
+      )}</li>`;
+      places.forEach((p) => {
+        const index = items.push({ kind: "place", place: p }) - 1;
+        const hasCoords = Number.isFinite(Number(p.latitude)) && Number.isFinite(Number(p.longitude));
+        const sub =
+          p.address && p.address !== p.title
+            ? p.address
+            : hasCoords
+            ? formatCoord(p.latitude, p.longitude)
+            : p.address || "";
+        const alt = p.alternative
+          ? `<em class="geocode-alt">${escapeHtml(tr("map_search_alternative", "nearest city, not the exact place"))}</em>`
+          : "";
+        html +=
+          `<li role="option" tabindex="0" class="geocode-suggestion" data-index="${index}">` +
+          `<span class="geocode-suggestion-title">${escapeHtml(p.title || "")}</span>` +
+          `<small>${escapeHtml(sub)}</small>${alt}` +
+          `</li>`;
+      });
+    }
+    if (list) {
+      list.innerHTML = html;
+      list.hidden = items.length === 0;
+    }
+    active = -1;
+  };
+
+  const choose = async (index) => {
+    const item = items[index];
+    if (!item) return;
+    const myToken = token;
+    closeList();
+    revealPick(false);
+    if (item.kind === "order") {
+      if (input) input.value = "";
+      focusOrderOnMap(item.orderId);
+      return;
+    }
+    let place = item.place;
+    // A Google Autocomplete row carries no coordinate: resolve it with Place
+    // Details before moving the camera (never an invented point).
+    if (place && place.needsDetails && place.placeId) {
+      setStatus(tr("map_search_resolving", "Getting the exact location…"), "is-waiting");
+      const full = await resolvePlaceResult(place, { sessionToken });
+      if (myToken !== token) return;
+      if (!full || !Number.isFinite(Number(full.latitude))) {
+        setStatus(tr("map_search_error", "Search is unavailable right now. Check your connection and try again."), "is-error");
+        return;
+      }
+      refreshSession();
+      place = full;
+    }
+    if (input) input.value = place.title || "";
+    focusPlace(place);
+    // Never present an approximate city fallback as the exact place.
+    setStatus(
+      place.alternative
+        ? tr("map_search_nearest", "Showing the nearest city - not the exact place.")
+        : tr("map_search_picked", "Location found"),
+      place.alternative ? "is-waiting" : "is-ok"
+    );
+  };
+
+  const run = async () => {
+    const q = (input && input.value ? input.value : "").trim();
+    if (q.length < 2) {
+      setStatus("");
+      closeList();
+      return;
+    }
+    const myToken = ++token;
+    if (controller && typeof controller.abort === "function") {
+      try {
+        controller.abort();
+      } catch (e) {
+        /* finished controller */
+      }
+    }
+    controller = typeof AbortController === "function" ? new AbortController() : null;
+
+    const localOrders = (overviewOrders || [])
+      .filter((o) => orderSearchText(o).includes(q.toLowerCase()))
+      .slice(0, 5);
+
+    setStatus(tr("map_search_searching", "Searching…"), "is-waiting");
+    let places = [];
+    let placeError = null;
+    // Bias the provider search toward where this rider's deliveries actually
+    // are (most common city among the loaded orders), so a bare local name
+    // ("Kesi Alemayehu") still resolves without hardcoding any city.
+    const context = contextCityOf(overviewOrders);
+    try {
+      places = await searchPlaceSuggestions(
+        q,
+        Object.assign({ sessionToken, context }, controller ? { signal: controller.signal } : {})
+      );
+    } catch (err) {
+      if (myToken !== token || (err && err.name === "AbortError")) return;
+      placeError = err;
+    }
+    if (myToken !== token) return;
+
+    renderList(localOrders, Array.isArray(places) ? places : []);
+    // Exactly one hit: open it directly (e.g. "Debre Tabor" -> the city).
+    // Several hits stay as a list so an unrelated place is never auto-chosen.
+    if (items.length === 1) {
+      choose(0);
+      return;
+    }
+    if (!items.length) {
+      // Offer the manual fallback: a location nobody has registered.
+      revealPick(Boolean(overviewMap));
+      setStatus(
+        placeError && placeError.reason === "rate_limited"
+          ? tr("map_search_rate_limited", "Too many searches in a row. Wait a moment and try again.")
+          : placeError && (placeError.reason === "auth" || placeError.reason === "load_error" || placeError.reason === "timeout")
+          ? tr("map_search_google_unavailable", "Place search is unavailable (Google Maps key rejected or not enabled).")
+          : placeError
+          ? tr("map_search_error", "Search is unavailable right now. Check your connection and try again.")
+          : tr("delivery_search_none", "No matching delivery or place. Try a city, kebele, landmark or order number."),
+        placeError ? "is-error" : "is-empty"
+      );
+      return;
+    }
+    revealPick(false);
+    setStatus("");
+  };
+
+  const schedule = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      run();
+    }, 450);
+  };
+
+  if (input) {
+    input.addEventListener("input", schedule);
+    input.addEventListener("keydown", (event) => {
+      if (!event) return;
+      const count = items.length;
+      if (event.key === "Escape") {
+        closeList();
+        return;
+      }
+      if (event.key === "ArrowDown" && count) {
+        if (event.preventDefault) event.preventDefault();
+        setActive((active + 1) % count);
+        return;
+      }
+      if (event.key === "ArrowUp" && count) {
+        if (event.preventDefault) event.preventDefault();
+        setActive((active - 1 + count) % count);
+        return;
+      }
+      if (event.key === "Enter" && active >= 0 && active < count) {
+        if (event.preventDefault) event.preventDefault();
+        choose(active);
+      }
+    });
+  }
+  form.addEventListener("submit", (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    run();
+  });
+  if (list) {
+    list.addEventListener("click", (e) => {
+      const li = e.target.closest("li[data-index]");
+      if (li) choose(Number(li.getAttribute("data-index")));
+    });
+    list.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      const li = e.target.closest("li[data-index]");
+      if (li) {
+        e.preventDefault();
+        choose(Number(li.getAttribute("data-index")));
+      }
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      clearOverviewSearchMarker();
+      if (input) input.value = "";
+      setStatus("");
+      closeList();
+      revealPick(false);
+    });
+  }
+  if (pickBtn) {
+    pickBtn.addEventListener("click", () => {
+      if (!overviewMap) return;
+      revealPick(false);
+      setStatus(tr("map_search_pick_hint", "Tap the map to drop the pin."), "is-waiting");
+      enableOverviewSearchPick();
+    });
+  }
+  document.addEventListener("click", (e) => {
+    if (!form.contains(e.target)) closeList();
+  });
+}
+
+/** Remove the focused destination/route/pick layers (selection changed / teardown). */
+function clearSelectionVisuals() {
+  selectedRouteToken++;
+  if (overviewRoute && overviewMap) overviewMap.removeLayer(overviewRoute);
+  overviewRoute = null;
+  if (overviewSelectedDest && overviewMap) overviewMap.removeLayer(overviewSelectedDest);
+  overviewSelectedDest = null;
+  clearPick();
+  disablePick();
+  selectedRouteFrom = null;
+  selectedRouteAt = 0;
+  selectedRouteOrderId = null;
+  // Let the next sync restore the whole-queue camera view.
+  overviewSignature = "";
+}
+
+/** Draw / move the focused customer destination marker (never a duplicate). */
+function setSelectedDestMarker(customer) {
+  if (!overviewMap) return;
+  if (!customer) {
+    if (overviewSelectedDest) {
+      overviewMap.removeLayer(overviewSelectedDest);
+      overviewSelectedDest = null;
+    }
+    return;
+  }
+  const latlng = [customer.latitude, customer.longitude];
+  if (overviewSelectedDest) {
+    overviewSelectedDest.setLatLng(latlng);
+    return;
+  }
+  const orderId = overviewSelected ? overviewSelected.orderId : "";
+  overviewSelectedDest = window.L.marker(latlng, {
+    icon: overviewPin("dest", "fa-location-dot"),
+    keyboard: true,
+    title: `#${orderId}`,
+    zIndexOffset: 500,
+  })
+    .bindPopup(
+      `<strong>${escapeHtml(tr("delivery_selected_customer", "Customer destination"))}</strong><br>#${escapeHtml(orderId)}`
+    )
+    .addTo(overviewMap);
+}
+
+/** Fit the camera around the focused customer + rider (and any picked point). */
+function fitSelected(customer, courier) {
+  if (!overviewMap) return;
+  const points = [];
+  if (customer) points.push([customer.latitude, customer.longitude]);
+  if (courier) points.push([courier.latitude, courier.longitude]);
+  if (overviewPick) points.push(overviewPick.getLatLng());
+  if (!points.length) return;
+  if (points.length === 1) overviewMap.setView(points[0], 15);
+  else overviewMap.fitBounds(points, { padding: [40, 40], maxZoom: 16 });
+}
+
+/**
+ * Draw the real road route from the rider to the focused destination.
+ * Throttled like the per-card maps so a moving rider does not hammer the
+ * routing provider; `opts.force` (new selection / manual pick) always re-routes.
+ */
+async function drawSelectedRoute(customer, courier, opts = {}) {
+  if (!overviewMap) return;
+  if (!customer || !courier) {
+    if (overviewRoute) {
+      overviewMap.removeLayer(overviewRoute);
+      overviewRoute = null;
+    }
+    selectedRouteFrom = null;
+    selectedRouteAt = 0;
+    selectedRouteOrderId = null;
+    return;
+  }
+  const moved = selectedRouteFrom ? haversineMeters(selectedRouteFrom, courier) : Infinity;
+  const stale = Date.now() - (selectedRouteAt || 0) > SEL_ROUTE_MAX_AGE_MS;
+  const sameOrder = selectedRouteOrderId === overviewSelectedId;
+  if (!opts.force && sameOrder && moved < SEL_ROUTE_REFRESH_M && !stale && overviewRoute) return;
+
+  const token = ++selectedRouteToken;
+  const latlngs = await fetchRoadRoute(courier, customer);
+  if (token !== selectedRouteToken || !overviewMap || !latlngs || latlngs.length < 2) return;
+  if (overviewRoute) overviewMap.removeLayer(overviewRoute);
+  overviewRoute = window.L.polyline(latlngs, { color: "#ff6b00", weight: 5, opacity: 0.85 }).addTo(overviewMap);
+  selectedRouteFrom = { ...courier };
+  selectedRouteAt = Date.now();
+  selectedRouteOrderId = overviewSelectedId;
+}
+
+/** Marker + route + camera for the focused order in one call. */
+function drawSelected(customer, courier, opts = {}) {
+  setSelectedDestMarker(customer);
+  drawSelectedRoute(customer, courier, opts);
+  if (opts.fit !== false) fitSelected(customer, courier);
+}
+
+/** Remove a hand-picked destination marker. */
+function clearPick() {
+  if (overviewPick && overviewMap) overviewMap.removeLayer(overviewPick);
+  overviewPick = null;
+}
+
+/** Let the rider tap the map to set the destination when no coordinates exist. */
+function enablePick() {
+  if (!overviewMap || pickMode) return;
+  pickMode = true;
+  try {
+    overviewMap.getContainer().style.cursor = "crosshair";
+  } catch (e) {
+    /* detached node */
+  }
+  pickHandler = (e) => {
+    if (!e || !e.latlng) return;
+    setPick({ latitude: e.latlng.lat, longitude: e.latlng.lng });
+  };
+  overviewMap.on("click", pickHandler);
+}
+
+function disablePick() {
+  if (overviewMap && pickHandler) overviewMap.off("click", pickHandler);
+  pickHandler = null;
+  if (overviewMap) {
+    try {
+      overviewMap.getContainer().style.cursor = "";
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  pickMode = false;
+}
+
+/** Apply a hand-picked destination: draw it and route the rider to it. */
+function setPick(point) {
+  if (!overviewMap || !point) return;
+  const latlng = [point.latitude, point.longitude];
+  if (overviewPick) {
+    overviewPick.setLatLng(latlng);
+  } else {
+    overviewPick = window.L.marker(latlng, {
+      icon: overviewPin("dest", "fa-location-dot"),
+      keyboard: true,
+      title: "Chosen destination",
+      zIndexOffset: 600,
+    })
+      .bindPopup(escapeHtml(tr("delivery_destination_set", "Destination set on the map.")))
+      .addTo(overviewMap);
+  }
+  // The picked point replaces the (missing) customer pin.
+  if (!customerPoint(overviewSelected) && overviewSelectedDest) {
+    overviewMap.removeLayer(overviewSelectedDest);
+    overviewSelectedDest = null;
+  }
+  setSearchStatus(tr("delivery_destination_set", "Destination set on the map."));
+  disablePick();
+  drawSelectedRoute(point, null, { force: true });
+  safeCurrentFix(true).then((fix) => {
+    drawSelectedRoute(point, fix, { force: true, fit: true });
+  });
+  fitSelected(point, null);
+}
+
+/**
+ * Search → focus: plot a chosen order's customer destination and the real road
+ * route from the rider to it. Also the honest no-coordinates path: explain and
+ * arm click-to-pick instead of inventing a point.
+ *
+ * @returns {Promise<boolean>} true when a destination was plotted.
+ */
+export async function focusOrderOnMap(orderId, opts = {}) {
+  if (!mapAvailable() || !overviewMap) return false;
+  const id = String(orderId || "");
+  if (!id) return false;
+  const order =
+    (overviewOrders || []).find((o) => String(o && o.orderId) === id) || (opts.order || null);
+  if (!order) return false;
+
+  if (overviewSelectedId !== id) clearSelectionVisuals();
+  overviewSelectedId = id;
+  overviewSelected = order;
+  setSearchStatus(tr("delivery_focus_searching", "Locating the delivery…"));
+
+  let customer = customerPoint(order);
+  if (!customer) customer = await resolveCustomerPoint(order);
+  if (!customer) {
+    setSearchStatus(
+      tr("delivery_destination_missing", "This order has no customer coordinates. Tap the map to set the destination.")
+    );
+    enablePick();
+    return false;
+  }
+  disablePick();
+
+  const state = overviewTrackState ? overviewTrackState(id) : null;
+  let courier = courierPointOf(order, state);
+  if (!courier) courier = await safeCurrentFix(true);
+
+  drawSelected(customer, courier, { force: true, fit: true });
+  setSearchStatus(
+    courier
+      ? tr("delivery_focus_route", "Showing the route to the selected customer.")
+      : tr("delivery_courier_missing", "Waiting for your GPS to draw the route…")
+  );
+  return true;
+}
+
+/**
+ * Keep the focused selection aligned with the freshest data on every sync
+ * (a moving rider refreshes the road route automatically). No permission
+ * prompt here - only a fix the browser already granted.
+ */
+async function reconcileSelectedOrder() {
+  if (!overviewMap || !overviewSelectedId) return;
+  const order =
+    (overviewOrders || []).find((o) => String(o && o.orderId) === overviewSelectedId) || overviewSelected;
+  if (!order) return;
+  overviewSelected = order;
+
+  if (overviewPick) {
+    const picked = overviewPick.getLatLng();
+    const point = { latitude: picked.lat, longitude: picked.lng };
+    const courier = courierPointOf(order, overviewTrackState ? overviewTrackState(overviewSelectedId) : null) || (await safeCurrentFix(false));
+    drawSelectedRoute(point, courier, { fit: false });
+    return;
+  }
+
+  const customer = customerPoint(order) || (await resolveCustomerPoint(order));
+  if (!customer) return;
+  const courier = courierPointOf(order, overviewTrackState ? overviewTrackState(overviewSelectedId) : null) || (await safeCurrentFix(false));
+  drawSelected(customer, courier, { fit: false });
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/'/g, "&#39;");
+}
+
+/**
  * Reconcile the overview map against the currently visible delivery cards.
  *
  * @param {Array} orders    the visible cards (same list as syncDashboardMaps)
  * @param {Function} trackState  gpsTracker.getState(orderId)
  * @param {Function} label a (order) => short status string for the pin popup
  */
-export function syncOverviewMap(orders, trackState, label) {
+export function syncOverviewMap(orders, trackState, label, searchOrders) {
   const { card, container, status, head } = overviewEls();
   if (!card || !container) return; // page has no overview map
   if (!mapAvailable()) {
@@ -360,9 +1135,18 @@ export function syncOverviewMap(orders, trackState, label) {
   container.style.display = "";
 
   const list = Array.isArray(orders) ? orders : [];
+  // Keep the freshest list/state for the delivery search + focused route. The
+  // search covers every loaded order (searchOrders), not just the visible tab.
+  overviewOrders = Array.isArray(searchOrders) ? searchOrders : list;
+  overviewTrackState = trackState || null;
+  overviewLabelFn = typeof label === "function" ? label : null;
+
   const dests = [];
   list.forEach((order) => {
     if (!order) return;
+    // The focused order draws its own highlighted marker + route; skip its
+    // plain queue pin so the map does not show two pins on the same spot.
+    if (overviewSelectedId && String(order.orderId) === String(overviewSelectedId)) return;
     const customer = customerPoint(order);
     if (!customer) {
       // Same address-to-pin fallback as the per-card maps; without it the
@@ -405,17 +1189,13 @@ export function syncOverviewMap(orders, trackState, label) {
     }).addTo(overviewMap);
     overviewDests = window.L.layerGroup().addTo(overviewMap);
 
-    // Put the simple place search directly above the map (not inside the
-    // card heading row), so it is always easy to see and never covered by
-    // Leaflet panes.
-    if (window.ScosGeocode && container) {
-      const searchHtml = window.ScosGeocode.html("overview");
-      container.insertAdjacentHTML("beforebegin", searchHtml);
-      const searchForm = document.getElementById("geocodeSearch-overview");
-      if (searchForm) {
-        window.ScosGeocode.mount(searchForm, { getMap: () => overviewMap });
-      }
+    // Delivery search: choose an order/customer to focus the route on. Mounted
+    // directly above the map (not inside the card heading row) so it is always
+    // easy to see and never covered by a Leaflet pane.
+    if (container && !document.getElementById("deliveryOrderSearch")) {
+      container.insertAdjacentHTML("beforebegin", deliverySearchHtml());
     }
+    mountDeliverySearch();
 
     // Ensure proper sizing after initialization (fixes gray map in hidden tabs)
     setTimeout(() => {
@@ -487,18 +1267,26 @@ export function syncOverviewMap(orders, trackState, label) {
   if (cafeteria) points.push([cafeteria.latitude, cafeteria.longitude]);
   if (signature !== overviewSignature) {
     overviewSignature = signature;
-    if (points.length === 1) {
-      overviewMap.setView(points[0], 15);
-    } else if (points.length > 1) {
-      overviewMap.fitBounds(points, { padding: [30, 30], maxZoom: 16 });
+    // While a delivery is focused the camera belongs to that route; only
+    // auto-fit the whole queue when nothing is focused.
+    if (!overviewSelectedId) {
+      if (points.length === 1) {
+        overviewMap.setView(points[0], 15);
+      } else if (points.length > 1) {
+        overviewMap.fitBounds(points, { padding: [30, 30], maxZoom: 16 });
+      }
+      // If no points at all, keep world view
     }
-    // If no points at all, keep world view
   }
   try {
     overviewMap.invalidateSize();
   } catch (e) {
     /* ignore - some Leaflet builds throw when the node is detached */
   }
+
+  // Refresh the focused order's marker/route with the latest data. Async so a
+  // slow geocode/route never blocks the queue rendering.
+  if (overviewSelectedId) reconcileSelectedOrder();
 
   // Status line under the map - never hide the map itself.
   if (!points.length) {
@@ -554,6 +1342,13 @@ function updateGpsBadge(active, courier) {
 
 /** Release the overview map (page teardown). */
 export function destroyOverviewMap() {
+  clearSelectionVisuals();
+  clearOverviewSearchMarker();
+  overviewSelectedId = null;
+  overviewSelected = null;
+  overviewOrders = [];
+  overviewTrackState = null;
+  overviewLabelFn = null;
   if (overviewDests && overviewMap) {
     try {
       overviewMap.removeLayer(overviewDests);

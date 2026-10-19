@@ -6,6 +6,10 @@
    (all authorized for the manager role on the backend):
      - GET /admin/dashboard                  -> stats + revenue + chart series
      - GET /admin/dashboard/recent-orders    -> recent orders table
+     - GET /issues?status=PENDING            -> pending issue report count
+     - GET /kitchen/stock-alerts             -> active stock alert count
+     - GET /feedback/stats                   -> new (unread) feedback count
+     - GET /restocks?status=PENDING          -> pending restock count
 
    Requires window.AdminAPI (admin-api.js) loaded first.
    ========================================================================== */

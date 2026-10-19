@@ -1,4 +1,4 @@
-﻿const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const MenuItem = require('../models/MenuItem');
@@ -16,6 +16,19 @@ const { getDefaultCafeteriaId, resolveCafeteriaScope } = require('../utils/cafet
 // (deliveryLocation / customerLocation / distanceToCustomerKm) is built from the
 // same helpers the courier dashboard and the GPS endpoint use.
 const deliveryService = require('../services/delivery.service');
+// Role aliases + the staff groups come from the single source of truth, so an
+// access check can never drift from the one delivery.controller.js applies.
+//
+// The order access rule itself (who may VIEW an order, who may CANCEL one)
+// lives in utils/order-access.js, which cancellation.controller.js shares - see
+// the note at getOrderById below.
+const { describeOrderAccess } = require('../utils/order-access');
+const { normalizeRole } = require('../config/roles');
+const {
+  BUCKETS,
+  bucketQuery,
+  countByBucket,
+} = require('../utils/order-status');
 
 // Coordinates are optional for delivery orders. Sanitize untrusted input: any
 // non-finite or out-of-range value is stored as null (address-only fallback),
@@ -30,12 +43,15 @@ function sanitizeCoordinate(value, min, max) {
  * @route   POST /api/orders
  * @access  Private
  *
- * Frontend: checkout.js → Place Order
+ * Frontend: checkout.js ? Place Order
  * Expected Body: { items, customerName, customerPhone, orderType, tableNumber, paymentMethod, totalAmount }
  * Response: { success, order }
  */
 exports.createOrder = async (req, res) => {
   let reservations = [];
+  // Held while this request owns a reserved table. Declared outside the try so
+  // the catch block can hand the table back if the order is never persisted.
+  let tableReservation = null;
   try {
     const {
       items,
@@ -51,7 +67,7 @@ exports.createOrder = async (req, res) => {
     } = req.body;
     const normalizedPaymentMethod = String(paymentMethod || '').toUpperCase();
 
-    // ✅ Validate required fields
+    // ? Validate required fields
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -73,7 +89,7 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // ✅ Idempotency: a client-generated key lets the checkout retry (or the
+    // ? Idempotency: a client-generated key lets the checkout retry (or the
     //    5s-deadline tracking page re-query) without ever creating a second
     //    order. Checked BEFORE any stock reservation or write.
     const clientOrderId = String(req.body.clientOrderId || '').trim().slice(0, 64) || null;
@@ -104,33 +120,42 @@ exports.createOrder = async (req, res) => {
         });
       }
 
+      let table = null;
       try {
-        const table = await Table.findByIdentifier(normalizedTableId, normalizedTable);
-        if (!table) {
-          return res.status(HTTP_STATUS.BAD_REQUEST).json({
-            success: false,
-            error: normalizedTable
-              ? `Table "${normalizedTable}" was not found.`
-              : `Table "${normalizedTableId}" was not found.`,
-          });
-        }
-        if (table.isActive === false) {
-          return res.status(HTTP_STATUS.FORBIDDEN).json({
-            success: false,
-            error: `Table ${table.tableNumber} is not currently available.`,
-          });
-        }
-        orderTableId = table._id;
-        orderTableNumber = table.tableNumber;
+        table = await Table.findByIdentifier(normalizedTableId, normalizedTable);
       } catch (err) {
         return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
           success: false,
           error: 'Unable to validate the table. Please try again.',
         });
       }
+      if (!table) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({
+          success: false,
+          error: normalizedTable
+            ? `Table "${normalizedTable}" was not found.`
+            : `Table "${normalizedTableId}" was not found.`,
+        });
+      }
+
+      // Reject anything that is not a live, enabled, still-available table up
+      // front (clear message, no side effects). The table is NOT claimed here:
+      // it is claimed atomically right before the order is persisted, so an
+      // early validation return lower down can never strand a reserved table.
+      if (table.isActive === false || table.status !== 'available') {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          error: `Table ${table.tableNumber} is no longer available. Please choose another table.`,
+          code: 'TABLE_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+
+      orderTableId = table._id;
+      orderTableNumber = table.tableNumber;
     }
 
-    // ✅ Validate items and calculate subtotal
+    // ? Validate items and calculate subtotal
     let subtotal = 0;
     let orderCafeteriaId = null;
     const validatedItems = [];
@@ -193,7 +218,7 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // ✅ Enforce system settings: maintenance mode, order availability, max order quantity
+    // ? Enforce system settings: maintenance mode, order availability, max order quantity
     const settings = await getSettingsMap();
     if (settings.maintenance_mode) {
       return res.status(HTTP_STATUS.SERVICE_UNAVAILABLE).json({
@@ -216,8 +241,8 @@ exports.createOrder = async (req, res) => {
       });
     }
 
-    // ✅ Calculate totals (VAT/tax, delivery fee, service fee & revenue
-    //    sharing all come from configurable settings — never hard-coded).
+    // ? Calculate totals (VAT/tax, delivery fee, service fee & revenue
+    //    sharing all come from configurable settings � never hard-coded).
     const { computeOrderCharges } = require('../services/finance.service');
     const { getDefaultCafeteriaId } = require('../utils/cafeteria');
     const isDelivery = String(orderType).toLowerCase() === 'delivery';
@@ -292,7 +317,41 @@ exports.createOrder = async (req, res) => {
     const vatAmount = charges.vatAmount;
     const total = charges.totalAmount;
 
-    // ✅ Create order
+    // ? Claim the table, atomically, as the last step before writing the order.
+    // ONE conditional update: only a row that is still enabled and 'available'
+    // can be flipped to 'occupied'. Two customers racing for the same table both
+    // run this; exactly one receives the document and the other receives null,
+    // so the same table can never be reserved twice. Doing it here (after every
+    // other validation) means a rejected order leaves no table stuck occupied.
+    if (isDineIn && orderTableId) {
+      let reservedTable = null;
+      try {
+        reservedTable = await Table.findOneAndUpdate(
+          { _id: orderTableId, isActive: { $ne: false }, status: 'available' },
+          { $set: { status: 'occupied' } },
+          { new: true }
+        );
+      } catch (err) {
+        return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          success: false,
+          error: 'Unable to reserve the table. Please try again.',
+        });
+      }
+
+      if (!reservedTable) {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          error: `Table ${orderTableNumber} is no longer available. Please choose another table.`,
+          code: 'TABLE_UNAVAILABLE',
+          retryable: true,
+        });
+      }
+
+      tableReservation = { id: reservedTable._id };
+      orderTableNumber = reservedTable.tableNumber;
+    }
+
+    // ? Create order
     const order = await Order.create({
       userId: req.user.id,
       cafeteriaId: orderCafeteriaId,
@@ -317,18 +376,37 @@ exports.createOrder = async (req, res) => {
             deliveryAddress: deliveryInfo?.deliveryAddress || '',
             note: deliveryInfo?.note || '',
             phone: deliveryInfo?.phone || customerPhone || '',
-            latitude:
-              deliveryInfo?.latitude !== undefined &&
-              deliveryInfo?.latitude !== null &&
-              deliveryInfo?.latitude !== ''
-                ? sanitizeCoordinate(deliveryInfo.latitude, -90, 90)
-                : null,
-            longitude:
-              deliveryInfo?.longitude !== undefined &&
-              deliveryInfo?.longitude !== null &&
-              deliveryInfo?.longitude !== ''
-                ? sanitizeCoordinate(deliveryInfo.longitude, -180, 180)
-                : null,
+            latitude: (() => {
+              const rawLat =
+                deliveryInfo?.latitude !== undefined &&
+                deliveryInfo?.latitude !== null &&
+                deliveryInfo?.latitude !== ''
+                  ? sanitizeCoordinate(deliveryInfo.latitude, -90, 90)
+                  : null;
+              const rawLng =
+                deliveryInfo?.longitude !== undefined &&
+                deliveryInfo?.longitude !== null &&
+                deliveryInfo?.longitude !== ''
+                  ? sanitizeCoordinate(deliveryInfo.longitude, -180, 180)
+                  : null;
+              // Reject (0,0) coordinate pairs - they indicate unset location, not a real address
+              return rawLat === 0 && rawLng === 0 ? null : rawLat;
+            })(),
+            longitude: (() => {
+              const rawLat =
+                deliveryInfo?.latitude !== undefined &&
+                deliveryInfo?.latitude !== null &&
+                deliveryInfo?.latitude !== ''
+                  ? sanitizeCoordinate(deliveryInfo.latitude, -90, 90)
+                  : null;
+              const rawLng =
+                deliveryInfo?.longitude !== undefined &&
+                deliveryInfo?.longitude !== null &&
+                deliveryInfo?.longitude !== ''
+                  ? sanitizeCoordinate(deliveryInfo.longitude, -180, 180)
+                  : null;
+              return rawLat === 0 && rawLng === 0 ? null : rawLng;
+            })(),
           }
         : undefined,
       deliveryFee: deliveryFee,
@@ -383,6 +461,16 @@ exports.createOrder = async (req, res) => {
           performedBy: req.user.id,
           orderId: order._id,
         });
+        // Keep the stock-alert lifecycle in sync with the decremented stock
+        // (creates/maintains a Low Stock or Out of Stock alert when the order
+        // pushed the item at/below its minimum threshold). Best-effort: alert
+        // bookkeeping must never fail an order.
+        try {
+          const { syncStockAlertsForItem } = require('../services/stock-alert.service');
+          await syncStockAlertsForItem(updated);
+        } catch (e) {
+          console.warn('⚠️ Stock alert sync after order failed:', e.message);
+        }
       }
     }
 
@@ -400,7 +488,7 @@ exports.createOrder = async (req, res) => {
       }
     }
 
-    // ✅ Emit socket events for the new order.
+    // ? Emit socket events for the new order.
     //
     // The KITCHEN is deliberately not told here: per the order lifecycle
     // ("payment successful -> order = PENDING -> kitchen dashboard") an order
@@ -447,11 +535,17 @@ exports.createOrder = async (req, res) => {
       order: orderSummary,
     });
   } catch (error) {
-    console.error('❌ Create Order Error:', error);
+    console.error('? Create Order Error:', error);
     for (const reservation of reservations) {
       await MenuItem.findByIdAndUpdate(reservation.id, { $inc: { stockQuantity: reservation.quantity } }).catch(
         () => {}
       );
+    }
+    // Hand back the table we reserved. It only belongs to a persisted order; if
+    // none was written, leaving it 'occupied' would make it silently vanish
+    // from the customer's available-table list.
+    if (tableReservation) {
+      await Table.findByIdAndUpdate(tableReservation.id, { $set: { status: 'available' } }).catch(() => {});
     }
     // Concurrent duplicate: two requests with the same clientOrderId raced
     // past the pre-check. The unique index rejected the second write, so
@@ -486,7 +580,7 @@ exports.createOrder = async (req, res) => {
  * @route   GET /api/orders
  * @access  Private/Admin
  *
- * Frontend: admin/orders.html → Load all orders
+ * Frontend: admin/orders.html ? Load all orders
  * Query Params: status, paymentStatus, date
  * Response: { success, count, orders: [...] }
  */
@@ -498,17 +592,17 @@ exports.getAllOrders = async (
   try {
     const { status, paymentStatus, date, limit = 50, page = 1 } = req.query;
 
-    // ✅ Build filter
+    // ? Build filter
     let filter = {};
     if (status && status !== 'all') filter.status = status;
     if (paymentStatus && paymentStatus !== 'all') filter.paymentStatus = paymentStatus;
     if (date) filter.orderDate = { $regex: date };
 
-    // ✅ Pagination
+    // ? Pagination
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // ✅ Execute query
+    // ? Execute query
     const orders = await Order.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(parseInt(limit));
 
     const total = await Order.countDocuments(filter);
@@ -521,7 +615,7 @@ exports.getAllOrders = async (
       orders: orders.map((order) => order.getSummary()),
     });
   } catch (error) {
-    console.error('❌ Get All Orders Error:', error);
+    console.error('? Get All Orders Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -535,11 +629,60 @@ exports.getAllOrders = async (
 * @route   GET /api/orders/myorders
 * @access  Private
 *
-* Frontend: order-history.js → Load user orders
+* Frontend: order-history.js ? Load user orders
 * Response: { success, count, orders: [...] }
 */
+/**
+ * @desc    Get the caller's own orders
+ * @route   GET /api/orders/my-orders
+ * @access  Private
+ *
+ * Query:
+ *   status  - 'active' | 'completed' | 'cancelled' | 'failed' | 'refunded' | 'all'
+ *             Bucketed against the values actually stored in MongoDB (both the
+ *             `status` and `orderStatus` vocabularies, both casings) via
+ *             utils/order-status.js. The Order History tabs used to bucket
+ *             client-side against Title-Case strings that nothing writes, so
+ *             Completed / In Progress / Cancelled each matched nothing.
+ *   scope   - 'today' (default) | 'all'
+ *             'today' keeps the historical behaviour the order tracker and
+ *             customer-orders-sync.js depend on: today's orders PLUS anything
+ *             still active. 'all' returns the customer's whole history, which
+ *             is what an order-HISTORY tab needs - otherwise a cancelled or
+ *             completed order from yesterday is not in the collection at all
+ *             and the tab can never show it.
+ *
+ * Always returns `counts` so the tabs can render their badges from the same
+ * data the list is rendered from.
+ */
 exports.getMyOrders = async (req, res) => {
   try {
+    const requestedBucket = String((req.query && req.query.status) || '').trim().toLowerCase();
+    const scope = String((req.query && req.query.scope) || 'today').trim().toLowerCase();
+    // The UI labels its tabs "Pending" / "In Progress" while the stored bucket
+    // is `active`; accept the UI vocabulary so a caller using the visible tab
+    // name does not get a 400 (or, worse, an empty tab that looks like "no
+    // orders"). `canceled` is the US spelling used by some legacy records.
+    const STATUS_ALIASES = {
+      pending: 'active',
+      'in-progress': 'active',
+      in_progress: 'active',
+      inprogress: 'active',
+      progress: 'active',
+      completed: 'completed',
+      canceled: 'cancelled',
+      cancelled: 'cancelled',
+    };
+    const normalizedBucket = STATUS_ALIASES[requestedBucket] || requestedBucket;
+    const filterStatus = normalizedBucket === 'all' ? null : normalizedBucket;
+
+    if (filterStatus && !BUCKETS.includes(filterStatus) && filterStatus !== 'refunded') {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: `status must be one of: ${BUCKETS.join(', ')}, refunded, all`,
+      });
+    }
+
     // Completed orders are hidden from the customer dashboard, but an order that
     // is still moving MUST stay visible even when it started before midnight
     // (a late delivery, or a customer who checks just after 00:00). Filtering
@@ -566,22 +709,78 @@ exports.getMyOrders = async (req, res) => {
       'ARRIVED',
     ];
 
-    const orders = await Order.find({
-      userId: req.user.id,
-      $or: [
-        { createdAt: { $gte: todayStart } },
-        { status: { $in: ACTIVE_STATUSES } },
-        { orderStatus: { $in: ACTIVE_ORDER_STATUSES } },
-      ],
-    }).sort({ createdAt: -1 });
+    // An explicit tab is a deliberate request to see that bucket, so the
+    // "today only" window must not apply - otherwise Completed and Cancelled
+    // would silently be empty for any order not placed today.
+    const applyTodayWindow = filterStatus === null && scope !== 'all';
+
+    const filter = { userId: req.user.id };
+
+    const clauses = [];
+    if (applyTodayWindow) {
+      clauses.push({ createdAt: { $gte: todayStart } });
+      clauses.push({ status: { $in: ACTIVE_STATUSES } });
+      clauses.push({ orderStatus: { $in: ACTIVE_ORDER_STATUSES } });
+    }
+    if (filterStatus === 'refunded') {
+      clauses.push({
+        $or: [
+          { paymentStatus: 'REFUNDED' },
+          { refundStatus: { $in: ['REFUNDED', 'REFUND_REQUESTED', 'REFUND_PROCESSING'] } },
+        ],
+      });
+    } else if (filterStatus) {
+      const bucketClause = bucketQuery(filterStatus);
+      if (bucketClause) clauses.push(bucketClause);
+    }
+    if (clauses.length) {
+      filter.$and = clauses.length === 1 ? [clauses[0]] : clauses;
+    }
+
+    // Optional pagination. No `limit` keeps the original behaviour (the whole
+    // history in one response); when supplied the response is a page and
+    // `total` reports the full number of matching orders so the client can
+    // page through a large history. Sorted newest-first.
+    const page = Math.max(1, parseInt(req.query && req.query.page, 10) || 1);
+    const rawLimit = parseInt(req.query && req.query.limit, 10);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 200) : 0;
+
+    let ordersQuery = Order.find(filter).sort({ createdAt: -1 });
+    if (limit) ordersQuery = ordersQuery.skip((page - 1) * limit).limit(limit);
+    const orders = await ordersQuery;
+
+    // `total` is the full match count regardless of the page window.
+    const total = limit ? await Order.countDocuments(filter) : orders.length;
+
+    // Tab badges are counted over the SAME population the page is allowed to
+    // show (scope), but BEFORE the bucket filter - otherwise every tab would
+    // report the size of its own slice and the "All" tab would report nothing.
+    let countsSource = orders;
+    if (filterStatus) {
+      const countsFilter = { userId: req.user.id };
+      const countClauses = [];
+      if (applyTodayWindow) {
+        countClauses.push({ createdAt: { $gte: todayStart } });
+        countClauses.push({ status: { $in: ACTIVE_STATUSES } });
+        countClauses.push({ orderStatus: { $in: ACTIVE_ORDER_STATUSES } });
+      }
+      if (countClauses.length) countsFilter.$and = countClauses;
+      countsSource = await Order.find(countsFilter).select('status orderStatus paymentStatus refundStatus');
+    }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       count: orders.length,
+      total: total,
+      page: limit ? page : 1,
+      limit: limit || null,
+      status: filterStatus || 'all',
+      scope: applyTodayWindow ? 'today' : 'all',
+      counts: countByBucket(countsSource),
       orders: orders.map((order) => order.getSummary()),
     });
   } catch (error) {
-    console.error('❌ Get My Orders Error:', error);
+    console.error('? Get My Orders Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -594,7 +793,7 @@ exports.getMyOrders = async (req, res) => {
  * @route   GET /api/orders/by-client/:clientOrderId
  * @access  Private
  *
- * Frontend: order-tracking pending mode → poll until the order created by the
+ * Frontend: order-tracking pending mode ? poll until the order created by the
  * 5s-deadline checkout appears. Scoped to the requesting user by design.
  * Response: { success, order }
  */
@@ -610,7 +809,7 @@ exports.getOrderByClientId = async (req, res) => {
     }
     res.status(HTTP_STATUS.OK).json({ success: true, order: order.getSummary() });
   } catch (error) {
-    console.error('❌ Get Order By Client Id Error:', error);
+    console.error('? Get Order By Client Id Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
   }
 };
@@ -620,7 +819,7 @@ exports.getOrderByClientId = async (req, res) => {
  * @route   GET /api/orders/:id
  * @access  Private
  *
- * Frontend: order-status.js → Load order details
+ * Frontend: order-status.js ? Load order details
  * Response: { success, order }
  */
 exports.getOrderById = async (req, res) => {
@@ -639,16 +838,35 @@ exports.getOrderById = async (req, res) => {
       });
     }
 
-    // ✅ Check if user owns order or is admin / kitchen staff
-    const viewerRole = String(req.user.role || '').toLowerCase();
-    const isStaff = ['admin', 'staff', 'kitchen', 'kitchen_staff', 'foodmaker'].includes(viewerRole);
-    if (order.userId.toString() !== req.user.id.toString() && !isStaff) {
+    // ? Who may read an order: the owner, the assigned courier, or management.
+    //
+    // The rule itself now lives in utils/order-access.js. It used to be written
+    // out longhand here AND, differently, in cancellation.controller.js - and
+    // that drift is what produced the bug where a manager could load this page
+    // (and be shown the Cancel button) but then be refused by
+    // POST /cancellations/request with "You can only cancel your own orders".
+    const access = describeOrderAccess(order, {
+      ...req.user,
+      role: normalizeRole(req.user.role),
+    });
+    // The viewer role is normalized on the request itself (not just inside the
+    // shared policy) so role aliases such as "foodmaker" resolve correctly.
+    if (!access.canView) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
-
         error: 'Unauthorized to view this order',
       });
     }
+
+    // Tell the page up front whether this viewer may cancel. Without it the
+    // cancellation page renders its "Confirm Cancellation" button purely on
+    // order status, so a viewer who is allowed to READ the order but not to
+    // cancel it (the assigned courier) is shown a button that is guaranteed to
+    // fail. It is better to say so up front than to fail on click.
+    const cancelAccess = {
+      canCancel: access.canCancel,
+      cancelBlockedReason: access.canCancel ? null : access.reason,
+    };
 
     // Delivery tracking data: only resolved for delivery orders. The cafeteria
     // coordinate lets the tracking map show where the order originated even if
@@ -735,6 +953,8 @@ exports.getOrderById = async (req, res) => {
         distanceToCustomerKm: proximity.distanceKm,
         nearCustomer: proximity.nearCustomer,
         trackingActive,
+        // Can THIS viewer cancel the order? (owner or an operations role)
+        ...cancelAccess,
         // GPS runs only while the delivery is PICKED_UP / OUT_FOR_DELIVERY /
         // ARRIVED. Once it flips false the tracking page must stop expecting
         // `delivery:location` frames and show the last known fix instead.
@@ -769,7 +989,7 @@ exports.getOrderById = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('❌ Get Order By ID Error:', error);
+    console.error('? Get Order By ID Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -782,7 +1002,7 @@ exports.getOrderById = async (req, res) => {
  * @route   PATCH /api/orders/:id/status
  * @access  Private/Kitchen/Admin
  *
- * Frontend: kitchen/dashboard.html → Update status
+ * Frontend: kitchen/dashboard.html ? Update status
  * Expected Body: { status }
  * Response: { success, order }
  */
@@ -790,7 +1010,7 @@ exports.updateOrderStatus = async (req, res) => {
   try {
     const { status } = req.body;
 
-    // ✅ Validate status
+    // ? Validate status
 
     const validStatuses = ['pending', 'preparing', 'ready', 'arrived', 'out_for_delivery', 'delivered', 'completed', 'cancelled'];
     if (!validStatuses.includes(status)) {
@@ -821,11 +1041,11 @@ exports.updateOrderStatus = async (req, res) => {
       });
     }
 
-    // ✅ Update status
+    // ? Update status
     order.status = status;
     order.orderStatus = status.toUpperCase();
 
-    // ✅ Set timestamps
+    // ? Set timestamps
     if (status === 'ready') {
       order.readyTime = new Date();
     }
@@ -842,7 +1062,7 @@ exports.updateOrderStatus = async (req, res) => {
 
     await order.save();
 
-    // ✅ Emit socket event for order status update
+    // ? Emit socket event for order status update
     const { emitSocketEvent } = require('../utils/socket');
     const orderSummary = order.getSummary();
     emitSocketEvent('kitchen', 'order:status', orderSummary);
@@ -895,7 +1115,7 @@ exports.updateOrderStatus = async (req, res) => {
       metadata: { previousStatus: order._previousStatus || 'NONE', newStatus: status },
     });
 
-    // ✅ Create notification for customer
+    // ? Create notification for customer
     const readyMsg = order.orderType === 'delivery' ? 'ready for delivery' : 'ready for pickup';
     const statusTitle = {
       ready: order.orderType === 'delivery' ? 'Order Ready for Delivery!' : 'Order Ready!',
@@ -923,7 +1143,7 @@ exports.updateOrderStatus = async (req, res) => {
         isRead: false,
       });
 
-      // ✅ Send real-time notification to correct customer only (user room)
+      // ? Send real-time notification to correct customer only (user room)
       emitSocketEvent(`user:${order.userId}`, 'notification:new', {
         id: notification._id,
         title: notification.title,
@@ -942,7 +1162,7 @@ exports.updateOrderStatus = async (req, res) => {
       order: orderSummary,
     });
   } catch (error) {
-    console.error('❌ Update Order Status Error:', error);
+    console.error('? Update Order Status Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -955,7 +1175,7 @@ exports.updateOrderStatus = async (req, res) => {
 * @route   PATCH /api/orders/:id/cancel
 * @access  Private
 *
-* Frontend: order-status.js → Cancel Order
+* Frontend: order-status.js ? Cancel Order
 * Expected Body: { reason }
 * Response: { success, message }
 
@@ -972,7 +1192,7 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ Check if user owns order
+    // ? Check if user owns order
     if (String(order.userId) !== String(req.user.id)) {
       return res.status(HTTP_STATUS.FORBIDDEN).json({
         success: false,
@@ -980,7 +1200,7 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ Check if order can be cancelled (use both status fields)
+    // ? Check if order can be cancelled (use both status fields)
     const currentStatus = String(order.orderStatus || order.status || '').toUpperCase();
     if (['CANCELLED', 'COMPLETED', 'DELIVERED', 'SERVED'].includes(currentStatus)) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -989,7 +1209,7 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ Only PENDING orders can be cancelled by customer
+    // ? Only PENDING orders can be cancelled by customer
     if (currentStatus !== 'PENDING') {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
@@ -997,8 +1217,8 @@ exports.cancelOrder = async (req, res) => {
       });
     }
 
-    // ✅ For PAID orders, route through the cancellation service which handles
-    //    refund requests and admin notification (PENDING → CANCELLED → Admin Refund → REFUNDED)
+    // ? For PAID orders, route through the cancellation service which handles
+    //    refund requests and admin notification (PENDING ? CANCELLED ? Admin Refund ? REFUNDED)
     const paid = String(order.paymentStatus || '').toUpperCase() === 'PAID';
     if (paid) {
       const svc = require('../services/cancellation.service');
@@ -1024,20 +1244,25 @@ exports.cancelOrder = async (req, res) => {
         source: 'customer',
       });
 
-      // Mark refund as requested — admin will process it
+      // Mark refund as requested � admin will process it.
+      // Refund Amount = order Subtotal. Total Paid (Subtotal + Service Fee) is
+      // what the customer paid; VAT is never part of the refund summary.
+      const { computeRefundSummary } = require('../utils/money');
+      const refundSummary = computeRefundSummary(order);
+
       cancellation.refundStatus = 'REFUND_REQUESTED';
-      cancellation.refundAmount = order.totalAmount;
+      cancellation.refundAmount = refundSummary.refundAmount;
       await cancellation.save();
 
       order.refundStatus = 'REFUND_REQUESTED';
-      order.refundAmount = order.totalAmount;
+      order.refundAmount = refundSummary.refundAmount;
       await order.save();
 
       const Payment = require('../models/Payment');
       try {
         await Payment.findOneAndUpdate(
           { orderId: order._id },
-          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount }
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: refundSummary.refundAmount }
         );
       } catch (_) {
         /* best effort */
@@ -1047,7 +1272,7 @@ exports.cancelOrder = async (req, res) => {
       await Notification.create({
         userId: order.userId,
         title: 'Order Cancelled',
-        message: `Your order #${order.orderId} has been cancelled. Your refund of ${order.totalAmount} ETB will be processed shortly.`,
+        message: `Your order #${order.orderId} has been cancelled. Your refund of ${refundSummary.refundAmount} ETB will be processed shortly.`,
         type: 'order',
         orderId: order.orderId,
         isRead: false,
@@ -1055,12 +1280,14 @@ exports.cancelOrder = async (req, res) => {
 
       res.status(HTTP_STATUS.OK).json({
         success: true,
-        message: `Order #${order.orderId} cancelled successfully. Your refund will be processed by an administrator.`,
+        message: `Order #${order.orderId} cancelled successfully. Your refund of ${refundSummary.refundAmount} ETB will be processed by an administrator.`,
+        refundRequested: true,
+        refundSummary,
       });
       return;
     }
 
-    // ✅ For unpaid orders, cancel directly (no refund needed)
+    // ? For unpaid orders, cancel directly (no refund needed)
     order.status = 'cancelled';
     order.orderStatus = 'CANCELLED';
     order.cancellationReason = reason || 'Cancelled by customer';
@@ -1095,7 +1322,7 @@ exports.cancelOrder = async (req, res) => {
       message: `Order #${order.orderId} cancelled successfully`,
     });
   } catch (error) {
-    console.error('❌ Cancel Order Error:', error);
+    console.error('? Cancel Order Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -1110,7 +1337,7 @@ exports.cancelOrder = async (req, res) => {
 * @route   GET /api/orders/stats
 * @access  Private/Admin
 *
-* Frontend: admin/dashboard.html → Metrics
+* Frontend: admin/dashboard.html ? Metrics
 * Response: { totalOrders, pendingOrders, preparingOrders, completedOrders, totalRevenue }
 */
 exports.getOrderStats = async (req, res) => {
@@ -1123,11 +1350,11 @@ exports.getOrderStats = async (req, res) => {
     const completedOrders = await Order.countDocuments({ status: 'served' });
     const cancelledOrders = await Order.countDocuments({ status: 'cancelled' });
 
-    // ✅ Calculate revenue (only completed orders)
+    // ? Calculate revenue (only completed orders)
     const completedOrdersData = await Order.find({ status: 'served' });
     const totalRevenue = completedOrdersData.reduce((sum, order) => sum + order.totalAmount, 0);
 
-    // ✅ Today's orders
+    // ? Today's orders
     const today = new Date().toISOString().split('T')[0];
     const todayOrders = await Order.countDocuments({
       orderDate: { $regex: today },
@@ -1148,7 +1375,7 @@ exports.getOrderStats = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('❌ Get Order Stats Error:', error);
+    console.error('? Get Order Stats Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,
@@ -1161,14 +1388,14 @@ exports.getOrderStats = async (req, res) => {
  * @route   GET /api/orders/kitchen
  * @access  Private/Kitchen
  *
- * Frontend: kitchen/dashboard.html → Live orders
+ * Frontend: kitchen/dashboard.html ? Live orders
  * Response: { success, orders: [...] }
  */
 exports.getKitchenOrders = async (req, res) => {
   try {
     const { status } = req.query;
 
-    // ✅ Only show orders created today (past orders are hidden from the board)
+    // ? Only show orders created today (past orders are hidden from the board)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
     let filter = { createdAt: { $gte: todayStart } };
@@ -1212,7 +1439,7 @@ exports.getKitchenOrders = async (req, res) => {
       orders: orders.map((o) => formatKitchenOrder(o)),
     });
   } catch (error) {
-    console.error('❌ Get Kitchen Orders Error:', error);
+    console.error('? Get Kitchen Orders Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       error: MESSAGES.SERVER_ERROR,

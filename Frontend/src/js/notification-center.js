@@ -159,6 +159,10 @@
     delivery_emergency: { icon: 'fa-siren', cls: 'stock', label: 'Delivery emergency' },
     delivery_assigned: { icon: 'fa-hand-holding-hand', cls: 'order', label: 'Delivery assignment' },
     delivery_status: { icon: 'fa-truck-fast', cls: 'preparation', label: 'Delivery status' },
+    // A refund the customer was waiting on has completed. Without an entry here
+    // it fell through to the generic info icon, so "your money is back" looked
+    // identical to an ordinary system notice.
+    refund: { icon: 'fa-arrow-rotate-left', cls: 'refund', label: 'Refund processed' },
   };
 
   function typeInfo(type) {

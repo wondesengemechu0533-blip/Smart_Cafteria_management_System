@@ -5,6 +5,11 @@ const { ROLES, normalizeRole, isAdminRole, canManageUser } = require('../config/
 const { logAction } = require('../utils/audit');
 
 const phoneRegex = /^(\+251[0-9]{9}|(09|07)[0-9]{8})$/;
+const CAFETERIA_OPERATIONAL_ROLES = ['kitchen', 'delivery', 'cashier'];
+function isSystemAdminRole(role) {
+  const n = normalizeRole(role);
+  return n === 'admin' || n === 'system_admin';
+}
 
 /**
  * Enforce an actor's privilege to create/manage a target user.
@@ -71,6 +76,9 @@ exports.getAllUsers = async (req, res) => {
     const { search, role, status, page = 1, limit = 20 } = req.query;
     let filter = {};
 
+    const actorIsSystemAdmin = isSystemAdminRole(req.user.role);
+    const actorIsCafeteriaAdmin = normalizeRole(req.user.role) === 'cafeteria_admin';
+
     if (search) {
       filter.$or = [
         { name: { $regex: search, $options: 'i' } },
@@ -87,6 +95,21 @@ exports.getAllUsers = async (req, res) => {
       else if (roles.length > 1) filter.role = { $in: roles };
     }
     if (status && status !== 'all') filter.status = status.toUpperCase();
+
+    if (actorIsCafeteriaAdmin) {
+      // Cafeteria admins may only see operational staff in their own cafeteria.
+      if (filter.role) {
+        const requested = Array.isArray(filter.role.$in) ? filter.role.$in : [filter.role];
+        const allowed = requested.filter((r) => CAFETERIA_OPERATIONAL_ROLES.includes(r));
+        if (allowed.length === 0) {
+          return res.status(HTTP_STATUS.OK).json({ success: true, count: 0, total: 0, page: 1, pages: 0, users: [] });
+        }
+        filter.role = allowed.length === 1 ? allowed[0] : { $in: allowed };
+      } else {
+        filter.role = { $in: CAFETERIA_OPERATIONAL_ROLES };
+      }
+      if (req.user.cafeteriaId) filter.cafeteriaId = req.user.cafeteriaId;
+    }
 
     const pageNum = Math.max(parseInt(page) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit) || 20, 1), 100);
@@ -122,6 +145,14 @@ exports.getUserById = async (req, res) => {
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'User not found' });
+    }
+    if (normalizeRole(req.user.role) === 'cafeteria_admin') {
+      if (!CAFETERIA_OPERATIONAL_ROLES.includes(normalizeRole(user.role))) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'You do not have permission to view this user' });
+      }
+      if (req.user.cafeteriaId && String(user.cafeteriaId) !== String(req.user.cafeteriaId)) {
+        return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'You do not have permission to view this user' });
+      }
     }
     res.status(HTTP_STATUS.OK).json({ success: true, user: sanitizeUser(user) });
   } catch (error) {
@@ -692,22 +723,18 @@ exports.toggleUserStatus = async (req, res) => {
  */
 exports.getUserStats = async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const activeCustomers = await User.countDocuments({
-      role: 'customer',
-      status: 'ACTIVE',
-      isActive: true,
-    });
-    const staffCount = await User.countDocuments({
-      role: { $in: ['kitchen', 'admin'] },
-    });
-    const blockedCount = await User.countDocuments({
-      status: 'BLOCKED',
-      isActive: false,
-    });
-    const suspendedCount = await User.countDocuments({
-      status: 'SUSPENDED',
-    });
+    const actorIsCafeteriaAdmin = normalizeRole(req.user.role) === 'cafeteria_admin';
+    const baseFilter = actorIsCafeteriaAdmin
+      ? { role: { $in: CAFETERIA_OPERATIONAL_ROLES }, ...(req.user.cafeteriaId ? { cafeteriaId: req.user.cafeteriaId } : {}) }
+      : {};
+
+    const totalUsers = await User.countDocuments(baseFilter);
+    const activeCustomers = actorIsCafeteriaAdmin
+      ? 0
+      : await User.countDocuments({ ...baseFilter, role: 'customer', status: 'ACTIVE', isActive: true });
+    const staffCount = await User.countDocuments({ ...baseFilter, role: { $in: ['kitchen', 'admin'] } });
+    const blockedCount = await User.countDocuments({ ...baseFilter, status: 'BLOCKED', isActive: false });
+    const suspendedCount = await User.countDocuments({ ...baseFilter, status: 'SUSPENDED' });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,

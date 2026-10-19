@@ -19,12 +19,17 @@ const { coerceValue, DEFAULT_SETTINGS } = require('../utils/settings');
  */
 exports.getDashboardStats = async (req, res) => {
   try {
+    // Chart window: the dashboard's 7D/30D/90D (and Custom) buttons send
+    // ?days=N. Bounded to 1..90 so a bogus value can never request an
+    // unbounded scan; anything outside that falls back to the 7-day default.
+    const requestedDays = parseInt(req.query.days, 10);
+    const days = Number.isInteger(requestedDays) && requestedDays >= 1 && requestedDays <= 90 ? requestedDays : 7;
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setHours(0, 0, 0, 0);
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const rangeStart = new Date(today);
+    rangeStart.setDate(rangeStart.getDate() - (days - 1));
 
     const FLOW = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'COMPLETED'];
 
@@ -83,6 +88,21 @@ exports.getDashboardStats = async (req, res) => {
     const completedOrders = orders.filter((o) => effectiveStatus(o) === 'COMPLETED').length;
     const cancelledOrders = orders.filter((o) => effectiveStatus(o) === 'CANCELLED').length;
 
+    // Order Status Overview doughnut: scoped to the selected 7D/30D/90D window
+    // so the buttons on that card actually change what it shows.
+    const rangeStartMs = rangeStart.getTime();
+    const inRange = orders.filter((o) => o.createdAt && new Date(o.createdAt).getTime() >= rangeStartMs);
+    const countStatus = (list, status) => list.filter((o) => effectiveStatus(o) === status).length;
+    const ordersInRange = {
+      total: inRange.length,
+      pending: countStatus(inRange, 'PENDING'),
+      preparing: countStatus(inRange, 'PREPARING'),
+      ready: countStatus(inRange, 'READY'),
+      served: countStatus(inRange, 'SERVED'),
+      completed: countStatus(inRange, 'COMPLETED'),
+      cancelled: countStatus(inRange, 'CANCELLED'),
+    };
+
     const sum = (list) => list.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
     const paidOrders = orders.filter((o) => o.paymentStatus === 'PAID');
     const totalRevenue = sum(paidOrders);
@@ -91,27 +111,40 @@ exports.getDashboardStats = async (req, res) => {
     );
 
     const series = { orders: {}, revenue: {} };
+    // Bucket by LOCAL calendar day. toISOString() would key a local-midnight
+    // date by its UTC day, which in a positive-offset timezone (e.g. UTC+3)
+    // shifts every bucket back a day AND leaves today's orders homeless -
+    // their UTC key matches no bucket, so they vanish from the chart.
+    const dayKey = (d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
     orders.forEach((o) => {
       const t = o.createdAt ? new Date(o.createdAt) : null;
       if (!t) return;
-      const key = t.toISOString().slice(0, 10);
+      const key = dayKey(t);
       series.orders[key] = (series.orders[key] || 0) + 1;
       if (o.paymentStatus === 'PAID') {
         series.revenue[key] = (series.revenue[key] || 0) + (Number(o.totalAmount) || 0);
       }
     });
 
-    const last7Days = [];
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(sevenDaysAgo);
+    // One bucket per day across the requested window (7, 30 or 90 days).
+    const chartSeries = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(rangeStart);
       d.setDate(d.getDate() + i);
-      const key = d.toISOString().slice(0, 10);
-      last7Days.push({
+      const key = dayKey(d);
+      chartSeries.push({
         date: key,
         orders: series.orders[key] || 0,
         revenue: series.revenue[key] || 0,
       });
     }
+    // Backward compat: manager-dashboard.js renders chart.last7Days.
+    const last7Days = days === 7 ? chartSeries : chartSeries.slice(-7);
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -138,7 +171,7 @@ exports.getDashboardStats = async (req, res) => {
         },
         payments: { successful: successfulPayments, pending: pendingPayments, failed: failedPayments },
         revenue: { today: todayRevenue, total: totalRevenue },
-        chart: { last7Days },
+        chart: { days, series: chartSeries, last7Days, ordersInRange },
         cancellations: { pending: pendingCancellations },
       },
     });
@@ -492,6 +525,125 @@ exports.changePassword = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
     console.error('❌ Change Password Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
+  }
+};
+
+exports.getSystemAnalytics = async (req, res) => {
+  try {
+    const requestedDays = parseInt(req.query.days, 10);
+    const days = Number.isInteger(requestedDays) && requestedDays >= 1 && requestedDays <= 90 ? requestedDays : 7;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const rangeStart = new Date(today);
+    rangeStart.setDate(rangeStart.getDate() - (days - 1));
+    const rangeEnd = new Date(today);
+    rangeEnd.setDate(rangeEnd.getDate() + 1);
+
+    const dayKey = (d) => {
+      const dt = new Date(d);
+      const y = dt.getFullYear();
+      const m = String(dt.getMonth() + 1).padStart(2, '0');
+      const day = String(dt.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + day;
+    };
+
+    const [totalUsers, activeUsers] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ status: 'ACTIVE', isActive: true }),
+    ]);
+    const inactiveUsers = Math.max(0, totalUsers - activeUsers);
+
+    const totalOrders = await Order.countDocuments();
+
+    const allPaid = await Payment.aggregate([
+      { $match: { status: 'PAID' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]);
+    const totalRevenue = allPaid[0] ? allPaid[0].total : 0;
+
+    const paymentAgg = await Payment.aggregate([
+      { $match: { paymentDate: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: { _id: '$status', count: { $sum: 1 }, amount: { $sum: '$amount' }, refundAmount: { $sum: '$refundAmount' } } },
+    ]);
+    const byStatus = (s) => paymentAgg.find((r) => String(r._id).toUpperCase() === s) || { count: 0, amount: 0, refundAmount: 0 };
+    const paidRow = byStatus('PAID');
+    const failedRow = byStatus('FAILED');
+    const refundedRow = byStatus('REFUNDED');
+    const pendingRow = byStatus('PENDING');
+    const cancelledRow = byStatus('CANCELLED');
+    const rangeRevenue = paidRow.amount || 0;
+    const refundedAmount = refundedRow.refundAmount || 0;
+    const netRevenue = rangeRevenue - refundedAmount;
+
+    const userGrowthAgg = await User.aggregate([
+      { $match: { createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+    ]);
+    const userGrowthMap = {};
+    userGrowthAgg.forEach((r) => { userGrowthMap[r._id] = r.count; });
+
+    const orderTrendAgg = await Order.aggregate([
+      { $match: { createdAt: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+    ]);
+    const orderTrendMap = {};
+    orderTrendAgg.forEach((r) => { orderTrendMap[r._id] = r.count; });
+
+    const revenueTrendAgg = await Payment.aggregate([
+      { $match: { status: 'PAID', paymentDate: { $gte: rangeStart, $lt: rangeEnd } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$paymentDate' } }, revenue: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]);
+    const revenueTrendMap = {};
+    revenueTrendAgg.forEach((r) => { revenueTrendMap[r._id] = r; });
+
+    const trend = [];
+    const userGrowth = [];
+    const orderTrend = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date(rangeStart);
+      d.setDate(d.getDate() + i);
+      const key = dayKey(d);
+      const rt = revenueTrendMap[key] || {};
+      trend.push({ date: key, revenue: rt.revenue || 0, orders: rt.count || 0 });
+      userGrowth.push({ date: key, count: userGrowthMap[key] || 0 });
+      orderTrend.push({ date: key, count: orderTrendMap[key] || 0 });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      data: {
+        revenue: {
+          total: totalRevenue,
+          range: rangeRevenue,
+          refunded: refundedAmount,
+          net: netRevenue,
+          successfulPayments: paidRow.count || 0,
+          trend,
+        },
+        users: {
+          total: totalUsers,
+          active: activeUsers,
+          inactive: inactiveUsers,
+          growth: userGrowth,
+        },
+        orders: {
+          total: totalOrders,
+          trend: orderTrend,
+        },
+        payments: {
+          successful: paidRow.count || 0,
+          failed: failedRow.count || 0,
+          refunded: refundedRow.count || 0,
+          pending: pendingRow.count || 0,
+          cancelled: cancelledRow.count || 0,
+          total: paymentAgg.reduce((s, r) => s + r.count, 0),
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Get System Analytics Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
   }
 };

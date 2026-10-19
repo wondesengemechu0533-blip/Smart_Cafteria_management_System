@@ -113,7 +113,7 @@ async function syncMyOrders() {
 
     let serverOrders = [];
     try {
-        const res = await api.get("/orders/my-orders");
+        const res = await api.get("/orders/my-orders?scope=all");
         serverOrders = res?.data?.orders || res?.orders || [];
     } catch (err) {
         // If the network or server is unavailable, keep local data as-is.
@@ -132,26 +132,32 @@ async function syncMyOrders() {
             return String(tb).localeCompare(String(ta));
         });
 
+    const idOf = (r) => (r.orderId || r.id || "").replace(/^#/, "").trim();
+
     if (records.length === 0) {
-        // Still purge stale stored orders from past days.
-        localStorage.setItem("orderHistory", JSON.stringify([]));
+        // The server has no orders for this user, but locally saved orders (for
+        // example a guest checkout) must not be wiped - the order-history page
+        // still shows them.
         const localLatest = JSON.parse(localStorage.getItem("latestOrder"));
         if (localLatest && !isTodaysOrder(localLatest)) {
             localStorage.removeItem("latestOrder");
         }
+        window.dispatchEvent(new CustomEvent("customer:orders-synced", {
+            detail: { latestOrder: null }
+        }));
         return;
     }
 
-    // Merge today's server records into the existing orderHistory (authoritative wins).
+    // Merge the server records into the existing orderHistory (authoritative
+    // wins). Local-only records are preserved so a guest order saved at checkout
+    // never disappears just because it is not attached to the account.
     const existing = JSON.parse(localStorage.getItem("orderHistory")) || [];
-    const idOf = (r) => (r.orderId || r.id || "").replace(/^#/, "").trim();
     const byId = new Map();
-    records.forEach((r) => byId.set(idOf(r), r));
-    // Do not carry forward any stored order that was not created today.
-    existing.filter(isTodaysOrder).forEach((r) => {
+    existing.forEach((r) => {
         const k = idOf(r);
-        if (!byId.has(k)) byId.set(k, r);
+        if (k) byId.set(k, r);
     });
+    records.forEach((r) => byId.set(idOf(r), r));
     const mergedHistory = Array.from(byId.values());
     localStorage.setItem("orderHistory", JSON.stringify(mergedHistory));
 

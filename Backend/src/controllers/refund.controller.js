@@ -2,9 +2,9 @@ const mongoose = require('mongoose');
 const Refund = require('../models/Refund');
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
-const Notification = require('../models/Notification');
 const { HTTP_STATUS, MESSAGES, REFUND_STATUS } = require('../config/constants');
 const { logAction } = require('../utils/audit');
+const { computeRefundSummary, resolveRefundAmount } = require('../utils/money');
 
 const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -128,22 +128,45 @@ exports.requestRefund = async (req, res) => {
         .status(HTTP_STATUS.CONFLICT)
         .json({ success: false, error: 'A refund request already exists for this order' });
     }
+    // Belt-and-braces duplicate guard: the Cancellation/Order flat refund flags
+    // are updated in step with the Refund ledger, so an order that already has a
+    // refund in flight can never be refunded a second time through this route.
+    if (String(order.refundStatus || '').toUpperCase() === REFUND_STATUS.REFUNDED) {
+      return res
+        .status(HTTP_STATUS.CONFLICT)
+        .json({ success: false, error: 'This order has already been refunded' });
+    }
 
     // Verify the order was actually paid (real payment reference), unless simulated.
     const payment = await findPaymentForOrder(order, true);
-    const usedAmount =
-      Number.isFinite(Number(amount)) && Number(amount) > 0 ? Number(amount) : Number(order.totalAmount) || 0;
+    // Refund Amount = order Subtotal. An explicit amount is honored (partial
+    // refund) but is clamped to the subtotal; VAT is never part of it.
+    const refundSummary = computeRefundSummary(order);
+    const refundAmount = resolveRefundAmount(order, amount);
+
+    if (refundAmount <= 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'This order has no refundable amount',
+      });
+    }
 
     const refund = await Refund.create({
       orderId: order._id,
       paymentId: payment ? payment._id : null,
       cafeteriaId: order.cafeteriaId || null,
-      amount: Math.min(usedAmount, Number(order.totalAmount) || usedAmount),
+      amount: refundAmount,
       reason: String(reason).trim(),
       requestedBy: req.user.id,
       status: 'REFUND_REQUESTED',
       requestedAt: new Date(),
-      metadata: { orderAmount: order.totalAmount, paymentStatus: order.paymentStatus },
+      metadata: {
+        orderAmount: order.totalAmount,
+        paymentStatus: order.paymentStatus,
+        subtotal: refundSummary.subtotal,
+        serviceFee: refundSummary.serviceFee,
+        totalPaid: refundSummary.totalPaid,
+      },
     });
     await hydrate(refund);
 
@@ -454,29 +477,26 @@ exports.completeRefund = async (req, res) => {
       await payment.save();
     }
 
-    // Notify the requesting customer.
+    // Notify the requesting customer — through the shared refund-notification
+    // service, so this path produces the exact same persisted row, wording and
+    // dedupe key as the cancellation flow.
+    //
+    // This used to inline `Notification.create({ type: 'payment' })`, but
+    // 'payment' is not a member of Notification.NOTIFICATION_TYPES, so the
+    // create threw a ValidationError that nothing caught: the endpoint answered
+    // 500 for a refund that had ALREADY been committed as REFUNDED on the
+    // ledger, the order and the payment. No notification row existed, no socket
+    // frame was emitted, and every retry then 409'd because the refund was
+    // already REFUNDED.
     if (order) {
-      const title = simulated ? 'Refund Recorded' : 'Refund Complete';
-      const message = simulated
-        ? `Your refund of ${refund.amount} for order #${order.orderId} was APPROVED and recorded. Please contact support if you have not received the money on your account.`
-        : `Your refund of ${refund.amount} for order #${order.orderId} has been completed. Ref: ${ref}`;
-      await Notification.create({
-        userId: order.userId,
-        title,
-        message,
-        type: 'payment',
-        orderId: order.orderId,
-        isRead: false,
-      });
-      const { emitSocketEvent } = require('../utils/socket');
-      emitSocketEvent(`user:${order.userId}`, 'notification:new', {
-        title,
-        message,
-        type: 'payment',
-        orderId: order.orderId,
-        isRead: false,
-        createdAt: new Date(),
-      });
+      const { notifyRefundProcessed } = require('../services/refund-notification.service');
+      await notifyRefundProcessed({ order, simulated });
+
+      // The live tracker keys off this frame to flip from "Refund Required" to
+      // "Refunded"; without it an open customer page stayed stale even though
+      // the money had gone back.
+      const { emitRefundStatus } = require('../services/cancellation.service');
+      await emitRefundStatus(order, 'admin');
     }
 
     await logAction({

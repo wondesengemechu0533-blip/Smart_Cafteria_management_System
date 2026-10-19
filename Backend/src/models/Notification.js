@@ -57,6 +57,17 @@ const NOTIFICATION_TYPES = [
   // match on - without it every Notification.create() call here fails
   // validation and the rows are silently dropped.
   'stock_alert',
+  // A refund the customer is waiting on has actually completed. Distinct from
+  // `order`/`cancellation` because the wording is a money guarantee, not a
+  // status ping, and the customer's notification panel renders it with its own
+  // "money back" affordance.
+  //
+  // MUST stay in this enum: refund.controller.js used to create these rows with
+  // `type: 'payment'`, which is not a member here, so the create threw a
+  // ValidationError AFTER the refund had already been committed - the endpoint
+  // answered 500, no notification row was ever persisted, no socket frame was
+  // emitted, and every retry then 409'd on the now-REFUNDED refund.
+  'refund',
 ];
 
 const NotificationSchema = new mongoose.Schema(

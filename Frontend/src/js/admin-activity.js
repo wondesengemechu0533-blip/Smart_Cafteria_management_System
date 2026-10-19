@@ -231,7 +231,7 @@ function tr(key, fallback, vars) {
     var r = String(role || '').toLowerCase();
     var cls = 'rp-customer';
     if (r === 'admin' || r === 'system_admin') cls = 'rp-admin';
-    else if (r === 'system' || r === 'tax_authority') cls = 'rp-system';
+    else if (r === 'system') cls = 'rp-system';
     else if (r === 'manager' || r === 'cafeteria_manager' || r === 'cafeteria_admin') cls = 'rp-manager';
     else if (r === 'cashier' || r === 'kitchen' || r === 'delivery') cls = 'rp-staff';
     var label;
@@ -242,7 +242,6 @@ function tr(key, fallback, vars) {
     else if (r === 'delivery') label = tr('role_delivery', 'Delivery Staff');
     else if (r === 'cashier') label = tr('role_cashier', 'Cashier');
     else if (r === 'customer') label = tr('role_customer', 'Customer');
-    else if (r === 'tax_authority') label = tr('role_tax_authority', 'Tax Authority');
     else label = r ? r.replace(/_/g, ' ') : '-';
     return '<span class="role-pill ' + cls + '">' + window.esc(label) + '</span>';
   }

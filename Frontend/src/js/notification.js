@@ -10,6 +10,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const markAllReadBtn = document.getElementById("mark-all-read-btn");
     const clearAllBtn = document.getElementById("clear-notifications-btn");
 
+    // Text taken from the API (notification bodies, refund meta) must not be
+    // able to inject markup into this page.
+    function escapeHtml(value) {
+        const div = document.createElement("div");
+        div.textContent = value == null ? "" : String(value);
+        return div.innerHTML;
+    }
+
     function getLang() {
         try { return (window.getCurrentLanguage && window.getCurrentLanguage()) || localStorage.getItem("scos_language") || localStorage.getItem("cafeteria_language") || "en"; } catch (e) { return "en"; }
     }
@@ -71,7 +79,24 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (item.type === "promo") {
                 iconClass = "fa-tags";
                 iconBg = "icon-promo";
+            } else if (item.type === "refund") {
+                // A completed refund is a money event, not an order status ping:
+                // it gets its own icon so the customer can spot it in the list.
+                iconClass = "fa-arrow-rotate-left";
+                iconBg = "icon-refund";
             }
+
+            // Refund notices carry the machine-readable details in meta, so the
+            // card can show order number / amount / status / timestamp even if
+            // the message is reworded later.
+            const meta = item.meta || {};
+            const refundDetail =
+                item.type === "refund" && (meta.refundAmount || meta.refundStatus)
+                    ? `<div class="notification-meta">
+                           ${meta.refundStatus ? `<span class="meta-chip"><i class="fa-solid fa-circle-check"></i> ${escapeHtml(meta.refundStatus)}</span>` : ""}
+                           ${meta.refundedAt ? `<span class="meta-chip"><i class="fa-regular fa-clock"></i> ${escapeHtml(new Date(meta.refundedAt).toLocaleString())}</span>` : ""}
+                       </div>`
+                    : "";
 
             html += `
                 <div class="notification-item ${unreadClass}" data-id="${item.id}">
@@ -84,6 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <span class="notification-time">${item.timeAgo || ''}</span>
                         </div>
                         <p>${item.message}</p>
+                        ${refundDetail}
                     </div>
                     <button class="delete-notif-btn" data-id="${item.id}" title="Remove">
                         <i class="fa-solid fa-xmark"></i>

@@ -176,11 +176,20 @@ function tr(key, fallback, vars) {
     var markResolved = resolvedCheck.checked;
 
     // Reply is OPTIONAL: staff may acknowledge/dismiss feedback without
-    // writing a response (the backend has no feedback reply endpoint).
+    // writing a response. In that case the status is still updated through the
+    // real endpoint - the toast used to claim "marked as handled" while no
+    // request was made at all, so nothing changed in the database.
     if (!reply) {
-      closeModal("feedbackDetailsModal");
-      if (window.AdminToast) window.AdminToast.success(tr('feedback_handled', 'Feedback marked as handled'));
-      loadFeedback();
+      try {
+        await window.AdminAPI.patch("/feedback/" + feedbackId + "/status", {
+          status: markResolved ? "RESOLVED" : "ARCHIVED"
+        });
+        closeModal("feedbackDetailsModal");
+        if (window.AdminToast) window.AdminToast.success(tr('feedback_handled', 'Feedback marked as handled'));
+        loadFeedback();
+      } catch (error) {
+        if (window.AdminToast) window.AdminToast.error(error.message || tr('error_update_status', 'Failed to update feedback'));
+      }
       return;
     }
 
@@ -278,6 +287,9 @@ function tr(key, fallback, vars) {
         var action = btn.getAttribute("data-action");
         if (!id) return;
 
+        // Parenthesised: `f._id || f.id === id` parses as `f._id || (f.id === id)`
+        // because `===` binds tighter than `||`, so the moment `_id` is ever
+        // populated the lookup would match on the raw id instead of comparing.
         var feedback = (window.__feedbackCache || []).find(function(f) {
           return (f._id || f.id) === id;
         });

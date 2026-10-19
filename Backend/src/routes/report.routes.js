@@ -21,7 +21,7 @@ router.use(protect);
 // System admins and cafeteria admins may also view for reconciliation.
 router.get(
   '/tax-compliance',
-  authorize('tax_authority', 'admin', 'ADMIN', 'system_admin', 'cafeteria_admin'),
+  authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'),
   getTaxComplianceReport
 );
 
@@ -29,7 +29,7 @@ router.get(
 // management, cashiers (for the daily cash-up) and tax authority (VAT remittance).
 router.get(
   '/revenue',
-  authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager', 'cashier', 'tax_authority'),
+  authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager', 'cashier'),
   getRevenueReport
 );
 

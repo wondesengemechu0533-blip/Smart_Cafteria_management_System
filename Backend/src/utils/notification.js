@@ -60,4 +60,17 @@ async function findCafeteriaManagers(cafeteriaId) {
     .lean();
 }
 
-module.exports = { notifyUser, findCafeteriaManagers };
+/** Active Cafeteria Admins of the given cafeteria (restock reviewers). */
+async function findCafeteriaAdmins(cafeteriaId) {
+  if (!cafeteriaId) return [];
+  return User.find({
+    role: { $in: ['cafeteria_admin'] },
+    cafeteriaId,
+    status: 'ACTIVE',
+    isActive: { $ne: false },
+  })
+    .select('_id name')
+    .lean();
+}
+
+module.exports = { notifyUser, findCafeteriaManagers, findCafeteriaAdmins };

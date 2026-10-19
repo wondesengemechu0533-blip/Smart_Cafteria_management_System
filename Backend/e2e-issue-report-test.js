@@ -1,8 +1,9 @@
 /**
- * Kitchen Issue Report -> Manager Accept/Solution End-to-End Test
+ * Kitchen Issue Report -> Manager Review + Cafeteria Admin Resolution E2E Test
  *
  * Real workflow against the LIVE backend (port 5000) and LIVE MongoDB:
- *   create (PENDING) -> accept (ACCEPTED) -> solution (RESOLVED)
+ *   create (OPEN) -> review (UNDER_REVIEW) -> request-admin (REQUEST_SENT)
+ *   -> admin solution (RESOLVED)
  *
  * Accounts are provisioned through real authenticated APIs (admin user
  * creation) - nothing is mocked. Socket.IO events are captured from real
@@ -259,7 +260,7 @@ async function main() {
   // ---------------------------------------------------------------
   // 3. Kitchen creates issue report (PENDING)
   // ---------------------------------------------------------------
-  console.log('\n[flow] create -> accept -> solution');
+  console.log('\n[flow] create -> review -> request -> solution');
   const issue1Body = {
     title: `E2E Broken Oven ${runId}`,
     description: 'The industrial oven in the west kitchen is not heating past 120C. Tickets for baked items are backing up.',
@@ -267,8 +268,8 @@ async function main() {
     priority: 'critical',
   };
   const create1 = await api('POST', '/api/v1/issues', kitchen.token, issue1Body);
-  record('Kitchen creates issue -> 201 PENDING',
-    create1.status === 201 && create1.body.issue && create1.body.issue.status === 'PENDING',
+  record('Kitchen creates issue -> 201 OPEN',
+    create1.status === 201 && create1.body.issue && create1.body.issue.status === 'OPEN',
     `HTTP ${create1.status} status=${create1.body.issue && create1.body.issue.status}`);
   const issue1 = create1.body.issue;
   const issue1Id = issue1 && issue1.id;
@@ -289,8 +290,8 @@ async function main() {
 
   // MongoDB persistence (direct read)
   const dbIssue1 = await IssueReport.findById(issue1Id).lean();
-  record('IssueReport persisted in MongoDB with status PENDING',
-    dbIssue1 && dbIssue1.status === 'PENDING' &&
+  record('IssueReport persisted in MongoDB with status OPEN',
+    dbIssue1 && dbIssue1.status === 'OPEN' &&
     dbIssue1.title === issue1Body.title &&
     String(dbIssue1.reportedBy) === String(kitchenDoc._id) &&
     String(dbIssue1.cafeteriaId) === String(cafA),
@@ -340,19 +341,20 @@ async function main() {
   });
   record('Manager cannot create issue -> 403', mgrCreate.status === 403, `HTTP ${mgrCreate.status}`);
 
-  const kAccept = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, kitchen.token, {});
-  record('Kitchen cannot accept issue -> 403', kAccept.status === 403, `HTTP ${kAccept.status}`);
+  const kReview = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, kitchen.token, {});
+  record('Kitchen cannot review issue -> 403', kReview.status === 403, `HTTP ${kReview.status}`);
 
   const kSolve = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, kitchen.token, { solution: 'nope' });
   record('Kitchen cannot send solution -> 403', kSolve.status === 403, `HTTP ${kSolve.status}`);
 
-  const caAccept = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, cafAdminAuth.token, {});
-  record('Cafeteria Admin cannot accept (view only) -> 403', caAccept.status === 403,
-    `HTTP ${caAccept.status}`);
+  // Resolution (REQUEST_SENT -> RESOLVED) is cafeteria-admin-only now:
+  // the manager reviews and investigates, but any solution call is 403.
+  const mSolve = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, mgr1Auth.token, { solution: 'nope' });
+  record('Manager cannot send solution -> 403', mSolve.status === 403, `HTTP ${mSolve.status}`);
 
-  const m2Accept = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, mgr2Auth.token, {});
-  record('Manager2 cannot accept cross-cafeteria report -> 403', m2Accept.status === 403,
-    `HTTP ${m2Accept.status}`);
+  const m2Review = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, mgr2Auth.token, {});
+  record('Manager2 cannot review cross-cafeteria report -> 403', m2Review.status === 403,
+    `HTTP ${m2Review.status}`);
 
   const noAuth = await api('GET', '/api/v1/issues', null);
   record('Unauthenticated list -> 401', noAuth.status === 401, `HTTP ${noAuth.status}`);
@@ -372,12 +374,12 @@ async function main() {
   };
   const create2 = await api('POST', '/api/v1/issues', kitchen.token, issue2Body);
   const issue2Id = create2.body.issue && create2.body.issue.id;
-  record('Second issue created (PENDING)',
-    create2.status === 201 && create2.body.issue.status === 'PENDING');
+  record('Second issue created (OPEN)',
+    create2.status === 201 && create2.body.issue.status === 'OPEN');
 
-  const earlySolution = await api('PATCH', `/api/v1/issues/${issue2Id}/solution`, mgr1Auth.token,
-    { solution: 'Jumping the gun' });
-  record('Solution on PENDING issue -> 400 (must accept first)',
+  const earlySolution = await api('PATCH', `/api/v1/issues/${issue2Id}/solution`, cafAdminAuth.token,
+    { resolutionReason: 'Low Stock', resolutionSolution: 'Restocked Items' });
+  record('Solution on OPEN issue -> 400 (must review first)',
     earlySolution.status === 400, `HTTP ${earlySolution.status} ${earlySolution.body.error || ''}`);
 
   const dup = await api('POST', '/api/v1/issues', kitchen.token, issue2Body);
@@ -397,52 +399,83 @@ async function main() {
   const missingId = await api('GET', '/api/v1/issues/aaaaaaaaaaaaaaaaaaaaaaaa', manager1 ? mgr1Auth.token : null);
   record('Non-existent valid id -> 404', missingId.status === 404, `HTTP ${missingId.status}`);
 
-  const emptySolution = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, mgr1Auth.token,
+  const emptySolution = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, cafAdminAuth.token,
     { solution: '   ' });
   record('Empty solution -> 400', emptySolution.status === 400, `HTTP ${emptySolution.status}`);
 
   // ---------------------------------------------------------------
-  // 7. Manager accepts (PENDING -> ACCEPTED)
+  // 7. Manager reviews (OPEN -> UNDER_REVIEW) and sends admin request
   // ---------------------------------------------------------------
-  const accept1 = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, mgr1Auth.token, {});
-  record('Manager accepts issue -> 200 ACCEPTED',
-    accept1.status === 200 && accept1.body.issue.status === 'ACCEPTED',
-    `HTTP ${accept1.status} status=${accept1.body.issue && accept1.body.issue.status}`);
-  const accepted = accept1.body.issue || {};
-  record('acceptedBy set to manager1',
-    accepted.acceptedBy && accepted.acceptedBy.id === manager1.id,
-    JSON.stringify(accepted.acceptedBy));
-  record('acceptedAt timestamp set', Boolean(accepted.acceptedAt));
+  const review1 = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, mgr1Auth.token, {
+    notes: 'Inspected the oven. The heating element has failed.',
+  });
+  record('Manager reviews issue -> 200 UNDER_REVIEW',
+    review1.status === 200 && review1.body.issue.status === 'UNDER_REVIEW',
+    `HTTP ${review1.status} status=${review1.body.issue && review1.body.issue.status}`);
+  const reviewed = review1.body.issue || {};
+  record('investigatedBy set to manager1',
+    reviewed.investigatedBy && reviewed.investigatedBy.id === manager1.id,
+    JSON.stringify(reviewed.investigatedBy));
+  record('investigatedAt timestamp set', Boolean(reviewed.investigatedAt));
 
-  const gotKitchenNotifAccept = await waitFor(() =>
-    kitchenNotifs.some(e => e.title === 'Issue Report Accepted'));
-  record('Socket notification:new -> kitchen on accept', gotKitchenNotifAccept);
-  const gotKitchenUpdateAccept = await waitFor(() =>
-    kitchenUpdates.some(e => String(e.id) === String(issue1Id) && e.status === 'ACCEPTED'));
-  record('Socket issue:updated (ACCEPTED) -> kitchen room', gotKitchenUpdateAccept);
+  const gotKitchenNotifReview = await waitFor(() =>
+    kitchenNotifs.some(e => e.title === 'Issue Report Under Review'));
+  record('Socket notification:new -> kitchen on review', gotKitchenNotifReview);
+  const gotKitchenUpdateReview = await waitFor(() =>
+    kitchenUpdates.some(e => String(e.id) === String(issue1Id) && e.status === 'UNDER_REVIEW'));
+  record('Socket issue:updated (UNDER_REVIEW) -> kitchen room', gotKitchenUpdateReview);
 
-  const acceptAgain = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, mgr1Auth.token, {});
-  record('Accept twice -> 400', acceptAgain.status === 400, `HTTP ${acceptAgain.status}`);
+  const reviewAgain = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, mgr1Auth.token, {
+    notes: 'Second review attempt.',
+  });
+  record('Review twice -> 400', reviewAgain.status === 400, `HTTP ${reviewAgain.status}`);
 
-  const dbNotifAccept = await Notification.findOne({
-    userId: kitchenDoc._id, title: 'Issue Report Accepted',
+  // The cafeteria admin now PASSES the role gate (it may review too);
+  // the state guard is what answers 400 here - not a 403 permission block.
+  const caReviewReviewed = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, cafAdminAuth.token, {
+    notes: 'Admin review attempt.',
+  });
+  record('Cafeteria Admin passes the review gate (already reviewed -> 400, not 403)',
+    caReviewReviewed.status === 400, `HTTP ${caReviewReviewed.status}`);
+
+  const dbNotifReview = await Notification.findOne({
+    userId: kitchenDoc._id, title: 'Issue Report Under Review',
   }).sort({ createdAt: -1 }).lean();
-  record('"Issue Report Accepted" notification persisted in MongoDB for kitchen',
-    Boolean(dbNotifAccept), dbNotifAccept ? '' : 'not found');
+  record('"Issue Report Under Review" notification persisted in MongoDB for kitchen',
+    Boolean(dbNotifReview), dbNotifReview ? '' : 'not found');
+
+  // Manager sends a resolution request to the Cafeteria Admin.
+  const sendReq = await api('PATCH', `/api/v1/issues/${issue1Id}/request-admin`, mgr1Auth.token, {
+    requestedAction: 'Replace the oven heating element.',
+  });
+  record('Manager sends admin request -> 200 REQUEST_SENT',
+    sendReq.status === 200 && sendReq.body.issue.status === 'REQUEST_SENT',
+    `HTTP ${sendReq.status} status=${sendReq.body.issue && sendReq.body.issue.status}`);
+  record('ResolutionRequest created with status PENDING',
+    sendReq.body.request && sendReq.body.request.status === 'PENDING',
+    JSON.stringify(sendReq.body.request && sendReq.body.request.status));
 
   // ---------------------------------------------------------------
-  // 8. Manager sends solution (ACCEPTED -> RESOLVED)
+  // 8. Resolution is Cafeteria Admin only (manager gets 403)
   // ---------------------------------------------------------------
   const solutionText = 'Replacement heating element delivered and installed; oven calibrated to 220C and test-baked successfully.';
-  const solve1 = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, mgr1Auth.token,
-    { solution: solutionText });
-  record('Manager sends solution -> 200 RESOLVED',
+  const blockedM = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, mgr1Auth.token,
+    { resolutionReason: 'Equipment Failure', resolutionSolution: 'Repaired Equipment', solution: solutionText });
+  record('Manager cannot resolve an accepted report -> 403', blockedM.status === 403,
+    `HTTP ${blockedM.status} ${blockedM.body.error || ''}`);
+  const stillUnderReview = await IssueReport.findById(issue1Id).lean();
+  record('Rejected manager attempt left the report REQUEST_SENT', stillUnderReview && stillUnderReview.status === 'REQUEST_SENT',
+    stillUnderReview ? `status=${stillUnderReview.status}` : 'not found');
+
+  const solve1 = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, cafAdminAuth.token,
+    { resolutionReason: 'Equipment Failure', resolutionSolution: 'Repaired Equipment', solution: solutionText });
+  record('Cafeteria Admin sends solution -> 200 RESOLVED',
     solve1.status === 200 && solve1.body.issue.status === 'RESOLVED',
     `HTTP ${solve1.status} status=${solve1.body.issue && solve1.body.issue.status}`);
   const solved = solve1.body.issue || {};
   record('solution text saved', solved.solution === solutionText);
-  record('repliedBy set to manager1',
-    solved.repliedBy && solved.repliedBy.id === manager1.id, JSON.stringify(solved.repliedBy));
+  record('repliedBy set to cafeteria admin',
+    solved.repliedBy && solved.repliedBy.id === cafAdmin1.id, JSON.stringify(solved.repliedBy));
   record('repliedAt + resolvedAt timestamps set',
     Boolean(solved.repliedAt) && Boolean(solved.resolvedAt));
 
@@ -453,26 +486,29 @@ async function main() {
     kitchenUpdates.some(e => String(e.id) === String(issue1Id) && e.status === 'RESOLVED'));
   record('Socket issue:updated (RESOLVED) -> kitchen room', gotKitchenUpdateSolve);
 
-  // Kitchen now sees the manager's solution on the report
+  // Kitchen now sees the cafeteria admin's solution on the report
   const finalView = await api('GET', `/api/v1/issues/${issue1Id}`, kitchen.token);
-  record('Kitchen sees solution + manager name + repliedAt',
+  record('Kitchen sees solution + admin name + repliedAt',
     finalView.status === 200 &&
     finalView.body.issue.solution === solutionText &&
-    finalView.body.issue.repliedBy && finalView.body.issue.repliedBy.name === manager1.name &&
+    finalView.body.issue.repliedBy && finalView.body.issue.repliedBy.name === cafAdmin1.name &&
     Boolean(finalView.body.issue.repliedAt),
     JSON.stringify(finalView.body.issue && finalView.body.issue.repliedBy));
 
   // Terminal-state guards
-  const solveAgain = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, mgr1Auth.token,
-    { solution: 'again' });
+  const solveAgain = await api('PATCH', `/api/v1/issues/${issue1Id}/solution`, cafAdminAuth.token,
+    { resolutionReason: 'Equipment Failure', resolutionSolution: 'Repaired Equipment', solution: 'again' });
   record('Solution on RESOLVED issue -> 400', solveAgain.status === 400, `HTTP ${solveAgain.status}`);
-  const acceptResolved = await api('PATCH', `/api/v1/issues/${issue1Id}/accept`, mgr1Auth.token, {});
-  record('Accept on RESOLVED issue -> 400', acceptResolved.status === 400, `HTTP ${acceptResolved.status}`);
+  const reviewResolved = await api('PATCH', `/api/v1/issues/${issue1Id}/review`, mgr1Auth.token, {
+    notes: 'Review on resolved issue.',
+  });
+  record('Review on RESOLVED issue -> 400', reviewResolved.status === 400, `HTTP ${reviewResolved.status}`);
 
   // Close out the second issue so nothing is left half-done
-  await api('PATCH', `/api/v1/issues/${issue2Id}/accept`, mgr1Auth.token, {});
-  const solve2 = await api('PATCH', `/api/v1/issues/${issue2Id}/solution`, mgr1Auth.token,
-    { solution: 'Restocked cutlery from central store; par level alarm added.' });
+  await api('PATCH', `/issues/${issue2Id}/review`, mgr1Auth.token, { notes: 'Reviewed the cutlery shortage.' });
+  await api('PATCH', `/issues/${issue2Id}/request-admin`, mgr1Auth.token, { requestedAction: 'Restock cutlery.' });
+  const solve2 = await api('PATCH', `/api/v1/issues/${issue2Id}/solution`, cafAdminAuth.token,
+    { resolutionReason: 'Low Stock', resolutionSolution: 'Restocked Items', solution: 'Restocked cutlery from central store; par level alarm added.' });
   record('Second issue also driven to RESOLVED',
     solve2.status === 200 && solve2.body.issue.status === 'RESOLVED',
     `HTTP ${solve2.status}`);
@@ -484,13 +520,13 @@ async function main() {
   const finalDb = await IssueReport.findById(issue1Id).lean();
   record('IssueReport final doc status=RESOLVED',
     finalDb && finalDb.status === 'RESOLVED');
-  record('IssueReport final doc has solution/acceptedBy/repliedBy/resolvedAt',
+  record('IssueReport final doc has solution/investigatedBy/repliedBy/resolvedAt',
     finalDb && finalDb.solution === solutionText &&
-    finalDb.acceptedBy && finalDb.repliedBy && finalDb.resolvedAt &&
+    finalDb.investigatedBy && finalDb.repliedBy && finalDb.resolvedAt &&
     String(finalDb.cafeteriaId) === String(cafA),
     JSON.stringify({
       status: finalDb && finalDb.status,
-      acceptedBy: finalDb && String(finalDb.acceptedBy),
+      investigatedBy: finalDb && String(finalDb.investigatedBy),
       repliedBy: finalDb && String(finalDb.repliedBy),
       cafeteriaId: finalDb && String(finalDb.cafeteriaId),
     }));
@@ -506,17 +542,17 @@ async function main() {
   record('"New Issue Report" notification persisted for manager1', Boolean(dbNotifMgr));
 
   const auditCreated = await ActivityLog.findOne({ action: 'ISSUE_REPORT_CREATED', entityId: String(issue1Id) }).lean();
-  const auditAccepted = await ActivityLog.findOne({ action: 'ISSUE_REPORT_ACCEPTED', entityId: String(issue1Id) }).lean();
+  const auditReviewed = await ActivityLog.findOne({ action: 'ISSUE_REPORT_REVIEWED', entityId: String(issue1Id) }).lean();
   const auditResolved = await ActivityLog.findOne({ action: 'ISSUE_REPORT_RESOLVED', entityId: String(issue1Id) }).lean();
   record('Audit: ISSUE_REPORT_CREATED logged', Boolean(auditCreated));
-  record('Audit: ISSUE_REPORT_ACCEPTED logged', Boolean(auditAccepted));
+  record('Audit: ISSUE_REPORT_REVIEWED logged', Boolean(auditReviewed));
   record('Audit: ISSUE_REPORT_RESOLVED logged', Boolean(auditResolved));
 
   const apiNotifications = await api('GET', '/api/v1/notifications?unread=true', kitchen.token);
   const list = notificationsList(apiNotifications.body);
-  record('Kitchen notifications API returns the accept/solution notifications',
+  record('Kitchen notifications API returns the review/solution notifications',
     apiNotifications.status === 200 &&
-    list.some(n => n.title === 'Issue Report Accepted') &&
+    list.some(n => n.title === 'Issue Report Under Review') &&
     list.some(n => n.title === 'Solution Provided'),
     `count=${list.length}`);
 

@@ -23,6 +23,7 @@ const notificationRoutes = require('./src/routes/notification.routes');
 const adminRoutes = require('./src/routes/admin.routes');
 const adminCategoryRoutes = require('./src/routes/admin.category.routes');
 const adminTableRoutes = require('./src/routes/admin.table.routes');
+const tableRoutes = require('./src/routes/table.routes');
 const adminMenuRoutes = require('./src/routes/admin.menu.routes');
 const adminReportRoutes = require('./src/routes/admin.reports.routes');
 const adminOrderRoutes = require('./src/routes/admin.order.routes');
@@ -37,6 +38,8 @@ const cashierRoutes = require('./src/routes/cashier.routes');
 const cafeteriaRoutes = require('./src/routes/cafeteria.routes');
 const cafeteriaReportRoutes = require('./src/routes/cafeteria.reports.routes');
 const issueReportRoutes = require('./src/routes/issueReport.routes');
+const resolutionRequestRoutes = require('./src/routes/resolutionRequest.routes');
+const restockRoutes = require('./src/routes/restock.routes');
 const { ensureDefaultSettings } = require('./src/utils/settings');
 const { ensureDefaultCategories } = require('./src/utils/categories');
 const { ensureDefaultKitchenShifts } = require('./src/utils/kitchenShifts');
@@ -102,18 +105,32 @@ const apiLimiter = rateLimit({
   skip: (req) => {
     if (req.path.startsWith('/auth')) return true;
 
-    // The delivery/notification UIs poll these read-only endpoints to show live
-    // work; counting them against the global API cap quickly returns 429 for
-    // normal usage and takes the rider offline even though the backend is up.
+    // Polled READ-ONLY endpoints never count against the global API cap.
+    // Counting them returns 429 for normal usage: the delivery/notification
+    // UIs poll to show live work (taking the rider offline even though the
+    // backend is up), and the admin/manager dashboards auto-refresh every
+    // 30s firing dashboard + recent-orders + recent-payments + feedback/stats
+    // per cycle, plus deliveries polling — exhausting the shared budget in
+    // minutes. GET-only: /deliveries also accepts POST (create delivery),
+    // which must stay under the global cap.
+    if (req.method !== 'GET') return false;
     const polled = new Set([
       '/deliveries/mine',
       '/deliveries/available',
+      '/deliveries/board',
       '/deliveries/my-history',
+      '/deliveries/staff',
+      '/deliveries',
       '/notifications/unread',
       '/orders/my-orders',
       '/orders/active',
       '/orders/active-order',
       '/delivery-issues/meta/types',
+      '/feedback/stats',
+      '/admin/dashboard',
+      '/admin/dashboard/recent-orders',
+      '/admin/dashboard/recent-payments',
+      '/admin/settings',
     ]);
     return polled.has(req.path);
   },
@@ -213,6 +230,7 @@ app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/admin/categories', adminCategoryRoutes);
 app.use('/api/v1/admin/tables', adminTableRoutes);
+app.use('/api/v1/tables', tableRoutes);
 app.use('/api/v1/admin/menu', adminMenuRoutes);
 app.use('/api/v1/admin/orders', adminOrderRoutes);
 app.use('/api/v1/admin/payments', adminPaymentRoutes);
@@ -228,6 +246,8 @@ app.use('/api/v1/cafeterias', cafeteriaRoutes);
 app.use('/api/v1/cafeteria/reports', cafeteriaReportRoutes);
 app.use('/api/v1/settings', publicSettingsRoutes);
 app.use('/api/v1/issues', issueReportRoutes);
+app.use('/api/v1/resolution-requests', resolutionRequestRoutes);
+app.use('/api/v1/restocks', restockRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

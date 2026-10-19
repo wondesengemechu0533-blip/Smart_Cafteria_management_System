@@ -2,17 +2,40 @@ const KitchenShift = require('../models/KitchenShift');
 const User = require('../models/User');
 
 /**
- * Auto-seed default weekly shifts for active kitchen staff
- * so the Preparation Schedule page displays data immediately.
- * Runs once at backend startup; idempotent — will not re-seed if any
- * shifts already exist in the database.
+ * Default daily shift windows (local server time).
+ */
+const SHIFT_WINDOWS = [
+  { shiftType: 'morning', startHour: 8, endHour: 12 },
+  { shiftType: 'afternoon', startHour: 12, endHour: 16 },
+  { shiftType: 'evening', startHour: 16, endHour: 20 },
+];
+
+/**
+ * Auto-seed default weekly shifts for active kitchen staff so the
+ * Preparation Schedule page always displays current data.
+ *
+ * Runs at every backend startup and is idempotent:
+ *  1. Cancels stale `scheduled` shifts whose start time has passed (they can
+ *     never be clocked into and used to clutter the page forever).
+ *  2. Ensures each active kitchen staff member has the 3 daily shifts for
+ *     TODAY .. TODAY+6, inserting only the missing ones (keyed by
+ *     staff + shiftType + day), and never creating a shift that already
+ *     ended earlier today.
+ *
+ * The old version ran only once ("if any shifts exist, skip"), so after a
+ * week the schedule page showed zero stats, an empty Upcoming table, and a
+ * Current Shift card pointing at long-finished shifts.
  */
 async function ensureDefaultKitchenShifts() {
-  const existing = await KitchenShift.countDocuments();
-  if (existing > 0) return; // already seeded
+  const now = new Date();
 
-  // Collect all active users whose role normalises to 'kitchen'.
-  // We query for the common raw role strings that map to 'kitchen'.
+  // 1. Roll stale scheduled shifts into cancelled.
+  await KitchenShift.updateMany(
+    { status: 'scheduled', startTime: { $lt: now } },
+    { $set: { status: 'cancelled' } }
+  );
+
+  // 2. Active kitchen staff (role is stored canonicalised as 'kitchen').
   const activeStaff = await User.find({
     role: { $regex: '^kitchen', $options: 'i' },
     status: 'ACTIVE',
@@ -21,48 +44,56 @@ async function ensureDefaultKitchenShifts() {
 
   if (!activeStaff.length) return;
 
-  const now = new Date();
-  const created = [];
+  // 3. Existing shifts inside the rolling 7-day window - key them so we only
+  //    insert what is missing (never duplicate, never overwrite worked shifts).
+  const windowStart = new Date(now);
+  windowStart.setHours(0, 0, 0, 0);
+  const windowEnd = new Date(windowStart);
+  windowEnd.setDate(windowEnd.getDate() + 7);
 
-  // For each staff member, create 3 daily shifts (morning/afternoon/evening)
-  // for the next 7 days so the schedule page always has data.
+  const existing = await KitchenShift.find({
+    staffId: { $in: activeStaff.map((m) => m._id) },
+    startTime: { $gte: windowStart, $lt: windowEnd },
+  }).select('staffId shiftType startTime');
+
+  const have = new Set(
+    existing.map((s) => `${s.staffId}|${s.shiftType}|${new Date(s.startTime).toDateString()}`)
+  );
+
+  const created = [];
   for (const member of activeStaff) {
     for (let day = 0; day < 7; day++) {
-      const dayBase = new Date(now);
-      dayBase.setDate(now.getDate() + day);
-      dayBase.setHours(0, 0, 0, 0);
+      const dayBase = new Date(windowStart);
+      dayBase.setDate(windowStart.getDate() + day);
+      const dayKey = dayBase.toDateString();
 
-      // Morning shift: 08:00 – 12:00
-      created.push({
-        staffId: member._id,
-        shiftType: 'morning',
-        startTime: new Date(dayBase.setHours(8, 0, 0, 0)),
-        endTime: new Date(dayBase.setHours(12, 0, 0, 0)),
-        status: 'scheduled',
-      });
+      for (const win of SHIFT_WINDOWS) {
+        const key = `${member._id}|${win.shiftType}|${dayKey}`;
+        if (have.has(key)) continue;
 
-      // Afternoon shift: 12:00 – 16:00
-      created.push({
-        staffId: member._id,
-        shiftType: 'afternoon',
-        startTime: new Date(dayBase.setHours(12, 0, 0, 0)),
-        endTime: new Date(dayBase.setHours(16, 0, 0, 0)),
-        status: 'scheduled',
-      });
+        const start = new Date(dayBase);
+        start.setHours(win.startHour, 0, 0, 0);
+        const end = new Date(dayBase);
+        end.setHours(win.endHour, 0, 0, 0);
 
-      // Evening shift: 16:00 – 20:00
-      created.push({
-        staffId: member._id,
-        shiftType: 'evening',
-        startTime: new Date(dayBase.setHours(16, 0, 0, 0)),
-        endTime: new Date(dayBase.setHours(20, 0, 0, 0)),
-        status: 'scheduled',
-      });
+        // Never seed a shift that has already ended (e.g. morning on a
+        // server started in the evening).
+        if (end <= now) continue;
+
+        created.push({
+          staffId: member._id,
+          shiftType: win.shiftType,
+          startTime: start,
+          endTime: end,
+          status: 'scheduled',
+        });
+      }
     }
   }
 
   if (created.length > 0) {
     await KitchenShift.insertMany(created);
+    console.log(`📅 Kitchen shifts rolled forward: ${created.length} shift(s) created for the next 7 days`);
   }
 }
 

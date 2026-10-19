@@ -35,10 +35,6 @@
     'delivery person': 'delivery',
     driver: 'delivery',
     rider: 'delivery',
-    tax_authority: 'tax_authority',
-    'tax authority': 'tax_authority',
-    government: 'tax_authority',
-    'government authority': 'tax_authority',
   };
 
   var CANONICAL_ROLES = [
@@ -50,7 +46,6 @@
     'manager',
     'cashier',
     'delivery',
-    'tax_authority',
   ];
 
   var STAFF_ROLES = [
@@ -61,7 +56,6 @@
     'cashier',
     'kitchen',
     'delivery',
-    'tax_authority',
   ];
 
   // Dashboard landing page per canonical role. Paths are relative to
@@ -74,8 +68,7 @@
     cashier: '../cashier/dashboard.html',
     kitchen: '../kitchen/dashboard.html',
     delivery: '../delivery/history.html',
-    tax_authority: '../government/dashboard.html',
-    customer: '../customer/dashboard.html',
+    customer: '../customer/menu.html',
   };
 
   // Admin-chrome sidebar page ids visible per staff role, matching backend
@@ -109,7 +102,7 @@
       'dashboard',
       'admin-dashboard',
       'notifications',
-      'users',
+      'staff-management',
       'menu',
       'categories',
       'tables',
@@ -120,16 +113,14 @@
     manager: [
       'manager-overview',
       'notifications',
-      'issues',
-      'stock-alerts',
       'orders',
       'deliveries',
       'cancellations',
       'feedback',
       'reports',
+      'inventory',
     ],
     cashier: ['dashboard', 'notifications', 'orders', 'payments', 'sales', 'receipts'],
-    tax_authority: ['reports', 'activity'],
   };
 
   function normalizeRole(role) {

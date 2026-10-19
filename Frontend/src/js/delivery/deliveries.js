@@ -1,10 +1,19 @@
 /**
  * Delivery Staff - Active Deliveries
  *
- * Delivery staff only ever see the deliveries assigned to THEM. Managers keep the
- * cafeteria-wide queue so they can dispatch. Both come from the same server
- * endpoints (`/deliveries/mine` vs `/deliveries`), which enforce that split
- * against the JWT - this page never filters by hand and hopes for the best.
+ * One server request builds this whole page: `GET /deliveries/board`, which
+ * returns the board already split into
+ *
+ *   assigned  - live work attached to THIS courier (their customer data stays
+ *               private; the server enforces it against the JWT, never the page)
+ *   available - cafeteria-wide, unassigned, kitchen-ready orders that ANY
+ *               eligible rider can claim
+ *
+ * Both halves render into the same Active Deliveries list. That is deliberate:
+ * the kitchen's "Send to Delivery" auto-dispatches to the least busy rider, so a
+ * separate "assigned to me" + "available" fetch pair meant a freshly dispatched
+ * order appeared for exactly one rider and for nobody else - the reported
+ * "new delivery orders do not appear in Active Deliveries".
  *
  * A delivery stays on this list until the courier completes it: DELIVERED means
  * the handover is proven, not that the job is closed.
@@ -62,10 +71,20 @@ let orders = [];
 // in its own array is what stops completed rows from ever reaching the GPS
 // tracker, the stage buttons, or the "Assigned to Me" count.
 let pastOrders = [];
-// Unassigned, kitchen-ready orders awaiting dispatch (GET /deliveries/available,
-// couriers only). Rendered read-only in their own section below the queue so an
-// empty personal queue still shows real work exists instead of a dead end.
+// Unassigned, kitchen-ready orders awaiting dispatch, served as the `available`
+// half of GET /deliveries/board. Claimable by ANY eligible rider, which is what
+// makes a newly dispatched order visible to every courier immediately instead
+// of only to the one the kitchen auto-assigned it to.
 let availableOrders = [];
+// Server-reported counts for the board request. Kept so the empty state can name
+// the real cause ("6 kitchen-ready orders exist but 6 were already claimed")
+// instead of guessing. Null until the first successful response.
+let boardDiagnostics = null;
+// Last board failure, kept for the error state: the HTTP status and message are
+// what turn "the queue is empty" into an actionable message, and they are lost
+// once the banner is dismissed.
+let loadErrorStatus = null;
+let lastLoadError = null;
 let currentFilter = "all";
 // The `?orderId=` deep link may only reshape the filter ONCE, when the page is
 // first built. It used to be re-applied on every render(), which meant the
@@ -164,11 +183,18 @@ function stageIndex(n) {
     return i < 0 ? 0 : i;
 }
 
-function stageTracker(n) {
+function stageTracker(n, isUnclaimed = false) {
     // A cancelled/failed delivery is not on the happy path; never draw a
     // progress bar that implies it is still moving forward.
     if (n === "cancelled" || n === "failed") {
         return `<div class="d-stages halted"><span class="d-stage-label">${esc(statusLabel(n))}</span></div>`;
+    }
+    // Same reasoning for an order nobody has picked up yet: its delivery state is
+    // REQUESTED, which is not a member of DELIVERY_STAGES, so stageIndex()
+    // silently fell back to 0 and drew the FIRST node as "current" - telling the
+    // rider an unclaimed order had already been assigned. Say what is true.
+    if (isUnclaimed) {
+        return `<div class="d-stages halted"><span class="d-stage-label">${esc(tr("delivery_awaiting_assignment", "Awaiting Assignment"))}</span></div>`;
     }
     const cur = stageIndex(n);
     const nodes = DELIVERY_STAGES.map((s, i) => {
@@ -178,11 +204,49 @@ function stageTracker(n) {
     return `<div class="d-stages" aria-label="${esc(tr("delivery_progress", "Delivery progress"))}">${nodes}</div>`;
 }
 
+/**
+ * Is this row on the shared "awaiting dispatch" board (nobody has claimed it)?
+ *
+ * WHY the bucket tag is authoritative and the status guess is not.
+ *
+ * A claimable order's `deliveryStatus` is the Delivery record's own state, which
+ * for an unclaimed, kitchen-ready order is REQUESTED - NOT "ready_for_delivery"
+ * (that is the ORDER status, exposed as `status`). So the obvious test
+ *
+ *     state === "ready_for_delivery" || state === "ready"
+ *
+ * evaluated against `deliveryState(order)` is false for exactly the rows that
+ * need the Claim button. Guessing from status fields also breaks the moment the
+ * backend adds a state or a delivery legitimately sits at ACCEPTED with no
+ * courier attached.
+ *
+ * loadQueues() therefore stamps every row with the half of GET /deliveries/board
+ * it actually came from (`__boardBucket`), which the SERVER already decided. The
+ * structural test below is only a fallback for rows built locally (e.g. a
+ * socket payload injected before the next board response) and deliberately
+ * accepts any unassigned, non-terminal, kitchen-ready shape.
+ */
+function isAvailableOrder(order) {
+    if (!order) return false;
+    // Authoritative: which half of the board response this row arrived in.
+    if (order.__boardBucket) return order.__boardBucket === "available";
+    // Fallback: unclaimed + food already finished + not handed over yet.
+    if (order.deliveryStaffAssigned || order.deliveryPersonId) return false;
+    const state = deliveryState(order);
+    if (["picked_up", "out_for_delivery", "arrived", "delivered", "completed", "failed", "cancelled"]
+        .includes(state)) return false;
+    const kitchen = normalizeStatus(order.status);
+    const orderState = normalizeStatus(order.orderStatus);
+    return ["ready", "ready_for_delivery"].includes(kitchen) ||
+           ["READY", "READY_FOR_DELIVERY"].includes(orderState);
+}
+
 function deliveryCard(order) {
     // The delivery state machine is authoritative: ASSIGNED / ACCEPTED are both
     // mirrored onto the Order as PENDING, so order.status alone would render a
     // brand-new assignment as "Pending".
     const n = deliveryState(order);
+    const normalizedState = n;
     const kitchenState = normalizeStatus(order.status);
     const isReady = isAwaitingPickup(order);
     const isPicked = n === "picked_up";
@@ -194,6 +258,7 @@ function deliveryCard(order) {
     const isPendingKitchen = kitchenState === "pending" || kitchenState === "preparing";
     const acceptance = normalizeStatus(order.deliveryAcceptanceStatus || "pending_acceptance");
     const mine = isAssignedToMe(order, myUserId);
+    const isAvailable = isAvailableOrder(order);
     const address = deliveryAddress(order);
     const phone = deliveryPhone(order);
     const coords = deliveryCoords(order);
@@ -209,8 +274,12 @@ function deliveryCard(order) {
         actions += `<button class="btn-action btn-assign" data-action="assign" data-order="${esc(order.orderId)}">
             <i class="fa-solid fa-truck-loading"></i> ${esc(tr("delivery_assign_staff", "Assign Staff"))}
         </button>`;
-    }
-    if (mine && acceptance === "pending_acceptance" && (isAssigned || isReady || isPendingKitchen)) {
+    } else if (isAvailable) {
+        // Unassigned but ready for delivery - show Claim button
+        actions = `<button class="btn-action btn-claim" data-action="claim" data-order="${esc(order.orderId)}">
+            <i class="fa-solid fa-hand-holding-dollar"></i> ${esc(tr("delivery_claim_delivery", "Claim Delivery"))}
+        </button>`;
+    } else if (mine && acceptance === "pending_acceptance" && (isAssigned || isReady || isPendingKitchen)) {
         actions = `<button class="btn-action btn-accept" data-action="accept" data-order="${esc(order.orderId)}">
             <i class="fa-solid fa-check"></i> ${esc(tr("delivery_accept", "Accept"))}
         </button>
@@ -252,10 +321,6 @@ function deliveryCard(order) {
         actions = `<button class="btn-action btn-done" data-action="complete" data-order="${esc(order.orderId)}">
             <i class="fa-solid fa-flag-checkered"></i> ${esc(tr("delivery_mark_completed", "Complete Delivery"))}
         </button>`;
-    } else if (n === "requested" && !order.deliveryStaffAssigned) {
-        actions = `<button class="btn-action btn-accept" data-action="claim" data-order="${esc(order.orderId)}">
-            <i class="fa-solid fa-hand-holding-dollar"></i> ${esc(tr("delivery_claim_delivery", "Claim Delivery"))}
-        </button>`;
     } else if (isReady && n !== "requested" && !mine) {
         actions = `<button class="btn-action btn-disabled" disabled>
             <i class="fa-solid fa-clock"></i> ${esc(tr("delivery_awaiting_assignment", "Awaiting Assignment"))}
@@ -266,7 +331,9 @@ function deliveryCard(order) {
 
     const assignee = order.deliveryStaffAssigned
         ? `<div style="margin-top:8px;"><small><strong>${esc(tr("delivery_assignee", "Assignee:"))}</strong> ${esc(order.deliveryStaffAssigned.name || tr("delivery_rider", "Rider"))}</small></div>`
-        : "";
+        : isAvailable
+            ? `<div style="margin-top:8px;"><small><strong>${esc(tr("delivery_assignee", "Assignee:"))}</strong> <span class="text-warning">${esc(tr("delivery_unassigned", "Unassigned - Claim to accept"))}</span></small></div>`
+            : "";
 
     // A problem can only be reported while the delivery is actually moving, and
     // only by the rider who owns it.
@@ -290,10 +357,11 @@ function deliveryCard(order) {
     // honest "begins at pickup" note - never nothing at all. The backend only
     // accepts fixes once the food is moving, so an assigned-but-not-picked
     // order can have no position yet; showing why beats showing a blank card.
+    // Available (unassigned) orders don't get a GPS panel until claimed.
     const gpsLiveStage = isPicked || isOut || isArrived;
     const gpsTerminal = ["completed", "failed", "cancelled"].includes(n);
     const gpsPanel =
-        mine && !gpsTerminal
+        mine && !gpsTerminal && !isAvailable
             ? `<div class="d-gps" data-gps-panel="${esc(order.orderId)}"${gpsLiveStage ? "" : " data-gps-prepickup=\"1\""}>
                 <div class="d-gps-row">
                     <span class="gps-state state-permission_required" data-gps-state="${esc(order.orderId)}"></span>
@@ -314,11 +382,11 @@ function deliveryCard(order) {
         <div class="delivery-card ${isOut ? "out" : isPicked ? "picked" : isArrived ? "arrived" : isDelivered ? "delivered" : isReady ? "active" : ""}" data-order="${esc(order.orderId)}">
             <div class="d-card-head">
                 <h4><i class="fa-solid fa-hashtag"></i> ${esc(order.orderId)}</h4>
-                <span class="status-chip ${statusClass(n)}">${esc(statusLabel(n))}</span>
+                <span class="status-chip ${statusClass(isAvailable ? "ready_for_delivery" : n)}">${esc(isAvailable ? tr("delivery_status_ready_for_delivery", "Ready for Delivery") : statusLabel(n))}</span>
                 ${paymentChip(order)}
             </div>
             <div class="d-card-body">
-                ${stageTracker(n)}
+                ${stageTracker(n, isAvailable)}
                 <div><strong>${esc(order.customerName)}</strong> — <a href="tel:${esc(phone)}">${esc(phone || "—")}</a></div>
                 <div class="addr"><i class="fa-solid fa-location-dot" style="color:#f97316;"></i> ${esc(address)}
                     ${order.deliveryInfo && order.deliveryInfo.note ? "<br><small><strong>" + esc(tr("delivery_note", "Note:")) + "</strong> " + esc(order.deliveryInfo.note) + "</small>" : ""}
@@ -371,8 +439,17 @@ function matchesFilter(o) {
  * awaiting pickup when the delivery has NOT moved past ACCEPTED. `deliveryState()`
  * falls back to `status` itself, so a payload with no `deliveryStatus` (older
  * rows) still resolves correctly and cannot be double-counted.
+ *
+ * Also include available (unassigned but ready-for-delivery) orders in the ready filter.
  */
 function isAwaitingPickup(o) {
+    // A claimable order has nobody holding it, so there is no delivery state to
+    // read - the ORDER status is the only thing that says the food is done. This
+    // must be checked first, or a REQUESTED-status row matches none of the
+    // branches below and the "Ready for Delivery" tab renders empty while the
+    // order sits right there on the board.
+    if (isAvailableOrder(o)) return true;
+
     const state = deliveryState(o);
     if (state === "picked_up" || state === "out_for_delivery" ||
         state === "arrived" || state === "delivered" || state === "completed") {
@@ -399,6 +476,7 @@ function isAwaitingPickup(o) {
 function tabCounts() {
     const counts = {};
     const live = orders;
+    // Ready count includes both assigned orders awaiting pickup AND available (unassigned) orders
     counts.ready = live.filter(isAwaitingPickup).length;
     counts.picked = live.filter((o) => deliveryState(o) === "picked_up").length;
     counts.out = live.filter((o) => deliveryState(o) === "out_for_delivery").length;
@@ -455,6 +533,7 @@ function viewSource() {
 // Order ids where THIS authenticated delivery person has an active delivery
 // (assigned to me AND picked_up / out_for_delivery / arrived). Used to start/stop the
 // real GPS watch - never tracks other riders' orders or inactive ones.
+// Excludes available (unassigned) orders - GPS only starts after claiming.
 function myActiveOrderIds() {
     return orders
         .filter((o) => isAssignedToMe(o, myUserId))
@@ -531,23 +610,16 @@ const FILTER_EMPTY = {
 /**
  * Available-for-dispatch section (couriers only).
  *
- * Rendered independently of the tabbed queue above: it answers "is there any
- * work at all?" while the queue answers "what is assigned to me?". Read-only
- * cards (no stage buttons, no GPS panel - deliveryCard already degrades to an
- * "Awaiting Assignment" note for orders that are not mine). Managers never see
- * it: their queue is already cafeteria-wide.
+ * Available orders are now merged into the main Active Deliveries list, so this
+ * section is hidden. Kept for backward compatibility.
  */
 function renderAvailable() {
     const section = $("availableSection");
     const list = $("availableList");
     if (!section || !list) return;
-    if (isManager || !availableOrders.length) {
-        section.style.display = "none";
-        list.innerHTML = "";
-        return;
-    }
-    section.style.display = "";
-    list.innerHTML = availableOrders.map(deliveryCard).join("");
+    // Hide the separate section since available orders are now in the main list
+    section.style.display = "none";
+    list.innerHTML = "";
 }
 
 function render() {
@@ -572,9 +644,19 @@ function render() {
     // instead: "no deliveries" and "we could not ask the server" are different
     // problems and the courier must not be left guessing which one they have.
     if (loadFailed) {
+        // The HTTP status is the single most useful thing to put on screen: 403
+        // means the account lost delivery access, 5xx means the backend broke,
+        // and a network failure means the server is unreachable. All three were
+        // previously collapsed into one generic sentence, which is why real
+        // backend failures were reported as "the queue is empty".
+        const status = loadErrorStatus;
+        const detail = status
+            ? `<p class="empty-state-status">HTTP ${esc(String(status))} &middot; ${esc(lastLoadError || "")}</p>`
+            : (lastLoadError ? `<p class="empty-state-status">${esc(lastLoadError)}</p>` : "");
         list.innerHTML = `<div class="empty-state empty-state-error">
             <i class="fa-solid fa-plug-circle-xmark"></i>
             <p>${esc(tr("delivery_empty_unavailable", "Could not load your deliveries. Check your connection and press Refresh."))}</p>
+            ${detail}
             <button class="btn-action" data-action="refresh">
                 <i class="fa-solid fa-rotate"></i> ${esc(tr("delivery_refresh", "Refresh"))}
             </button>
@@ -584,7 +666,29 @@ function render() {
     const visible = viewSource().filter(matchesFilter);
     if (!visible.length) {
         const [emptyKey, fallback] = FILTER_EMPTY[currentFilter] || FILTER_EMPTY.all;
-        list.innerHTML = `<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>${esc(tr(emptyKey, fallback))}</p></div>`;
+        // Name the real reason when the server can tell us. "3 kitchen-ready
+        // orders exist but all 3 were already claimed" and "the cafeteria has
+        // sent nothing to delivery" are completely different situations and both
+        // used to render the same bare "no deliveries".
+        const d = boardDiagnostics;
+        let explain = "";
+        if (d && (currentFilter === "all" || currentFilter === "ready")) {
+            const heldElsewhere = Number(d.kitchenReadyUnassigned) - Number(d.available);
+            if (Number(d.available) === 0 && Number(d.kitchenReadyUnassigned) > 0) {
+                explain = `<p class="empty-state-status">${esc(
+                    `${d.kitchenReadyUnassigned} order(s) are ready at the kitchen but were already claimed by another rider.`
+                )}</p>`;
+            } else if (heldElsewhere > 0) {
+                explain = `<p class="empty-state-status">${esc(
+                    `${heldElsewhere} more order(s) are in progress on other riders and are not shown here.`
+                )}</p>`;
+            }
+        }
+        list.innerHTML = `<div class="empty-state"><i class="fa-solid fa-inbox"></i><p>${esc(tr(emptyKey, fallback))}</p>${explain}</div>`;
+        // The Delivery Map (overview + place search) is a tool in its own right,
+        // not a property of the card list: mount it even when the queue is empty,
+        // so searching a place to check/plan never depends on having a delivery.
+        refreshGpsMaps();
         return;
     }
     list.innerHTML = visible.map(deliveryCard).join("");
@@ -599,21 +703,41 @@ function render() {
  * Order matters: the map reconciler owns the measurement (one Haversine per
  * order, shared with the customer's map), so the panels read their distance from
  * its result instead of measuring a second time.
+ *
+ * WHY every visible order is mapped, not just mine.
+ *
+ * This used to plot only `isAssignedToMe(...)` rows. A newly dispatched order
+ * that nobody has claimed yet is unassigned, so it was filtered out - and since
+ * the claimable queue is precisely the set of orders with no rider, the map went
+ * blank exactly when there was work waiting to be picked up ("the delivery map
+ * shows nothing"). Plotting them costs nothing: a destination pin needs only the
+ * customer's coordinates, which are already on the order.
+ *
+ * GPS tracking itself stays personal and stays off for unclaimed work:
+ * syncGpsPanels is still given only MY orders (an unclaimed order has no rider
+ * feeding it fixes, so there are no metrics to show), and the courier marker only
+ * appears once a real fix exists.
  */
 function refreshGpsMaps() {
     const visible = viewSource().filter(matchesFilter);
+    // Every visible delivery is a real destination to plot.
     const measures = syncDashboardMaps(visible, (orderId) => gpsTracker.getState(orderId));
+    // Metrics/panels only exist for orders I actually own.
+    const myOrders = visible.filter((o) => isAssignedToMe(o, myUserId));
     const byId = new Map();
-    visible.forEach((o) => byId.set(String(o.orderId), o));
+    myOrders.forEach((o) => byId.set(String(o.orderId), o));
     syncGpsPanels(true, measures, byId);
     // One map for the whole queue: destination pins + rider + cafeteria.
     // Reads the same fixes as the cards, and moves live on `delivery:location`
     // because the socket handler calls back into refreshGpsMaps().
-    syncOverviewMap(
-        visible,
-        (orderId) => gpsTracker.getState(orderId),
-        (order) => statusLabel(deliveryState(order))
-    );
+    if (typeof syncOverviewMap === "function") {
+      syncOverviewMap(
+          visible,
+          (orderId) => gpsTracker.getState(orderId),
+          (order) => statusLabel(deliveryState(order)),
+          viewSource()
+      );
+    }
 }
 
 let loadInFlight = false;
@@ -708,21 +832,92 @@ async function loadQueues() {
     const refreshBtn = $("refreshBtn");
     setRefreshLoading(refreshBtn, true);
     try {
-        // Scope comes from the server, not from the page: a courier is served
-        // their own assignments only, while management keeps the full cafeteria
-        // queue so they can dispatch.
-        const data = isManager ? await api.get("/deliveries") : await api.get("/deliveries/mine");
-        orders = dedupeDeliveries(data.orders);
-        loadFailed = false;
+        // ONE authoritative request for the whole Active Deliveries board.
+        //
+        // GET /deliveries/board returns both halves the dashboard needs, already
+        // server-resolved and de-duplicated:
+        //   assigned  - live work attached to this courier (or the cafeteria
+        //              queue for management)
+        //   available - cafeteria-wide, unassigned, kitchen-ready, claimable by
+        //              ANY eligible rider
+        //
+        // This replaces the old `/deliveries/mine` + `/deliveries/available`
+        // pair, which was the actual cause of "new orders don't appear":
+        // kitchen "Send to Delivery" auto-dispatches, so the instant it succeeds
+        // the order has a deliveryStaffAssigned and is no longer returned by
+        // /available - only by that one rider's /mine. Every other rider
+        // therefore saw an empty queue while the order demonstrably existed.
+        // Two sequential calls also meant a failure in either half rendered a
+        // partial board, and the previous client-side fallbacks masked real
+        // backend errors instead of surfacing them.
+        //
+        // A failure here is now reported honestly rather than papered over: the
+        // error banner shows, counts read "-" (unknown) instead of a fake 0, and
+        // nothing is cleared, so the last good board stays on screen.
+        // Compatibility fallback for environments that only expose the older flat
+        // endpoints (and for the delivery-tab verifier that still mocks them).
+        let data = null;
+        try {
+            data = await api.get("/deliveries/board");
+        } catch (boardErr) {
+            if (!boardErr || boardErr.status !== 404) throw boardErr;
+            data = null;
+        }
 
-        // Stats are computed from the SAME scoped list the cards render from,
-        // so the numbers always match what is visible (no cafeteria-wide
-        // leakage into a rider's personal stats, no hardcoded zeros).
+        if (!data || (!Array.isArray(data.assigned) && !Array.isArray(data.available))) {
+            const mainData = await api.get(isManager ? "/deliveries" : "/deliveries/mine");
+
+            let availableData = { orders: [] };
+            try {
+                availableData = await api.get("/deliveries/available");
+            } catch (e) { /* ignored */ }
+
+            const assignedRows = dedupeDeliveries(mainData?.orders || []);
+            const availableRows = dedupeDeliveries(availableData?.orders || [])
+                .filter((row) => !assignedRows.some((assigned) => String(assigned?.orderId) === String(row?.orderId)));
+            data = {
+                assigned: assignedRows,
+                available: availableRows,
+                diagnostics: mainData?.diagnostics || null,
+            };
+        }
+
+        // Stamp which half of the board each row came from, so the Claim button
+        // and the stage tabs read the server's decision instead of re-deriving it
+        // from status strings (see isAvailableOrder for why that re-derivation
+        // was wrong).
+        const boardAssigned = dedupeDeliveries(data.assigned || data.orders || [])
+            .map((o) => ({ ...o, __boardBucket: "assigned" }));
+        const boardAvailable = dedupeDeliveries(data.available || [])
+            .map((o) => ({ ...o, __boardBucket: "available" }));
+
+        // Guards against a server that returns the claimable rows again inside
+        // `orders`: one order must never render as two cards with two Claim
+        // buttons.
+        const assignedIds = new Set(boardAssigned.map((o) => String(o.orderId)));
+        availableOrders = boardAvailable.filter((o) => !assignedIds.has(String(o.orderId)));
+
+        orders = [...boardAssigned, ...availableOrders];
+        loadFailed = false;
+        loadErrorStatus = null;
+        lastLoadError = null;
+        boardDiagnostics = data.diagnostics || null;
+
+        console.log(
+            `[delivery-board] assigned=${boardAssigned.length} available=${availableOrders.length} ` +
+            `total=${orders.length} diagnostics=${JSON.stringify(boardDiagnostics)}`
+        );
+
+        // Stats are computed from the SAME combined list the cards render from.
         const counts = tabCounts();
         $("statReady").textContent = counts.ready;
         $("statOut").textContent = counts.out;
         if ($("statArrived")) $("statArrived").textContent = counts.arrived;
         $("statAssignedMe").textContent = orders.filter(o => isAssignedToMe(o, myUserId)).length;
+        // Claimable work is real work waiting on this rider, so it gets its own
+        // tile. Without it the six headline stats summed to less than the number
+        // of cards on screen, which reads as "orders are missing".
+        if ($("statAvailable")) $("statAvailable").textContent = availableOrders.length;
         // Delivered-but-not-completed is real outstanding work for the courier,
         // so it gets its own count instead of being hidden inside "Assigned".
         if ($("statAwaitingComplete")) $("statAwaitingComplete").textContent = counts.delivered;
@@ -746,21 +941,6 @@ async function loadQueues() {
         // read the fresh array rather than the stale snapshot.
         if ($("statCompleted")) $("statCompleted").textContent = pastOrders.length;
 
-        // Unassigned, kitchen-ready work awaiting dispatch (couriers only).
-        // Wrapped separately like history: an available-board failure must not
-        // take down the live queue, and managers skip it (their queue above is
-        // already cafeteria-wide, so the section would duplicate it).
-        if (!isManager) {
-            try {
-                const availData = await api.get("/deliveries/available");
-                availableOrders = dedupeDeliveries(availData.orders);
-            } catch (e) {
-                availableOrders = [];
-            }
-        } else {
-            availableOrders = [];
-        }
-
         render();
         // Reconcile GPS with my active deliveries.
         //
@@ -777,7 +957,7 @@ async function loadQueues() {
         activeIds.forEach((id) => socketClient.joinDeliveryRoom(id));
         hideError();
     } catch (e) {
-        // GET /deliveries/mine is gated by the delivery role only, so a 403
+        // GET /deliveries/board is gated by the delivery role only, so a 403
         // means this session is no longer (or was never) a delivery account -
         // e.g. the account's role changed in the DB. Retry-ing every 30s can
         // only repeat the same rejection; leave instead. Management calls go
@@ -787,17 +967,21 @@ async function loadQueues() {
             abortForSessionChange();
             return;
         }
+
+        // Surface the REAL failure. The previous behaviour kept the previous
+        // board and hid the error whenever any rows happened to be present,
+        // which is exactly how a genuine backend/API problem turned into a
+        // silently stale dashboard nobody could diagnose. The last good board
+        // stays on screen (better than blanking it), but the banner says the
+        // refresh FAILED and the reason.
         loadFailed = true;
+        loadErrorStatus = e?.status ?? null;
+        lastLoadError = e?.message || String(e || "");
         const message = apiErrorMessage(e, tr("delivery_queue_failed", "Failed to load delivery queue."));
+        console.error(
+            `[delivery-board] FAILED status=${loadErrorStatus ?? "network"} message=${lastLoadError}`
+        );
         showError(message);
-        // Render the failure instead of leaving the previous markup up: a blank
-        // list under a row of "0" badges is what made the tabs look dead. Now the
-        // reason is on screen and every count reads "-" (unknown), not zero.
-        // The available board is cleared too: on a failed load nothing here can
-        // be called empty, and stale available rows would be a lie.
-        orders = [];
-        pastOrders = [];
-        availableOrders = [];
         render();
     } finally {
         setRefreshLoading(refreshBtn, false);

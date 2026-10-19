@@ -56,17 +56,60 @@ const ROUTE_REFRESH_M = 75;
 const ROUTE_MAX_AGE_MS = 60000;
 
 /**
- * Optional road routing. Left unset by default: OpenStreetMap's public OSRM
- * demo server is rate limited and must not be hit on every GPS frame. Set
- * `window.SCOS_ROUTING_URL` (or `config.routingUrl`) to a routing service you
- * control to turn real road routing on, e.g.
- *   window.SCOS_ROUTING_URL = "https://router.example.com/route/v1/driving";
- * Any provider that answers GET {base}/{lng1},{lat1};{lng2},{lat2}
- * ?overview=full&geometries=geojson with a GeoJSON LineString is supported.
+ * Road routing provider.
+ *
+ * The delivery dashboard must draw the REAL road route automatically, so a real
+ * provider is configured out of the box: the public OSRM demo server. It answers
+ *   GET {base}/{lng1},{lat1};{lng2},{lat2}?overview=full&geometries=geojson
+ * with a GeoJSON LineString, which is exactly what drawRoute() consumes. The
+ * public demo is rate limited and not meant for heavy production load, so
+ * `window.SCOS_ROUTING_URL` (or config.routingUrl) still overrides it with a
+ * self-hosted OSRM / Valhalla / GraphHopper/OSRM-compatible service.
+ *
+ * Routing is never required: the straight dashed line is drawn first, so a
+ * provider outage (or a network error) degrades to a straight line instead of
+ * blanking the map.
  */
+const OSRM_DEMO_BASE = "https://router.project-osrm.org/route/v1/driving";
+
 function routingBase() {
   try {
-    return (typeof window !== "undefined" && window.SCOS_ROUTING_URL) || null;
+    if (typeof window !== "undefined" && typeof window.SCOS_ROUTING_URL === "string" && window.SCOS_ROUTING_URL) {
+      return window.SCOS_ROUTING_URL;
+    }
+  } catch (e) {
+    /* fall through to the default provider */
+  }
+  return OSRM_DEMO_BASE;
+}
+
+/**
+ * Fetch a real road route between two points.
+ *
+ * Returns Leaflet-ready `[[lat, lng], …]`, or null when routing is
+ * unavailable / the request fails. Shared by the per-card maps (`drawRoute`)
+ * and the dashboard overview map, so both draw the SAME road geometry from the
+ * SAME configured provider instead of two half-implementations.
+ */
+export async function fetchRoadRoute(from, to, opts = {}) {
+  const base = routingBase();
+  if (!base) return null;
+  const a = normalizePoint(from);
+  const b = normalizePoint(to);
+  if (!a || !b) return null;
+  const url =
+    `${base.replace(/\/$/, "")}/${a.longitude},${a.latitude};${b.longitude},${b.latitude}` +
+    "?overview=full&geometries=geojson";
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" }, signal: opts.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const coords =
+      data && data.routes && data.routes[0] && data.routes[0].geometry
+        ? data.routes[0].geometry.coordinates
+        : null;
+    if (!Array.isArray(coords) || coords.length < 2) return null;
+    return coords.map((c) => [c[1], c[0]]);
   } catch (e) {
     return null;
   }
@@ -103,7 +146,7 @@ export class LiveDeliveryMap {
       typeof container === "string" ? document.getElementById(container) : container;
     this.options = Object.assign({ zoomToFit: true }, options);
     this.map = null;
-    this.markers = { courier: null, customer: null, cafeteria: null, search: null };
+    this.markers = { courier: null, customer: null, cafeteria: null, search: null, pick: null };
     this.accuracyCircle = null;
     this.line = null;
     this.routeLine = null;
@@ -112,6 +155,8 @@ export class LiveDeliveryMap {
     this._routeToken = 0;
     this._lastRouteFrom = null;
     this._lastRouteAt = 0;
+    this._pickHandler = null;
+    this._searchPickHandler = null;
   }
 
   /**
@@ -263,6 +308,142 @@ export class LiveDeliveryMap {
     return true;
   }
 
+  /**
+   * Draw (or move) the "chosen destination" pin.
+   *
+   * Used by the delivery search when the courier picks a customer/order with no
+   * stored coordinates, or taps the map to set the destination by hand. Kept
+   * separate from setCustomer(): the customer marker is the order's OWN stored
+   * drop-off point; this one is a destination the rider chose, and it is never
+   * persisted as if the customer had shared it.
+   */
+  setPickPin(location, label) {
+    const point = normalizePoint(location);
+    if (!point) {
+      this.clearPickMarker();
+      return false;
+    }
+    if (!this.init()) return false;
+    this._place("pick", point, "dest", "fa-location-dot", label || "Chosen destination");
+    return true;
+  }
+
+  clearPickMarker() {
+    if (!this.markers.pick) return false;
+    this._dropMarker("pick");
+    return true;
+  }
+
+  /**
+   * Remove the road route (selection changed / teardown).
+   *
+   * The straight dashed line (`line`) is intentionally kept: it is still a
+   * correct connection between the two markers, and drawRoute() will replace it
+   * with a real road route for the new destination.
+   */
+  clearRoute() {
+    if (this.routeLine && this.map) this.map.removeLayer(this.routeLine);
+    this.routeLine = null;
+    this._lastRouteFrom = null;
+    this._lastRouteAt = 0;
+    this._routeToken++;
+  }
+
+  /**
+   * Fit the camera so the courier AND the customer (plus any extra points) are
+   * both visible. Public because the delivery search focuses one chosen order
+   * and must show the rider and their destination together immediately.
+   */
+  fitTo(extraPoints) {
+    if (!this.map || !this.options.zoomToFit) return;
+    const points = [];
+    if (this.courier) points.push([this.courier.latitude, this.courier.longitude]);
+    if (this.customer) points.push([this.customer.latitude, this.customer.longitude]);
+    if (this.markers.cafeteria) points.push(this.markers.cafeteria.getLatLng());
+    if (this.markers.pick) points.push(this.markers.pick.getLatLng());
+    (Array.isArray(extraPoints) ? extraPoints : []).forEach((p) => {
+      const n = normalizePoint(p);
+      if (n) points.push([n.latitude, n.longitude]);
+    });
+    if (points.length === 1) {
+      this.map.setView(points[0], 15);
+      return;
+    }
+    if (points.length > 1) this.map.fitBounds(points, { padding: [30, 30], maxZoom: 17 });
+  }
+
+  /**
+   * Let the rider tap the map to set the destination by hand.
+   *
+   * This is the honest fallback when the customer shared no coordinates AND the
+   * saved address could not be geocoded. The tapped lat/lng is a real point the
+   * rider chose - never an invented coordinate.
+   */
+  enableDestinationPick(onPick) {
+    if (!this.init()) return false;
+    this.disableDestinationPick();
+    this._pickHandler = (e) => {
+      if (!e || !e.latlng) return;
+      const point = { latitude: e.latlng.lat, longitude: e.latlng.lng };
+      this.setPickPin(point, "Chosen destination");
+      if (typeof onPick === "function") onPick(point);
+    };
+    this.map.on("click", this._pickHandler);
+    try {
+      this.map.getContainer().style.cursor = "crosshair";
+    } catch (e) {
+      /* container may be detached */
+    }
+    return true;
+  }
+
+  disableDestinationPick() {
+    if (this._pickHandler && this.map) this.map.off("click", this._pickHandler);
+    this._pickHandler = null;
+    try {
+      if (this.map) this.map.getContainer().style.cursor = "";
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
+  /**
+   * Let the user tap the map to answer "where is this place?" when the search
+   * found nothing (a location Google/OSM does not know).
+   *
+   * Kept separate from enableDestinationPick(): this drops the purple SEARCH pin
+   * (setSearchPin), so an ordinary place lookup can never be mistaken for the
+   * customer's delivery destination. The tapped lat/lng is a real point the
+   * user chose - never an invented coordinate.
+   */
+  enableSearchPick(onPick) {
+    if (!this.init()) return false;
+    this.disableSearchPick();
+    this._searchPickHandler = (e) => {
+      if (!e || !e.latlng) return;
+      const point = { latitude: e.latlng.lat, longitude: e.latlng.lng };
+      this.setSearchPin(point, "Dropped pin");
+      if (typeof onPick === "function") onPick(point);
+    };
+    this.map.on("click", this._searchPickHandler);
+    try {
+      this.map.getContainer().style.cursor = "crosshair";
+    } catch (e) {
+      /* container may be detached */
+    }
+    return true;
+  }
+
+  disableSearchPick() {
+    if (this._searchPickHandler && this.map) this.map.off("click", this._searchPickHandler);
+    this._searchPickHandler = null;
+    try {
+      if (this.map && !this._pickHandler) this.map.getContainer().style.cursor = "";
+    } catch (e) {
+      /* ignore */
+    }
+  }
+
   _dropMarker(name) {
     const marker = this.markers[name];
     if (marker && this.map) {
@@ -337,41 +518,28 @@ export class LiveDeliveryMap {
    * endpoint has actually moved a real distance (>= ROUTE_REFRESH_M) or the
    * previous attempt failed.
    */
-  async drawRoute() {
-    const base = routingBase();
-    if (!base || !this.map || !this.courier || !this.customer) return false;
+  async drawRoute(opts = {}) {
+    if (!routingBase() || !this.map || !this.courier || !this.customer) return false;
 
     const moved = this._lastRouteFrom
       ? haversineMeters(this._lastRouteFrom, this.courier)
       : Infinity;
     const stale = Date.now() - (this._lastRouteAt || 0) > ROUTE_MAX_AGE_MS;
-    if (moved < ROUTE_REFRESH_M && !stale && this.routeLine) return false;
+    if (!opts.force && moved < ROUTE_REFRESH_M && !stale && this.routeLine) return false;
 
     const token = ++this._routeToken;
-    const from = `${this.courier.longitude},${this.courier.latitude}`;
-    const to = `${this.customer.longitude},${this.customer.latitude}`;
-    const url = `${base.replace(/\/$/, "")}/${from};${to}?overview=full&geometries=geojson`;
-    try {
-      const res = await fetch(url, { headers: { Accept: "application/json" } });
-      if (!res.ok) return false;
-      const data = await res.json();
-      const coords =
-        data && data.routes && data.routes[0] && data.routes[0].geometry
-          ? data.routes[0].geometry.coordinates
-          : null;
-      // A slower request must never overwrite a newer route.
-      if (token !== this._routeToken || !Array.isArray(coords) || coords.length < 2) return false;
-      if (this.routeLine && this.map) this.map.removeLayer(this.routeLine);
-      this.routeLine = window.L.polyline(
-        coords.map((c) => [c[1], c[0]]),
-        { color: "#ff6b00", weight: 5, opacity: 0.8 }
-      ).addTo(this.map);
-      this._lastRouteFrom = { ...this.courier };
-      this._lastRouteAt = Date.now();
-      return true;
-    } catch (e) {
-      return false;
-    }
+    const latlngs = await fetchRoadRoute(this.courier, this.customer);
+    // A slower request must never overwrite a newer route.
+    if (token !== this._routeToken || !latlngs || latlngs.length < 2) return false;
+    if (this.routeLine && this.map) this.map.removeLayer(this.routeLine);
+    this.routeLine = window.L.polyline(latlngs, {
+      color: "#ff6b00",
+      weight: 5,
+      opacity: 0.8,
+    }).addTo(this.map);
+    this._lastRouteFrom = { ...this.courier };
+    this._lastRouteAt = Date.now();
+    return true;
   }
 
   _fit() {
@@ -395,7 +563,9 @@ export class LiveDeliveryMap {
     this._routeToken++;
     this._clearAccuracy();
     this._clearLines();
-    ["courier", "customer", "cafeteria", "search"].forEach((name) => this._dropMarker(name));
+    this.disableDestinationPick();
+    this.disableSearchPick();
+    ["courier", "customer", "cafeteria", "search", "pick"].forEach((name) => this._dropMarker(name));
     if (this.map) {
       try {
         this.map.remove();

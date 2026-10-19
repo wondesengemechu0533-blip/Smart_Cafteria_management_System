@@ -8,6 +8,7 @@ const {
   getSettings,
   updateSetting,
   getActivityLogs,
+  getSystemAnalytics,
 } = require('../controllers/admin.controller');
 const { changePassword } = require('../controllers/auth.controller');
 
@@ -36,6 +37,7 @@ router.use(
  * Frontend: admin/dashboard.html
  */
 router.get('/dashboard', getDashboardStats);
+router.get('/dashboard/analytics', authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'), getSystemAnalytics);
 
 /**
  * @route   GET /api/admin/dashboard/recent-orders

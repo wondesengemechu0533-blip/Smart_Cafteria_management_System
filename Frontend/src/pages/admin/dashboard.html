@@ -176,7 +176,7 @@
                 </div>
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
-                        <h3 class="card-title" data-i18n="admin_revenue_last7"><i class="fa-solid fa-chart-column"></i> Revenue (Last 7 Days)</h3>
+                        <h3 class="card-title" id="revenueChartTitle" data-i18n="admin_revenue_last7"><i class="fa-solid fa-chart-column"></i> Revenue (Last 7 Days)</h3>
                     </div>
                     <div class="chart-wrapper">
                         <canvas id="revenueChart"></canvas>
@@ -195,7 +195,7 @@
             <!-- RECENT TABLES -->
             <div class="row g-4 recent-tables">
                 <!-- RECENT ORDERS -->
-                <div class="col-xl-6">
+                <div class="col-xl-12">
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h3 class="card-title" data-i18n="admin_recent_orders"><i class="fa-solid fa-list-check"></i> Recent Orders</h3>
@@ -218,36 +218,6 @@
                                 </thead>
                                 <tbody id="recentOrdersTableBody">
                                     <tr><td colspan="6" class="table-empty" data-i18n="admin_loading_recent_orders">Loading recent orders...</td></tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- RECENT PAYMENTS -->
-                <div class="col-xl-6">
-                    <div class="card">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h3 class="card-title" data-i18n="admin_recent_payments"><i class="fa-solid fa-credit-card"></i> Recent Payments</h3>
-                            <div class="d-flex gap-2">
-                                <input type="text" id="paymentSearchInput" class="form-control form-control-sm" placeholder="Search payments..." data-i18n-placeholder="admin_search_payments" style="width: 200px; max-width: 100%;">
-                                <a href="payments.html" class="btn btn-sm btn-outline-primary" data-i18n="admin_view_all">View All</a>
-                            </div>
-                        </div>
-                        <div class="table-wrapper">
-                            <table class="admin-table">
-                                <thead>
-                                    <tr>
-                                        <th data-i18n="admin_col_transaction">Transaction</th>
-                                        <th data-i18n="admin_col_customer">Customer</th>
-                                        <th data-i18n="admin_col_amount">Amount</th>
-                                        <th data-i18n="admin_col_provider">Provider</th>
-                                        <th data-i18n="admin_col_status">Status</th>
-                                        <th data-i18n="admin_col_date">Date</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="recentPaymentsTableBody">
-                                    <tr><td colspan="6" class="table-empty" data-i18n="admin_loading_recent_payments">Loading recent payments...</td></tr>
                                 </tbody>
                             </table>
                         </div>

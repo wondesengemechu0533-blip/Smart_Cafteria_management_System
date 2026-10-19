@@ -415,6 +415,13 @@
             min-height: 100px;
         }
 
+        .form-group .form-error {
+            color: #b91c1c;
+            font-size: 13px;
+            margin-top: 6px;
+            min-height: 1em;
+        }
+
         .modal-buttons {
             display: flex;
             gap: 12px;
@@ -595,9 +602,6 @@
                     <a href="/src/pages/kitchen/stock-alerts.html" class="sidebar-link active">
                         <i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts
                     </a>
-                    <a href="/src/pages/kitchen/issues.html" class="sidebar-link">
-                        <i class="fa-solid fa-flag"></i> Issue Reports
-                    </a>
                 </div>
                 <div class="sidebar-group" style="margin-top: 16px;">
                     <a href="/src/pages/kitchen/notifications.html" class="sidebar-link">
@@ -685,10 +689,56 @@
         </div>
     </div>
 
+    <!-- Stock Alert Details Modal (read-only; shows resolution history for resolved alerts) -->
+    <div class="modal" id="detailsModal">
+        <div class="modal-content">
+            <div class="modal-header">Stock Alert Details</div>
+            <div id="detailsContent"></div>
+            <div class="modal-buttons">
+                <button data-i18n="nav_cancel" type="button" class="btn-cancel" onclick="closeDetailsModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resolve Alert Modal (Reason + Solution required before resolving) -->
+    <div class="modal" id="resolveModal">
+        <div class="modal-content">
+            <div class="modal-header">Resolve Stock Alert</div>
+            <form id="resolveForm">
+                <input type="hidden" id="resolveAlertId">
+                <div class="form-group">
+                    <label for="resolveReason">Resolution Reason *</label>
+                    <select id="resolveReason" required>
+                        <option value="">Select an option</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="resolveSolution">Solution / Corrective Action *</label>
+                    <select id="resolveSolution" required>
+                        <option value="">Select an option</option>
+                    </select>
+                </div>
+                <div class="form-group" id="resolveOtherGroup" style="display:none;">
+                    <label for="resolveOther">Please explain (required for Other) *</label>
+                    <textarea id="resolveOther" placeholder="Explain your Other selection..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="resolveDetails">Additional Details (Optional)</label>
+                    <textarea id="resolveDetails" placeholder="Describe how the issue was resolved..."></textarea>
+                </div>
+                <div class="modal-buttons">
+                    <button data-i18n="nav_cancel" type="button" class="btn-cancel" onclick="closeResolveModal()">Cancel</button>
+                    <button type="submit" class="btn-submit">Confirm Resolution</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script type="module" src="../../js/utils/i18n.js?v=20261013c"></script>
     <script src="../../js/config.js?v=20260907"></script>
     <script src="../../js/kitchen-notification-badge.js?v=20261013b"></script>
-<script src="../../js/kitchen/stock-alerts.js?v=20261013c"></script>
+    <script src="../../js/utils/resolution-options.js?v=20261015"></script>
+<script src="../../js/kitchen/stock-alerts.js?v=20261016a"></script>
 
     <!-- Navigation & User Menu Script -->
     <script>

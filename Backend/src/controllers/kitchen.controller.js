@@ -1,6 +1,8 @@
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const Notification = require('../models/Notification');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
+const { emitSocketEvent } = require('../utils/socket');
 const { notifyUser, findCafeteriaManagers } = require('../utils/notification');
 const { ORDER_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
 
@@ -847,6 +849,17 @@ exports.sendOrderToDelivery = async (req, res) => {
           ? `No free rider for order #${orderId} — ${recipients.length} delivery staff notified`
           : `Order #${orderId} sent to delivery staff`;
 
+    // Trace of exactly what became visible and to whom. "I sent it to delivery and
+    // the riders never saw it" is impossible to diagnose without this line: the
+    // order state, the dispatch outcome and the broadcast rooms are all recorded
+    // together, in the one request that performed the transition.
+    console.log(
+      `[kitchen/send-to-delivery] order=${orderId} ` +
+      `orderStatus=${order.orderStatus}/${order.status} deliveryStatus=${delivery.status} ` +
+      `deliveryRecord=${delivery._id} assignedTo=${assignedRider ? assignedRider.name : 'NONE'} ` +
+      `autoAssigned=${justAssigned} notified=${recipients.length} readyAt=${order.readyForDeliveryAt}`
+    );
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: head,
@@ -855,6 +868,9 @@ exports.sendOrderToDelivery = async (req, res) => {
       alreadyNotified: alreadyNotified,
       assignedTo: assignedRider ? assignedRider.name : null,
       autoAssigned: justAssigned,
+      // Lets the kitchen UI say "nobody was available, all riders were notified"
+      // instead of implying the order was handed to someone.
+      awaitingClaim: !assignedRider,
     });
   } catch (error) {
     console.error('❌ Send Order To Delivery Error:', error);
@@ -1309,12 +1325,37 @@ exports.updateItemAvailability = async (req, res) => {
       });
     }
 
+    // ✅ Quality hold: an item with an open quality issue (or an active hold)
+    //    must be inspected and approved before it can become available again.
+    if (isAvailable === true) {
+      const StockAlert = require('../models/StockAlert');
+      const openQuality = await StockAlert.countDocuments({
+        itemId: menuItem._id,
+        alertType: 'quality_issue',
+        status: { $in: ['active', 'acknowledged'] },
+      });
+      if (openQuality > 0 || menuItem.qualityHold === true) {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          error: 'This item has a pending quality issue. Resolve the quality alert (inspection approval) before marking it available again.',
+        });
+      }
+    }
+
     // ✅ Update availability
     const wasAvailable = menuItem.isAvailable;
     menuItem.isAvailable = isAvailable;
+    menuItem.availability = isAvailable; // keep the two availability flags in sync
     menuItem.outOfStockReason = isAvailable ? null : reason || 'Out of stock';
     menuItem.lastAvailabilityUpdate = new Date();
     menuItem.updatedBy = req.user.id;
+    const { recalculateAvailability, syncStockAlertsForItem } = require('../services/stock-alert.service');
+    if (isAvailable === true && (menuItem.stockQuantity || 0) === 0) {
+      // Never mark an item AVAILABLE while it has zero stock.
+      menuItem.availabilityStatus = 'OUT_OF_STOCK';
+    } else {
+      recalculateAvailability(menuItem);
+    }
 
     await menuItem.save();
 
@@ -1327,23 +1368,37 @@ exports.updateItemAvailability = async (req, res) => {
         status: { $in: ['pending', 'preparing'] },
       });
 
-      // Create stock alert
+      // Create stock alert - unless an open alert for the same condition
+      // already exists (no duplicate active alerts for the same item+type).
       const StockAlert = require('../models/StockAlert');
       const { getDefaultCafeteriaId } = require('../utils/cafeteria');
-      await StockAlert.create({
-        itemId: itemId,
-        itemName: menuItem.name.en,
+      const { normalizeRole } = require('../config/roles');
+      const existingAlert = await StockAlert.findOne({
+        itemId: menuItem._id,
         alertType: 'out_of_stock',
-        severity: affectedOrders.length > 0 ? 'high' : 'medium',
-        reason: reason || 'Item marked unavailable by kitchen staff',
-        reportedBy: req.user.id,
-        reportedByRole: 'kitchen',
-        cafeteriaId: menuItem.cafeteriaId || req.user.cafeteriaId || (await getDefaultCafeteriaId()) || null,
-        affectedOrders: affectedOrders.map((o) => ({
-          orderId: o._id,
-          orderNumber: o.orderId,
-        })),
+        status: { $in: ['active', 'acknowledged'] },
       });
+      if (existingAlert) {
+        existingAlert.reason = reason || existingAlert.reason;
+        existingAlert.severity = affectedOrders.length > 0 ? 'high' : 'medium';
+        try { await existingAlert.save(); } catch (e) { /* best-effort */ }
+      } else {
+        await StockAlert.create({
+          itemId: menuItem._id,
+          itemName: menuItem.name.en,
+          alertType: 'out_of_stock',
+          alertSource: 'manual',
+          severity: affectedOrders.length > 0 ? 'high' : 'medium',
+          reason: reason || 'Item marked unavailable by staff',
+          reportedBy: req.user.id,
+          reportedByRole: ['manager', 'cafeteria_admin'].includes(normalizeRole(req.user.role)) ? 'manager' : 'kitchen',
+          cafeteriaId: menuItem.cafeteriaId || req.user.cafeteriaId || (await getDefaultCafeteriaId()) || null,
+          affectedOrders: affectedOrders.map((o) => ({
+            orderId: o._id,
+            orderNumber: o.orderId,
+          })),
+        });
+      }
 
       // Notify affected customers
       for (const order of affectedOrders) {
@@ -1370,13 +1425,16 @@ exports.updateItemAvailability = async (req, res) => {
       }
 
       // Emit socket event
-      const { emitSocketEvent } = require('../utils/socket');
       emitSocketEvent('kitchen', 'item:unavailable', {
         itemId: menuItem._id,
         itemName: menuItem.name.en,
         reason: menuItem.outOfStockReason,
       });
     }
+
+    // Re-run the threshold lifecycle (e.g. availability restored while stock
+    // is still low keeps the Low Stock alert active).
+    await syncStockAlertsForItem(menuItem);
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -1434,19 +1492,68 @@ exports.reportStockIssue = async (req, res) => {
       });
     }
 
+    // Duplicate guard: never create a second open alert for the same item +
+    // condition. Return the existing one so the caller can act on it.
+    if (itemId && mongoose.isValidObjectId(String(itemId))) {
+      const existing = await StockAlert.findOne({
+        itemId,
+        alertType,
+        status: { $in: ['active', 'acknowledged'] },
+      });
+      if (existing) {
+        return res.status(HTTP_STATUS.OK).json({
+          success: true,
+          existing: true,
+          message: `An open ${alertType.replace(/_/g, ' ')} alert already exists for this item`,
+          alert: {
+            id: existing._id,
+            itemName: existing.itemName,
+            alertType: existing.alertType,
+            severity: existing.severity,
+            status: existing.status,
+            createdAt: existing.createdAt,
+          },
+        });
+      }
+    }
+
+    const { normalizeRole } = require('../config/roles');
+    const actorRole = normalizeRole(req.user.role);
+    const reportedByRole = actorRole === 'manager' || actorRole === 'cafeteria_admin' ? 'manager' : 'kitchen';
+
     // Create stock alert
     const { getDefaultCafeteriaId } = require('../utils/cafeteria');
     const alert = await StockAlert.create({
       itemId: itemId || null,
       itemName: itemName,
       alertType: alertType,
+      alertSource: 'manual',
       severity: severity,
       reason: reason,
       reportedBy: req.user.id,
-      reportedByRole: 'kitchen',
+      reportedByRole: reportedByRole,
       cafeteriaId: req.user.cafeteriaId || (await getDefaultCafeteriaId()) || null,
       status: 'active',
     });
+
+    // Quality issues put the item on quality hold: it must be inspected and
+    // approved (quality alert resolved) before it can become AVAILABLE again.
+    if (alertType === 'quality_issue' && itemId && mongoose.isValidObjectId(String(itemId))) {
+      try {
+        const { recalculateAvailability } = require('../services/stock-alert.service');
+        const MenuItem = require('../models/MenuItem');
+        const qualityItem = await MenuItem.findById(itemId);
+        if (qualityItem) {
+          qualityItem.qualityHold = true;
+          recalculateAvailability(qualityItem);
+          qualityItem.lastAvailabilityUpdate = new Date();
+          qualityItem.updatedBy = req.user.id;
+          await qualityItem.save({ validateBeforeSave: false });
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not apply quality hold:', e.message);
+      }
+    }
 
     await alert.populate('reportedBy', 'name role');
 
@@ -1501,24 +1608,69 @@ exports.reportStockIssue = async (req, res) => {
 };
 
 /**
- * @desc    Get stock alerts: real inventory items at/below their minimum
- *          threshold (Low Stock / Out of Stock) plus manual kitchen reports.
+ * @desc    Get stock alerts: persisted inventory threshold alerts (Low Stock /
+ *          Out of Stock, maintained by the stock-alert lifecycle service) plus
+ *          manual kitchen/manager reports.
  * @route   GET /api/v1/kitchen/stock-alerts
  * @access  Private/Kitchen
  *
- * Frontend: kitchen/stock-alerts.html → Display alerts
+ * Frontend: kitchen/stock-alerts.html + manager/stock-alerts.html
  * Query Params: status (active | acknowledged | resolved | cancelled)
  * Response: { success, count, lowStockCount, outOfStockCount, alerts: [...] }
  */
+/**
+ * Shared StockAlert → API serializer (used by the list and the single-alert
+ * details endpoint) so kitchen, manager and admin all receive identical
+ * resolution fields (resolvedBy / resolvedAt / resolutionNote / ...).
+ */
+function serializeStockAlert(alert) {
+  const item = alert.itemId && typeof alert.itemId === 'object' ? alert.itemId : null;
+  const isSystem = alert.alertSource === 'system';
+  const quantity = item ? item.stockQuantity : null;
+  return {
+    id: alert._id,
+    source: isSystem ? 'inventory' : 'report',
+    alertSource: alert.alertSource || 'manual',
+    itemName: alert.itemName,
+    itemId: item ? item._id : alert.itemId || null,
+    currentQuantity: quantity,
+    minimumQuantity: item ? item.lowStockThreshold : null,
+    currentStockQuantity: quantity,
+    lowStockThreshold: item ? item.lowStockThreshold : null,
+    stockStatus: isSystem ? (Number(quantity) === 0 ? 'OUT_OF_STOCK' : 'LOW_STOCK') : null,
+    alertType: alert.alertType,
+    severity: alert.severity,
+    reason: alert.reason,
+    status: alert.status,
+    qualityHold: item ? item.qualityHold === true : false,
+    reportedBy: isSystem ? 'System' : alert.reportedBy?.name || null,
+    acknowledgedBy: alert.acknowledgedBy?.name || null,
+    assignedTo: alert.assignedTo?.name || null,
+    assignedNote: alert.assignedNote || null,
+    assignedAt: alert.assignedAt,
+    resolutionNote: alert.resolutionNote || null,
+    resolutionReason: alert.resolutionReason || null,
+    resolutionSolution: alert.resolutionSolution || null,
+    resolutionQuantity: alert.resolutionQuantity ?? null,
+    resolvedBy: alert.resolvedBy?.name || null,
+    resolvedAt: alert.resolvedAt,
+    affectedOrders: alert.affectedOrders?.length || 0,
+    createdAt: alert.createdAt,
+    updatedAt: alert.updatedAt,
+  };
+}
+
 exports.getStockAlerts = async (req, res) => {
   try {
     const { status } = req.query;
     const MenuItem = require('../models/MenuItem');
     const StockAlert = require('../models/StockAlert');
+    const mongoose = require('mongoose');
     const { resolveCafeteriaScope, cafeteriaFilter, getDefaultCafeteriaId } = require('../utils/cafeteria');
+    const stockAlertService = require('../services/stock-alert.service');
 
     // ✅ Cafeteria scope from trusted server-side data (admins see all;
-    // kitchen/manager are scoped to their assigned cafeteria).
+    //    kitchen/manager are scoped to their assigned cafeteria).
     let scope;
     try {
       scope = resolveCafeteriaScope(req);
@@ -1528,105 +1680,72 @@ exports.getStockAlerts = async (req, res) => {
       scope = { cafeteriaId: await getDefaultCafeteriaId(), global: false };
     }
 
-    // ✅ 1) Real inventory alerts — live MenuItem records whose current
-    //    stockQuantity is at or below their configured lowStockThreshold.
-    //    This reflects order decrements, restocks, and admin stock edits.
-    const inventoryFilter = {
-      ...cafeteriaFilter(scope),
-      isActive: true,
-      $expr: { $lte: ['$stockQuantity', '$lowStockThreshold'] },
-    };
-    const lowStockItems = await MenuItem.find(inventoryFilter).sort({ stockQuantity: 1, updatedAt: -1 });
+    // ✅ 1) Lifecycle sync pass: every threshold-breaching MenuItem gets (and
+    //    keeps) exactly one open system alert; alerts whose condition cleared
+    //    are resolved. This makes the list self-healing after order
+    //    decrements, cancellation restores, admin edits and restocks.
+    try {
+      const openSystemAlerts = await StockAlert.find({
+        ...cafeteriaFilter(scope),
+        alertSource: 'system',
+        status: { $in: stockAlertService.OPEN_STATUSES },
+      })
+        .select('itemId')
+        .lean();
+      const openItemIds = [...new Set(openSystemAlerts.map((a) => (a.itemId ? String(a.itemId) : null)).filter(Boolean))]
+        .filter((id) => mongoose.isValidObjectId(id));
 
-    const inventoryAlerts = lowStockItems.map((item) => {
-      const isOut = Number(item.stockQuantity) === 0;
-      const lastUpdated = item.updatedAt || item.createdAt;
-      return {
-        id: item._id,
-        source: 'inventory',
-        itemName: item.name?.en || String(item._id),
-        currentQuantity: item.stockQuantity,
-        minimumQuantity: item.lowStockThreshold,
-        stockStatus: isOut ? 'OUT_OF_STOCK' : 'LOW_STOCK',
-        alertType: isOut ? 'out_of_stock' : 'low_stock',
-        severity: isOut ? 'critical' : 'high',
-        reason: isOut
-          ? `Out of stock: current quantity is 0 (minimum ${item.lowStockThreshold})`
-          : `Low stock: current quantity ${item.stockQuantity} is at or below minimum ${item.lowStockThreshold}`,
-        status: 'active',
-        reportedBy: 'System',
-        affectedOrders: 0,
-        createdAt: lastUpdated,
-        updatedAt: lastUpdated,
-      };
-    });
-    inventoryAlerts.sort((a, b) => {
-      if (a.stockStatus !== b.stockStatus) return a.stockStatus === 'OUT_OF_STOCK' ? -1 : 1;
-      return a.currentQuantity - b.currentQuantity;
-    });
+      const itemsToSync = new Map();
+      const breachItems = await MenuItem.find({
+        ...cafeteriaFilter(scope),
+        isActive: true,
+        $expr: { $lte: ['$stockQuantity', '$lowStockThreshold'] },
+      });
+      breachItems.forEach((i) => itemsToSync.set(String(i._id), i));
+      if (openItemIds.length) {
+        const openItems = await MenuItem.find({ _id: { $in: openItemIds } });
+        openItems.forEach((i) => itemsToSync.set(String(i._id), i));
+      }
+      await stockAlertService.syncItems([...itemsToSync.values()], { emit: true });
+    } catch (syncError) {
+      console.warn('⚠️ Stock alert sync pass failed:', syncError.message);
+    }
 
-    // ✅ 2) Manual kitchen reports (Report Issue / mark-unavailable) — the
-    //    existing StockAlert workflow (acknowledge/resolve) is preserved.
-    //    Inventory alerts show under "All"/"Active"; reports honor their filter.
-    const reportFilter = { reportedByRole: 'kitchen' };
+    // ✅ 2) Persisted alerts (system threshold alerts + manual reports).
+    const alertFilter = { ...cafeteriaFilter(scope) };
     if (status) {
-      reportFilter.status = status;
+      alertFilter.status = status;
     }
-    if (!scope.global) {
-      reportFilter.cafeteriaId = scope.cafeteriaId;
-    }
-    const includeReports = !status || ['active', 'acknowledged', 'resolved', 'cancelled'].includes(status);
-    const reports = includeReports
-      ? await StockAlert.find(reportFilter)
-          .populate('reportedBy', 'name role')
-          .populate('resolvedBy', 'name role')
-          .populate('acknowledgedBy', 'name role')
-          .populate('assignedTo', 'name role')
-          .sort({ createdAt: -1 })
-      : [];
+    const alertDocs = await StockAlert.find(alertFilter)
+      .populate('reportedBy', 'name role')
+      .populate('resolvedBy', 'name role')
+      .populate('itemId', 'stockQuantity lowStockThreshold name availabilityStatus qualityHold')
+      .populate('acknowledgedBy', 'name role')
+      .populate('assignedTo', 'name role')
+      .sort({ createdAt: -1 });
 
-    // Manual kitchen reports are listed newest-first so a freshly submitted
-    // report is immediately visible at the top of the page (both the kitchen
-    // list and the manager dashboard read from this same feed).
-    const reportsSorted = reports.map((alert) => ({
-      id: alert._id,
-      source: 'report',
-      itemName: alert.itemName,
-      alertType: alert.alertType,
-      severity: alert.severity,
-      reason: alert.reason,
-      status: alert.status,
-      stockStatus: null,
-      currentQuantity: null,
-      minimumQuantity: null,
-      reportedBy: alert.reportedBy?.name,
-      acknowledgedBy: alert.acknowledgedBy?.name || null,
-      assignedTo: alert.assignedTo?.name || null,
-      assignedNote: alert.assignedNote || null,
-      assignedAt: alert.assignedAt,
-      resolutionNote: alert.resolutionNote || null,
-      resolvedBy: alert.resolvedBy?.name || null,
-      resolvedAt: alert.resolvedAt,
-      affectedOrders: alert.affectedOrders?.length || 0,
-      createdAt: alert.createdAt,
-      updatedAt: alert.updatedAt,
-    })).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const serialized = alertDocs.map((alert) => serializeStockAlert(alert));
 
-    // Inventory alerts carry workflow status "active", so they appear under
-    // "All" (no status) and "active" only. New manual reports sort ABOVE
-    // inventory rows so they are seen first.
-    const includeInventory = !status || status === 'active';
-    const alerts = [
-      ...reportsSorted,
-      ...(includeInventory ? inventoryAlerts : []),
-    ];
+    // Reports stay newest-first at the top; system threshold alerts follow,
+    // out-of-stock first and lowest quantity first.
+    const reportsSorted = serialized
+      .filter((a) => a.source === 'report')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const inventorySorted = serialized
+      .filter((a) => a.source === 'inventory')
+      .sort((a, b) => {
+        if (a.stockStatus !== b.stockStatus) return a.stockStatus === 'OUT_OF_STOCK' ? -1 : 1;
+        return (a.currentQuantity || 0) - (b.currentQuantity || 0);
+      });
+
+    const activeSystem = inventorySorted.filter((a) => a.status === 'active' || a.status === 'acknowledged');
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      count: alerts.length,
-      lowStockCount: inventoryAlerts.filter((a) => a.stockStatus === 'LOW_STOCK').length,
-      outOfStockCount: inventoryAlerts.filter((a) => a.stockStatus === 'OUT_OF_STOCK').length,
-      alerts,
+      count: reportsSorted.length + inventorySorted.length,
+      lowStockCount: activeSystem.filter((a) => a.stockStatus === 'LOW_STOCK').length,
+      outOfStockCount: activeSystem.filter((a) => a.stockStatus === 'OUT_OF_STOCK').length,
+      alerts: [...reportsSorted, ...inventorySorted],
     });
   } catch (error) {
     console.error('❌ Get Stock Alerts Error:', error);
@@ -1638,8 +1757,72 @@ exports.getStockAlerts = async (req, res) => {
 };
 
 /**
- * @desc    Acknowledge a stock alert (manager recognizes the issue and can
- *          assign responsibility via `assignedTo` + an optional note).
+ * @desc    Single stock-alert details (read-only). Returns the authoritative
+ *          MongoDB record by id — including resolution fields when the alert
+ *          has been resolved — so kitchen staff can review resolution history.
+ *          Viewing NEVER mutates the alert (an active alert stays active).
+ * @route   GET /api/v1/kitchen/stock-alerts/:id
+ * @access  Private/Kitchen, Manager, Admin
+ */
+exports.getStockAlertDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const mongoose = require('mongoose');
+    const StockAlert = require('../models/StockAlert');
+    const { resolveCafeteriaScope, cafeteriaFilter, getDefaultCafeteriaId } = require('../utils/cafeteria');
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Invalid stock alert id',
+      });
+    }
+
+    // Same trusted server-side scoping as the list endpoint: admins see all;
+    // kitchen/manager users are limited to their assigned cafeteria.
+    let scope;
+    try {
+      scope = resolveCafeteriaScope(req);
+    } catch (scopeError) {
+      scope = { cafeteriaId: await getDefaultCafeteriaId(), global: false };
+    }
+
+    const query = { _id: id };
+    if (!scope.global) {
+      Object.assign(query, cafeteriaFilter(scope));
+    }
+
+    const alert = await StockAlert.findOne(query)
+      .populate('reportedBy', 'name role')
+      .populate('resolvedBy', 'name role')
+      .populate('itemId', 'stockQuantity lowStockThreshold name availabilityStatus qualityHold')
+      .populate('acknowledgedBy', 'name role')
+      .populate('assignedTo', 'name role');
+
+    if (!alert) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Stock alert not found',
+      });
+    }
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      alert: serializeStockAlert(alert),
+    });
+  } catch (error) {
+    console.error('❌ Get Stock Alert Details Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Acknowledge a stock alert (manager recognizes the issue and takes
+ *          responsibility: the alert is assigned to the requesting admin and
+ *          moves to `acknowledged` / IN_PROGRESS - it is NEVER resolved here).
  * @route   PATCH /api/kitchen/stock-alerts/:id/acknowledge
  * @access  Private/Kitchen
  * Body:    { assignedTo?, note? }
@@ -1648,7 +1831,8 @@ exports.getStockAlerts = async (req, res) => {
 exports.acknowledgeStockAlert = async (req, res) => {
   try {
     const { id } = req.params;
-    const { assignedTo, note } = req.body;
+    const { assignedTo, note } = req.body || {};
+    const mongoose = require('mongoose');
     const StockAlert = require('../models/StockAlert');
 
     const alert = await StockAlert.findById(id);
@@ -1660,48 +1844,83 @@ exports.acknowledgeStockAlert = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'This alert is already closed' });
     }
 
+    // ✅ Take Responsibility: persist the assignment to the admin who clicked
+    //    the button (unless a different assignee was explicitly chosen). The
+    //    frontend never knows other users' ids, so self-assignment is the
+    //    default - this used to stay `null` because the body never carried one.
+    let assigneeId = req.user.id;
+    if (assignedTo !== undefined && assignedTo !== null && String(assignedTo).trim() !== '') {
+      if (!mongoose.isValidObjectId(String(assignedTo))) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Invalid assignee id' });
+      }
+      assigneeId = String(assignedTo);
+    }
+
+    const firstAcknowledgement = alert.status !== 'acknowledged';
+    const assigneeChanged = String(alert.assignedTo || '') !== String(assigneeId);
+
     alert.status = 'acknowledged';
     alert.acknowledgedBy = req.user.id;
-    if (assignedTo) {
-      alert.assignedTo = assignedTo;
-      alert.assignedAt = new Date();
-    }
+    alert.assignedTo = assigneeId;
+    alert.assignedAt = new Date();
     if (note !== undefined) {
       alert.assignedNote = note || null;
     }
     await alert.save();
 
-    // Notify the reporting kitchen staff that a manager is on it.
-    const reporterId = alert.reportedBy;
-    await notifyUser(reporterId, {
-      title: 'Stock Issue Acknowledged',
-      message: `A manager acknowledged your report for ${alert.itemName}.`,
-      type: 'stock_alert',
-    });
+    await alert.populate('acknowledgedBy', 'name role');
+    await alert.populate('assignedTo', 'name role');
+
+    // Notify the reporting kitchen staff once, when the alert is first taken -
+    // a duplicate/replayed acknowledge must not spam the reporter.
+    if (firstAcknowledgement) {
+      const reporterId = alert.reportedBy;
+      await notifyUser(reporterId, {
+        title: 'Stock Issue Acknowledged',
+        message: `A manager acknowledged your report for ${alert.itemName}.`,
+        type: 'stock_alert',
+      });
+    }
 
     // Push the updated row to every open dashboard (manager + kitchen rooms)
     // so both sides update without a manual refresh.
-    const { emitSocketEvent } = require('../utils/socket');
-    emitSocketEvent('admin', 'stock:alert:updated', {
-      alertId: alert._id,
-      itemName: alert.itemName,
-      severity: alert.severity,
-      status: alert.status,
-      acknowledgedBy: req.user.name || null,
-      assignedNote: alert.assignedNote || null,
-      assignedAt: alert.assignedAt,
-      updatedAt: alert.updatedAt,
-    });
-    emitSocketEvent('kitchen', 'stock:alert:updated', {
-      alertId: alert._id,
-      itemName: alert.itemName,
-      status: alert.status,
-      updatedAt: alert.updatedAt,
-    });
+    if (firstAcknowledgement || assigneeChanged) {
+      const { emitSocketEvent } = require('../utils/socket');
+      emitSocketEvent('admin', 'stock:alert:updated', {
+        alertId: alert._id,
+        itemName: alert.itemName,
+        severity: alert.severity,
+        status: alert.status,
+        acknowledgedBy: alert.acknowledgedBy?.name || req.user.name || null,
+        assignedTo: alert.assignedTo?.name || null,
+        assignedNote: alert.assignedNote || null,
+        assignedAt: alert.assignedAt,
+        updatedAt: alert.updatedAt,
+      });
+      emitSocketEvent('kitchen', 'stock:alert:updated', {
+        alertId: alert._id,
+        itemName: alert.itemName,
+        status: alert.status,
+        updatedAt: alert.updatedAt,
+      });
+    }
 
-    res
-      .status(HTTP_STATUS.OK)
-      .json({ success: true, message: 'Alert acknowledged', alert: { id: alert._id, status: alert.status, assignedTo: alert.assignedTo } });
+    // Display-ready payload: lets the dashboard flip to IN_PROGRESS and swap
+    // "Take Responsibility" for "Mark Solved" straight from this response,
+    // without waiting for a follow-up list refetch.
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Alert acknowledged',
+      alert: {
+        id: alert._id,
+        status: alert.status,
+        acknowledgedBy: alert.acknowledgedBy?.name || req.user.name || null,
+        assignedTo: alert.assignedTo?.name || null,
+        assignedAt: alert.assignedAt,
+        assignedNote: alert.assignedNote || null,
+        updatedAt: alert.updatedAt,
+      },
+    });
   } catch (error) {
     console.error('❌ Acknowledge Stock Alert Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
@@ -1709,16 +1928,23 @@ exports.acknowledgeStockAlert = async (req, res) => {
 };
 
 /**
- * @desc    Resolve a stock alert (record resolution note + who resolved it)
+ * @desc    Resolve a stock alert (record resolution note + who resolved it).
+ *          A threshold alert (low_stock / out_of_stock) linked to an item is
+ *          only genuinely resolved when the ACTUAL stock condition is
+ *          satisfied - or when the manager records the real counted quantity
+ *          (which is applied atomically and audited). Submitting a restock
+ *          REQUEST never resolves an alert.
  * @route   PATCH /api/kitchen/stock-alerts/:id/resolve
  * @access  Private/Kitchen
- * Body:    { resolutionNote? }
- * Response: { success, message, alert }
+ * Body:    { resolutionReason, resolutionSolution, resolutionNote?, newStockQuantity? }
+ * Response: { success, resolved, message, alert }
  */
 exports.resolveStockAlert = async (req, res) => {
   try {
     const { id } = req.params;
     const StockAlert = require('../models/StockAlert');
+    const stockAlertService = require('../services/stock-alert.service');
+    const { normalizeRole } = require('../config/roles');
 
     const alert = await StockAlert.findById(id);
     if (!alert) {
@@ -1729,11 +1955,192 @@ exports.resolveStockAlert = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'This alert is already closed' });
     }
 
+    const resolutionReason = String((req.body && (req.body.resolutionReason || req.body.reason)) || '').trim();
+    const resolutionSolution = String((req.body && (req.body.resolutionSolution || req.body.correctiveAction || req.body.solutionOption)) || '').trim();
+    const details = String((req.body && (req.body.resolutionNote || req.body.resolutionDetails || req.body.details || req.body.note)) || '').trim();
+
+    if (!resolutionReason || !resolutionSolution) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Resolution reason and solution are required',
+      });
+    }
+    if ((resolutionReason === 'Other' || resolutionSolution === 'Other') && !details) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Please explain the selected Other option',
+      });
+    }
+
+    const rawQty = (req.body && (req.body.newStockQuantity ?? req.body.newQuantity ?? req.body.stockQuantity ?? req.body.updatedStockQuantity));
+    let resolvedQty = null;
+    const hasQty = rawQty !== undefined && rawQty !== null && String(rawQty).trim() !== '';
+    if (hasQty) {
+      const qty = Number(rawQty);
+      if (!Number.isInteger(qty) || qty < 0) {
+        return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Stock quantity must be a non-negative integer' });
+      }
+    }
+    const qtyValue = hasQty ? Number(rawQty) : null;
+
+    const MenuItem = require('../models/MenuItem');
+    let item = null;
+    if (alert.itemId) {
+      try { item = await MenuItem.findById(alert.itemId); } catch (e) { item = null; }
+    }
+    if (!item && alert.itemName) {
+      const normalized = String(alert.itemName || '').trim();
+      const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const nameMatches = await MenuItem.find({
+        cafeteriaId: alert.cafeteriaId,
+        $or: [
+          { 'name.en': { $regex: '^' + escaped + '$', $options: 'i' } },
+          { 'name.am': { $regex: '^' + escaped + '$', $options: 'i' } },
+        ],
+      });
+      if (nameMatches.length > 1) {
+        console.warn('Resolve stock alert ambiguous item', { reportId: String(alert._id), itemName: alert.itemName, matches: nameMatches.length });
+        return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'Multiple inventory items match this name; please update stock from the menu first.' });
+      }
+      if (nameMatches.length === 1) item = nameMatches[0];
+    }
+
+    // ✅ Optional counted-quantity update: applied atomically to the item's
+    //    authoritative stock, with a StockTransaction audit record. The value
+    //    is the REAL counted/received quantity - never a fabricated increase.
+    if (hasQty && item) {
+      const previous = Math.max(0, Number(item.stockQuantity) || 0);
+      const updatedItem = await MenuItem.findOneAndUpdate(
+        { _id: item._id },
+        { $set: { stockQuantity: qtyValue } },
+        { new: true }
+      );
+      if (updatedItem) {
+        stockAlertService.recalculateAvailability(updatedItem);
+        updatedItem.lastAvailabilityUpdate = new Date();
+        updatedItem.updatedBy = req.user.id;
+        try { await updatedItem.save({ validateBeforeSave: false }); } catch (e) { /* best-effort */ }
+        try {
+          const StockTransaction = require('../models/StockTransaction');
+          await StockTransaction.create({
+            foodId: updatedItem._id,
+            previousQuantity: previous,
+            quantityChanged: qtyValue - previous,
+            newQuantity: qtyValue,
+            action: 'SET',
+            performedBy: req.user.id,
+            performedByRole: normalizeRole(req.user.role),
+            cafeteriaId: updatedItem.cafeteriaId || alert.cafeteriaId || null,
+          });
+        } catch (e) { /* transaction log best-effort */ }
+        const { logAction } = require('../utils/audit');
+        await logAction({
+          req,
+          action: 'STOCK_QUANTITY_SET',
+          entityType: 'MenuItem',
+          entityId: String(updatedItem._id),
+          description: `${req.user.name || 'Staff'} set ${updatedItem.name?.en || 'item'} stock to ${qtyValue} while resolving an alert`,
+          cafeteriaId: updatedItem.cafeteriaId || alert.cafeteriaId,
+          metadata: {
+            itemId: String(updatedItem._id),
+            previousQuantity: previous,
+            newQuantity: qtyValue,
+            stockAlertId: String(alert._id),
+          },
+        });
+        item = updatedItem;
+        resolvedQty = qtyValue;
+        alert.itemId = updatedItem._id;
+      }
+    } else if (hasQty && !item) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Inventory item not found for this alert' });
+    }
+
+    // ✅ Genuine-resolution guard: a threshold alert linked to a real item can
+    //    only be resolved when the CURRENT database quantity actually satisfies
+    //    the configured rule (quantity above the minimum threshold). The
+    //    resolving admin cannot clear an unresolved physical stock problem just
+    //    to remove the alert - they record the real quantity or the item is
+    //    marked unavailable first.
+    let stillBreached = false;
+    let condition = null;
+    if (item && ['low_stock', 'out_of_stock'].includes(alert.alertType)) {
+      condition = stockAlertService.getThresholdCondition(item);
+      stillBreached = condition.breached;
+    }
+
+    if (stillBreached) {
+      if (!hasQty) {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          error: `Stock for ${alert.itemName} is still ${condition.alertType === 'out_of_stock' ? 'out of stock' : 'below the minimum threshold'} (current ${condition.quantity}, minimum ${condition.threshold}). Record the actual quantity received, or mark the item unavailable.`,
+          currentQuantity: condition.quantity,
+          minimumQuantity: condition.threshold,
+        });
+      }
+      // A real quantity was recorded but the condition persists (partial
+      // restock) → keep the alert open; the lifecycle sync refreshes it.
+      await stockAlertService.syncStockAlertsForItem(item);
+      if (resolvedQty !== null) {
+        // Persist the counted quantity on the still-open alert so the manager
+        // list can show what was physically counted, not just the response.
+        try {
+          await StockAlert.updateOne({ _id: alert._id }, { $set: { resolutionQuantity: resolvedQty } });
+        } catch (e) { /* best-effort */ }
+      }
+      // Report the status that is ACTUALLY stored right now (the sync pass may
+      // have re-created a system alert, while a manual/acknowledged alert keeps
+      // its state) - the frontend must never be told a status that is not in
+      // MongoDB.
+      const stillOpen = await StockAlert.findById(alert._id).select('status').lean();
+      return res.status(HTTP_STATUS.OK).json({
+        success: true,
+        resolved: false,
+        message: `Stock quantity updated to ${qtyValue}, but ${alert.itemName} is still below its minimum threshold (${condition.threshold}). The alert remains active.`,
+        alert: {
+          id: alert._id,
+          status: (stillOpen && stillOpen.status) || alert.status,
+          resolutionQuantity: resolvedQty,
+        },
+      });
+    }
+
+    // ✅ Condition satisfied (or not a verifiable threshold alert) → resolve.
     alert.status = 'resolved';
     alert.resolvedBy = req.user.id;
     alert.resolvedAt = new Date();
-    alert.resolutionNote = req.body.resolutionNote || null;
+    alert.resolutionNote = details || null;
+    alert.resolutionReason = resolutionReason;
+    alert.resolutionSolution = resolutionSolution;
+    alert.resolutionQuantity = resolvedQty;
     await alert.save();
+
+    // Quality issue resolved (inspection approved): lift the quality hold so
+    // the item can become AVAILABLE again (recalculate respects stock level).
+    if (alert.alertType === 'quality_issue' && item) {
+      try {
+        const otherOpenQuality = await StockAlert.countDocuments({
+          itemId: item._id,
+          alertType: 'quality_issue',
+          status: { $in: ['active', 'acknowledged'] },
+          _id: { $ne: alert._id },
+        });
+        if (otherOpenQuality === 0 && item.qualityHold === true) {
+          item.qualityHold = false;
+          stockAlertService.recalculateAvailability(item);
+          item.lastAvailabilityUpdate = new Date();
+          await item.save({ validateBeforeSave: false });
+        }
+      } catch (e) {
+        console.warn('⚠️ Could not lift quality hold:', e.message);
+      }
+    }
+
+    // Keep the threshold lifecycle in sync (resolves/creates any sibling
+    // system alerts according to the latest quantity).
+    if (item) {
+      await stockAlertService.syncStockAlertsForItem(item);
+    }
 
     // Notify the reporting kitchen staff that the issue was resolved.
     const reporterId = alert.reportedBy;
@@ -1765,13 +2172,481 @@ exports.resolveStockAlert = async (req, res) => {
 
     res
       .status(HTTP_STATUS.OK)
-      .json({ success: true, message: 'Alert marked as resolved', alert: { id: alert._id, status: alert.status } });
+      .json({ success: true, resolved: true, message: 'Alert marked as resolved', alert: {
+        id: alert._id,
+        status: alert.status,
+        resolutionReason: alert.resolutionReason,
+        resolutionSolution: alert.resolutionSolution,
+        resolutionNote: alert.resolutionNote,
+        resolutionQuantity: alert.resolutionQuantity,
+        // Display-ready resolver (name), so the dashboard can render the final
+        // Resolved state straight from this response without a refetch.
+        resolvedBy: req.user.name || null,
+        resolvedAt: alert.resolvedAt,
+        updatedAt: alert.updatedAt,
+      } });
   } catch (error) {
     console.error('❌ Resolve Stock Alert Error:', error);
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });
   }
 };
 
+// ============================================================
+// ORDER HISTORY & DETAILED VIEW
+// ============================================================
+
+/**
+ * @desc    Get detailed order view with item-level status
+ * @route   GET /api/kitchen/orders/:orderId/details
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/order-details.html → Show full order
+ * Response: { success, order }
+ */
+exports.getOrderDetails = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // `userId` is never read: the customer block below is built from the stored
+    // customerName/customerPhone. Only `kitchenStaffAssigned` is populated,
+    // because the response does read .name off it. Every populate here is its
+    // own round trip to Atlas.
+    const order = await Order.findOne({ orderId: orderId })
+      .populate('kitchenStaffAssigned', 'name');
+
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    const elapsed = getElapsedTime(order.createdAt);
+    const estimate = calculateEstimatedCompletionTime(order);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      order: {
+        id: order._id,
+        orderId: order.orderId,
+        customer: {
+          name: order.customerName,
+          phone: order.customerPhone,
+        },
+        orderType: order.orderType,
+        tableNumber: order.tableNumber,
+        status: order.status,
+        priority: order.priority,
+        items: order.items.map((item) => ({
+          id: item._id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          notes: item.notes,
+          itemStatus: item.itemStatus,
+          preparationStartedAt: item.preparationStartedAt,
+          preparationCompletedAt: item.preparationCompletedAt,
+        })),
+        subtotal: order.subtotal,
+        serviceFee: order.serviceFee,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        elapsedTime: elapsed,
+        estimatedCompletionTime: estimate,
+        preparationDelayReason: order.preparationDelayReason,
+        kitchenStaffAssigned: order.kitchenStaffAssigned?.name,
+        readyTime: order.readyTime,
+        completedTime: order.completedTime,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Get Order Details Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Update item-level preparation status
+ * @route   PATCH /api/kitchen/orders/:orderId/items/:itemId/status
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/order-details.html → Update item status
+ * Body: { itemStatus }
+ * Response: { success, message, order }
+ */
+exports.updateItemPreparationStatus = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { itemStatus } = req.body;
+
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    // Find the item in the order
+    const item = order.items.id(itemId);
+    if (!item) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Item not found in order',
+      });
+    }
+
+    // Update item status
+    item.itemStatus = itemStatus;
+    if (itemStatus === 'preparing') {
+      item.preparationStartedAt = new Date();
+    } else if (itemStatus === 'ready') {
+      item.preparationCompletedAt = new Date();
+    }
+
+    await order.save();
+
+    // Emit socket event
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent(`order:${orderId}`, 'item:status:updated', {
+      itemId: itemId,
+      itemStatus: itemStatus,
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: `Item status updated to ${itemStatus}`,
+      order: formatKitchenOrder(order),
+    });
+  } catch (error) {
+    console.error('❌ Update Item Preparation Status Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Add preparation delay reason
+ * @route   PATCH /api/kitchen/orders/:orderId/delay
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/dashboard.html → Report delay
+ * Body: { reason }
+ * Response: { success, message }
+ */
+exports.addPreparationDelay = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Delay reason is required',
+      });
+    }
+
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    order.preparationDelayReason = reason;
+    await order.save();
+
+    // Notify customer
+    await Notification.create({
+      userId: order.userId,
+      title: 'Order Delay',
+      message: `Your order #${orderId} is taking longer than expected. Reason: ${reason}`,
+      type: 'delay',
+      orderId: orderId,
+      isRead: false,
+    });
+
+    // Emit socket event
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent(`order:${orderId}`, 'order:delayed', {
+      reason: reason,
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Delay reason recorded and customer notified',
+    });
+  } catch (error) {
+    console.error('❌ Add Preparation Delay Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+/**
+ * Calculate estimated completion time based on menu items
+ */
+function calculateEstimatedCompletionTime(order) {
+  if (!order.items || order.items.length === 0) return null;
+
+  // Get max preparation time from all items
+  const MenuItem = require('../models/MenuItem');
+  let maxPrepTime = 0;
+  let itemCount = 0;
+
+  order.items.forEach((item) => {
+    const prepTime = item.preparationTime || 10;
+    maxPrepTime = Math.max(maxPrepTime, prepTime);
+    itemCount++;
+  });
+
+  // Add buffer for multiple items
+  const buffer = Math.ceil((itemCount - 1) * 2);
+  const estimatedMinutes = maxPrepTime + buffer;
+  const estimatedTime = new Date(Date.now() + estimatedMinutes * 60000);
+
+  return estimatedTime;
+}
+// ============================================================
+// ORDER HISTORY & DETAILED VIEW
+// ============================================================
+
+/**
+ * @desc    Get detailed order view with item-level status
+ * @route   GET /api/kitchen/orders/:orderId/details
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/order-details.html → Show full order
+ * Response: { success, order }
+ */
+exports.getOrderDetails = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    // `userId` is never read: the customer block below is built from the stored
+    // customerName/customerPhone. Only `kitchenStaffAssigned` is populated,
+    // because the response does read .name off it. Every populate here is its
+    // own round trip to Atlas.
+    const order = await Order.findOne({ orderId: orderId })
+      .populate('kitchenStaffAssigned', 'name');
+
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    const elapsed = getElapsedTime(order.createdAt);
+    const estimate = calculateEstimatedCompletionTime(order);
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      order: {
+        id: order._id,
+        orderId: order.orderId,
+        customer: {
+          name: order.customerName,
+          phone: order.customerPhone,
+        },
+        orderType: order.orderType,
+        tableNumber: order.tableNumber,
+        status: order.status,
+        priority: order.priority,
+        items: order.items.map((item) => ({
+          id: item._id,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price,
+          notes: item.notes,
+          itemStatus: item.itemStatus,
+          preparationStartedAt: item.preparationStartedAt,
+          preparationCompletedAt: item.preparationCompletedAt,
+        })),
+        subtotal: order.subtotal,
+        serviceFee: order.serviceFee,
+        totalAmount: order.totalAmount,
+        createdAt: order.createdAt,
+        elapsedTime: elapsed,
+        estimatedCompletionTime: estimate,
+        preparationDelayReason: order.preparationDelayReason,
+        kitchenStaffAssigned: order.kitchenStaffAssigned?.name,
+        readyTime: order.readyTime,
+        completedTime: order.completedTime,
+      },
+    });
+  } catch (error) {
+    console.error('❌ Get Order Details Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Update item-level preparation status
+ * @route   PATCH /api/kitchen/orders/:orderId/items/:itemId/status
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/order-details.html → Update item status
+ * Body: { itemStatus }
+ * Response: { success, message, order }
+ */
+exports.updateItemPreparationStatus = async (req, res) => {
+  try {
+    const { orderId, itemId } = req.params;
+    const { itemStatus } = req.body;
+
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    // Find the item in the order
+    const item = order.items.id(itemId);
+    if (!item) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Item not found in order',
+      });
+    }
+
+    // Update item status
+    item.itemStatus = itemStatus;
+    if (itemStatus === 'preparing') {
+      item.preparationStartedAt = new Date();
+    } else if (itemStatus === 'ready') {
+      item.preparationCompletedAt = new Date();
+    }
+
+    await order.save();
+
+    // Emit socket event
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent(`order:${orderId}`, 'item:status:updated', {
+      itemId: itemId,
+      itemStatus: itemStatus,
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: `Item status updated to ${itemStatus}`,
+      order: formatKitchenOrder(order),
+    });
+  } catch (error) {
+    console.error('❌ Update Item Preparation Status Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+/**
+ * @desc    Add preparation delay reason
+ * @route   PATCH /api/kitchen/orders/:orderId/delay
+ * @access  Private/Kitchen
+ *
+ * Frontend: kitchen/dashboard.html → Report delay
+ * Body: { reason }
+ * Response: { success, message }
+ */
+exports.addPreparationDelay = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Delay reason is required',
+      });
+    }
+
+    const order = await Order.findOne({ orderId: orderId });
+    if (!order) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    order.preparationDelayReason = reason;
+    await order.save();
+
+    // Notify customer
+    await Notification.create({
+      userId: order.userId,
+      title: 'Order Delay',
+      message: `Your order #${orderId} is taking longer than expected. Reason: ${reason}`,
+      type: 'delay',
+      orderId: orderId,
+      isRead: false,
+    });
+
+    // Emit socket event
+    const { emitSocketEvent } = require('../utils/socket');
+    emitSocketEvent(`order:${orderId}`, 'order:delayed', {
+      reason: reason,
+    });
+
+    res.status(HTTP_STATUS.OK).json({
+      success: true,
+      message: 'Delay reason recorded and customer notified',
+    });
+  } catch (error) {
+    console.error('❌ Add Preparation Delay Error:', error);
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      error: MESSAGES.SERVER_ERROR,
+    });
+  }
+};
+
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+
+/**
+ * Calculate estimated completion time based on menu items
+ */
+function calculateEstimatedCompletionTime(order) {
+  if (!order.items || order.items.length === 0) return null;
+
+  // Get max preparation time from all items
+  const MenuItem = require('../models/MenuItem');
+  let maxPrepTime = 0;
+  let itemCount = 0;
+
+  order.items.forEach((item) => {
+    const prepTime = item.preparationTime || 10;
+    maxPrepTime = Math.max(maxPrepTime, prepTime);
+    itemCount++;
+  });
+
+  // Add buffer for multiple items
+  const buffer = Math.ceil((itemCount - 1) * 2);
+  const estimatedMinutes = maxPrepTime + buffer;
+  const estimatedTime = new Date(Date.now() + estimatedMinutes * 60000);
+
+  return estimatedTime;
+}
 // ============================================================
 // ORDER HISTORY & DETAILED VIEW
 // ============================================================

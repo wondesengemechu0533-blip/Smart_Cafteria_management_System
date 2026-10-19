@@ -7,7 +7,7 @@
                         "test":  "tests"
                     },
     "scripts":  {
-                    "test":  "node verify-delivery-domain.js \u0026\u0026 node verify-delivery-issues.js \u0026\u0026 node verify-tracking-display.js \u0026\u0026 node verify-delivery-issue-routes.js && node verify-delivery-stage-gating.js \u0026\u0026 node verify-delivery-filter-tabs.js \u0026\u0026 node verify-delivery-notification-filters.js \u0026\u0026 node verify-staff-orders-display.js \u0026\u0026 node verify-db-resilience.js \u0026\u0026 node verify-cashier-payment.js \u0026\u0026 node verify-delivery-status-labels.js \u0026\u0026 node verify-manager-stage-actions.js && node verify-kitchen-send-to-delivery.js && node tests/kitchen-queue-render.test.js && node tests/delivery-gps-routes.smoke.js && node tests/delivery-tracking-i18n.smoke.js && node tests/kitchen-dashboard-cancelled.test.js",
+                    "test":  "node verify-delivery-domain.js \u0026\u0026 node verify-delivery-issues.js \u0026\u0026 node verify-tracking-display.js \u0026\u0026 node verify-delivery-issue-routes.js \u0026\u0026 node verify-delivery-stage-gating.js \u0026\u0026 node verify-delivery-filter-tabs.js \u0026\u0026 node verify-delivery-notification-filters.js \u0026\u0026 node verify-staff-orders-display.js \u0026\u0026 node verify-db-resilience.js \u0026\u0026 node verify-cashier-payment.js \u0026\u0026 node verify-refund-notification.js \u0026\u0026 node verify-delivery-status-labels.js \u0026\u0026 node verify-manager-stage-actions.js \u0026\u0026 node verify-kitchen-send-to-delivery.js \u0026\u0026 node tests/kitchen-queue-render.test.js \u0026\u0026 node tests/kitchen-403-session.test.js \u0026\u0026 node tests/order-read-access.test.js \u0026\u0026 node tests/order-tracking-poll-stop.test.js \u0026\u0026 node tests/kitchen-settings-contract.test.js \u0026\u0026 node tests/kitchen-schedule-day.test.js \u0026\u0026 node tests/delivery-gps-routes.smoke.js \u0026\u0026 node tests/delivery-tracking-i18n.smoke.js \u0026\u0026 node tests/kitchen-dashboard-cancelled.test.js \u0026\u0026 node tests/cancel-confirm-button.test.js \u0026\u0026 node tests/order-access-policy.test.js \u0026\u0026 node tests/restock-workflow.test.js \u0026\u0026 node tests/report-review-workflow.test.js \u0026\u0026 node tests/kitchen-resolved-alert-details.test.js && node tests/stock-alert-admin-workflow.test.js && node tests/admin-dashboard-date-range.test.js && node tests/checkout-table-selection.test.js && node tests/manager-inventory-actions.test.js",
                     "start":  "node server.js",
                     "verify:delivery":  "node verify-delivery-domain.js",
                     "verify:issues":  "node verify-delivery-issues.js",
@@ -19,6 +19,9 @@
                     "verify:manager-actions":  "node verify-manager-stage-actions.js",
                     "verify:stage-gating":  "node verify-delivery-stage-gating.js \u0026\u0026 node verify-delivery-filter-tabs.js \u0026\u0026 node verify-delivery-notification-filters.js",
                     "verify:staff-orders":  "node verify-staff-orders-display.js",
+                    "test:restock":  "node tests/restock-workflow.test.js",
+                    "test:report-workflow":  "node tests/report-review-workflow.test.js",
+                    "verify:refund-notification":  "node verify-refund-notification.js",
                     "dev":  "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1",
                     "dev:nowatch":  "powershell -NoProfile -ExecutionPolicy Bypass -File start-dev.ps1 -NoWatch",
                     "seed":  "node src/utils/seeder.js",

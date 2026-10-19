@@ -404,8 +404,17 @@ document.addEventListener("DOMContentLoaded", () => {
                 const filled = i < f.rating;
                 return `<i class="fa-solid fa-star" style="color:${filled ? "#ffb400" : "#d1d5db"}; font-size:14px;"></i>`;
             }).join("");
-            const replyHtml = f.reply
-                ? `<div style="margin-top:8px; padding:8px 10px; background:#f3f4f6; border-radius:6px; font-size:13px; color:#374151;"><strong>${isAm ? "ምላሽ:" : "Reply:"}</strong> ${escapeHtml(f.reply)}</div>`
+            // The staff reply. `f.reply` is supplied by GET /feedback/my - if it
+            // is empty there is genuinely no reply yet, so nothing is painted.
+            const replyText = (f.reply || "").trim();
+            const replyHtml = replyText
+                ? `<div style="margin-top:10px; padding:10px 12px; background:#f3f4f6; border-left:3px solid #9ca3af; border-radius:6px; font-size:13px; color:#374151; line-height:1.5;">
+                       <div style="font-weight:700; margin-bottom:4px; color:#111827;">
+                           <i class="fa-solid fa-reply" style="margin-right:4px;"></i>${isAm ? "ምላሽ" : "Reply from our team"}
+                       </div>
+                       <div>${escapeHtml(replyText)}</div>
+                       ${f.repliedAt ? `<div style="margin-top:6px; font-size:11px; color:#6b7280;">${new Date(f.repliedAt).toLocaleString()}</div>` : ""}
+                   </div>`
                 : "";
             return `
                 <div class="review-card" style="background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:14px; margin-bottom:12px;">
@@ -467,7 +476,10 @@ document.addEventListener("DOMContentLoaded", () => {
         try { renderPastFeedback(); } catch (e) {}
     });
 
-    // Real-time: when admin replies, notification arrives via customer-realtime.js
+    // Real-time: when admin replies, the server emits BOTH a `feedback:reply`
+    // frame and a `notification:new` (title contains "feedback"). Listening to
+    // the dedicated event is what makes the reply appear on an open page
+    // without a reload; the notification path is kept as a fallback.
     window.addEventListener("customer:notification", (e) => {
         const n = e.detail;
         if (n && n.title && n.title.toLowerCase().includes("feedback")) {
@@ -476,6 +488,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
     window.addEventListener("notification:refresh", renderPastFeedback);
+
+    function bindReplySocket() {
+        var sc = window.ScosSocketBridge || window.socketClient || null;
+        if (!sc || typeof sc.on !== "function" || sc.__feedbackReplyBound) return;
+        sc.__feedbackReplyBound = true;
+        sc.on("feedback:reply", function () {
+            renderPastFeedback();
+        });
+    }
+    bindReplySocket();
+    if (!window.ScosSocketBridge) window.addEventListener("scos:socket-bridge-ready", bindReplySocket);
+
     // Also listen directly to socket if customer-realtime not loaded
     if (typeof io !== "undefined") {
         try {
@@ -486,6 +510,9 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (n && n.title && n.title.toLowerCase().includes("feedback")) {
                         renderPastFeedback();
                     }
+                });
+                s.on("feedback:reply", () => {
+                    renderPastFeedback();
                 });
             }
         } catch {}

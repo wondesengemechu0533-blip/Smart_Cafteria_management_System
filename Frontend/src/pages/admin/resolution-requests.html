@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resolution Requests — Smart Cafeteria Admin</title>
+  <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="../../css/style.css">
+  <link rel="stylesheet" href="/src/css/admin.css">
+  <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+  <script src="../../js/theme.js"></script>
+  <style>
+    .requests-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; flex-wrap:wrap; gap:10px; }
+    .requests-header h1 { font-size:1.45rem; font-weight:700; margin:0; }
+    .request-tabs { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+    .request-tab { padding:8px 16px; border-radius:8px; border:1px solid #e5e7eb; background:#fff; font-size:0.85rem; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:6px; }
+    .request-tab.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+    .request-tab .tab-count { background:#f3f4f6; border-radius:999px; padding:2px 8px; font-size:0.75rem; font-weight:700; }
+    .request-tab.active .tab-count { background:rgba(255,255,255,0.25); }
+    .requests-table-wrap { background:#fff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden; }
+    .requests-table { width:100%; border-collapse:collapse; font-size:0.88rem; }
+    .requests-table th { text-align:left; padding:12px 14px; background:#f9fafb; font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; border-bottom:1px solid #e5e7eb; }
+    .requests-table td { padding:12px 14px; border-bottom:1px solid #f3f4f6; vertical-align:top; }
+    .requests-table tr:last-child td { border-bottom:none; }
+    .req-status-badge { display:inline-block; padding:3px 10px; border-radius:999px; font-size:0.72rem; font-weight:700; }
+    .req-status-PENDING { background:#fef3c7; color:#92400e; }
+    .req-status-IN_PROGRESS { background:#dbeafe; color:#1e40af; }
+    .req-status-RESOLVED { background:#d1fae5; color:#065f46; }
+    .req-status-REJECTED { background:#fee2e2; color:#991b1b; }
+    .empty-state { text-align:center; padding:40px 20px; color:#9ca3af; }
+    .empty-state i { font-size:2rem; margin-bottom:10px; display:block; }
+    .loading-state { text-align:center; padding:30px; color:#9ca3af; }
+
+    /* Request details modal */
+    .req-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.45); display:none; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+    .req-modal-backdrop.active { display:flex; }
+    .req-modal { background:#fff; border-radius:14px; max-width:640px; width:100%; max-height:90vh; overflow-y:auto; padding:28px; box-shadow:0 20px 60px rgba(0,0,0,0.2); }
+    .req-modal h2 { margin:0 0 6px; font-size:1.2rem; font-weight:700; }
+    .req-modal .modal-meta { margin-bottom:14px; display:flex; gap:8px; flex-wrap:wrap; }
+    .detail-block { margin-bottom:16px; }
+    .detail-block h4 { font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:#9ca3af; margin:0 0 4px; }
+    .detail-block p { margin:0; font-size:0.92rem; color:#1f2937; }
+    .solution-box { background:#f9fafb; border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; font-size:0.88rem; white-space:pre-wrap; margin-top:4px; }
+    .solution-meta { font-size:0.75rem; color:#9ca3af; margin-top:4px; }
+    .form-error { color:#dc2626; font-size:0.78rem; margin-top:4px; }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+    textarea, select.form-select { width:100%; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-family:inherit; font-size:0.92rem; resize:vertical; }
+
+    [data-theme="dark"] .requests-table-wrap { background:#0f172a; border-color:#334155; }
+    [data-theme="dark"] .requests-table th { background:#1e293b; color:#94a3b8; border-color:#334155; }
+    [data-theme="dark"] .requests-table td { border-color:#1e293b; color:#e2e8f0; }
+    [data-theme="dark"] .request-tab { background:#1e293b; border-color:#334155; color:#94a3b8; }
+    [data-theme="dark"] .request-tab.active { background:#2563eb; border-color:#2563eb; color:#fff; }
+    [data-theme="dark"] .req-modal { background:#0f172a; }
+    [data-theme="dark"] .solution-box { background:#1e293b; border-color:#334155; }
+    [data-theme="dark"] textarea, [data-theme="dark"] select.form-select { background:#1e293b; border-color:#334155; color:#e2e8f0; }
+    [data-theme="dark"] .req-status-PENDING { background:#78350f; color:#fde68a; }
+    [data-theme="dark"] .req-status-IN_PROGRESS { background:#1e3a5f; color:#93c5fd; }
+    [data-theme="dark"] .req-status-RESOLVED { background:#064e3b; color:#6ee7b7; }
+    [data-theme="dark"] .req-status-REJECTED { background:#7f1d1d; color:#fca5a5; }
+  </style>
+</head>
+<body>
+  <div id="appLayout"></div>
+  <main class="main-content" id="mainContent" style="padding:24px;">
+    <div class="requests-header">
+      <h1><i class="fa-solid fa-file-signature"></i> <span data-i18n="req_page_title">Resolution Requests</span></h1>
+      <button type="button" class="btn btn-outline-primary" id="refreshBtn">
+        <i class="fa-solid fa-rotate"></i> <span data-i18n="common_refresh">Refresh</span>
+      </button>
+    </div>
+
+    <div class="request-tabs" id="requestTabs">
+      <button type="button" class="request-tab active" data-status="">
+        <span data-i18n="filter_all">All</span> <span class="tab-count" id="countAll">0</span>
+      </button>
+      <button type="button" class="request-tab" data-status="PENDING">
+        <span data-i18n="req_status_pending">Pending</span> <span class="tab-count" id="countPending">0</span>
+      </button>
+      <button type="button" class="request-tab" data-status="IN_PROGRESS">
+        <span data-i18n="req_status_in_progress">In Progress</span> <span class="tab-count" id="countInProgress">0</span>
+      </button>
+      <button type="button" class="request-tab" data-status="RESOLVED">
+        <span data-i18n="req_status_resolved">Resolved</span> <span class="tab-count" id="countResolved">0</span>
+      </button>
+      <button type="button" class="request-tab" data-status="REJECTED">
+        <span data-i18n="req_status_rejected">Rejected</span> <span class="tab-count" id="countRejected">0</span>
+      </button>
+    </div>
+
+    <div class="requests-table-wrap">
+      <table class="requests-table">
+        <thead>
+          <tr>
+            <th data-i18n="req_col_issue">Issue</th>
+            <th data-i18n="req_col_action">Requested Action</th>
+            <th data-i18n="req_col_manager">Manager</th>
+            <th data-i18n="req_col_submitted">Submitted</th>
+            <th data-i18n="req_col_status">Status</th>
+            <th data-i18n="common_actions">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="requestsTableBody">
+          <tr><td colspan="6" class="loading-state" id="loadingRow"><i class="fa-solid fa-spinner fa-spin"></i> <span data-i18n="req_loading">Loading requests…</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+
+  <!-- Request details modal -->
+  <div class="req-modal-backdrop" id="reqModalBackdrop">
+    <div class="req-modal" id="reqModalContent"></div>
+  </div>
+
+  <script src="../../js/config.js"></script>
+  <script src="../../js/admin-api.js"></script>
+  <script src="../../js/admin-layout.js"></script>
+  <script src="../../js/roles.js"></script>
+  <script src="../../js/resolution-requests.js"></script>
+</body>
+</html>

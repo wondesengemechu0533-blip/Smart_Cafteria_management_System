@@ -1,13 +1,11 @@
+import api from '../../js/api.js';
+
 function tr(key, fallback, vars) {
   if (typeof window.tr === "function") return window.tr(key, fallback, vars);
   return fallback;
 }
-import api from '../../js/api.js';
 
-const settingsContainer = document.getElementById('settingsContent');
-const toastEl = document.getElementById('toast');
-
-let settings = {
+const DEFAULT_SETTINGS = {
     stationName: 'Station 1',
     orderAlertSound: true,
     preparationTimerAlert: true,
@@ -16,6 +14,11 @@ let settings = {
     autoRefreshInterval: 10,
     showCompletedOrders: true,
 };
+
+let settings = { ...DEFAULT_SETTINGS };
+
+const settingsContainer = document.getElementById('settingsContent');
+const toastEl = document.getElementById('toast');
 
 function showToast(msg, type = 'success') {
     toastEl.textContent = msg;
@@ -122,11 +125,43 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Translate the server's stored shape into the shape this form uses.
+ *
+ * WHY: the API persists station / notificationSound / autoRefresh / refreshInterval
+ * (see KitchenSetting.js), while the form is built from stationName /
+ * generalNotificationSound / autoRefreshEnabled / autoRefreshInterval.
+ *
+ * The page used to just spread the response over its own defaults:
+ *     settings = { ...settings, ...data.settings };
+ * which added the server's four keys alongside the form's four - so the inputs,
+ * which read the FORM names, always showed the hardcoded defaults and the real
+ * saved values were never rendered, no matter what was stored. It also left the
+ * old stationName/autoRefreshEnabled keys on the object, so a later save could
+ * re-send stale values.
+ *
+ * `??` rather than `||` throughout: these are booleans and a 0 interval is
+ * meaningful, and `||` would quietly replace a saved `false` with `true`.
+ */
+function fromServer(s) {
+    const v = s || {};
+    return {
+        stationName: v.station ?? v.stationName ?? DEFAULT_SETTINGS.stationName,
+        orderAlertSound: v.orderAlertSound ?? DEFAULT_SETTINGS.orderAlertSound,
+        preparationTimerAlert: v.preparationTimerAlert ?? DEFAULT_SETTINGS.preparationTimerAlert,
+        generalNotificationSound:
+            v.notificationSound ?? v.generalNotificationSound ?? DEFAULT_SETTINGS.generalNotificationSound,
+        autoRefreshEnabled: v.autoRefresh ?? v.autoRefreshEnabled ?? DEFAULT_SETTINGS.autoRefreshEnabled,
+        autoRefreshInterval: v.refreshInterval ?? v.autoRefreshInterval ?? DEFAULT_SETTINGS.autoRefreshInterval,
+        showCompletedOrders: v.showCompletedOrders ?? DEFAULT_SETTINGS.showCompletedOrders,
+    };
+}
+
 async function loadSettings() {
     try {
         const data = await api.get('/kitchen/settings');
         if (data.success && data.settings) {
-            settings = { ...settings, ...data.settings };
+            settings = fromServer(data.settings);
             // Seed the shared sound flag from kitchen prefs on first load
             // (only when user has not already set an explicit toggle this session).
             try {
@@ -139,6 +174,10 @@ async function loadSettings() {
     } catch (err) {
         console.warn('Could not load settings, using defaults:', err);
     }
+    // The header badge shows the station name everywhere else in the kitchen, so
+    // it must follow what was actually saved rather than the placeholder.
+    const badge = document.getElementById('stationBadge');
+    if (badge) badge.textContent = settings.stationName;
     renderSettings();
 }
 
@@ -162,14 +201,30 @@ window.saveSettings = async function () {
         const payload = collectForm();
         const data = await api.put('/kitchen/settings', payload);
         if (data.success) {
-            settings = { ...settings, ...payload };
+            // Re-read the server's copy rather than assuming the write landed.
+            // The old code merged the REQUEST back into `settings`, so a field
+            // the server quietly dropped still looked saved in the UI until the
+            // next reload - which is how four settings could appear to work and
+            // persist nothing at all.
+            settings = fromServer(data.settings || payload);
+
+            if (Array.isArray(data.ignoredFields) && data.ignoredFields.length) {
+                console.warn(
+                    `[kitchen-settings] server ignored: ${data.ignoredFields.join(', ')} - ` +
+                    'the request and the API disagree on these names'
+                );
+            }
             // Keep dashboard / notification-sound mute in sync with kitchen settings.
             try {
-                const soundOn = !!(payload.orderAlertSound && payload.generalNotificationSound);
+                const soundOn = !!(settings.orderAlertSound && settings.generalNotificationSound);
                 localStorage.setItem('scos_notify_sound', soundOn ? '1' : '0');
             } catch (e) { /* ignore */ }
             const badge = document.getElementById('stationBadge');
             if (badge) badge.textContent = settings.stationName;
+            // Put the confirmed value back in the input so what is on screen is
+            // what the server actually stored.
+            const nameInput = document.getElementById('stationName');
+            if (nameInput) nameInput.value = settings.stationName;
             showToast(tr('kitchen_settings_saved', 'Settings saved successfully'));
         } else {
             showToast(tr('kitchen_settings_save_failed', 'Failed to save settings'), 'error');

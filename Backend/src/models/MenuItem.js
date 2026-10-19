@@ -70,6 +70,11 @@ const MenuItemSchema = new mongoose.Schema(
     stockQuantity: { type: Number, default: 50, min: 0 },
     lowStockThreshold: { type: Number, default: 5, min: 0 },
     availabilityStatus: { type: String, enum: ['AVAILABLE', 'OUT_OF_STOCK', 'UNAVAILABLE'], default: 'AVAILABLE' },
+    // Quality hold: set when a quality issue is reported for this item. While
+    // true the item must not be flipped back to AVAILABLE automatically or by
+    // a plain availability toggle - the quality issue has to be inspected and
+    // resolved first (stock alert / issue report workflow).
+    qualityHold: { type: Boolean, default: false },
     isPopular: { type: Boolean, default: false },
     isRecommended: { type: Boolean, default: false },
     showOnHomepage: { type: Boolean, default: false },

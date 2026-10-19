@@ -30,6 +30,40 @@ function __registerLangChange(fn) {
   var loadSeq = 0;
   var pendingToggleUser = null;
   var pendingDeleteUser = null;
+  var isCafeteriaAdmin = (window.ScosRoles && typeof window.ScosRoles.getCurrentRole === "function" && window.ScosRoles.getCurrentRole() === "cafeteria_admin");
+
+  function applyCafeteriaAdminRestrictions() {
+    if (!isCafeteriaAdmin) return;
+    var allowedRoles = ["kitchen", "delivery", "cashier"];
+    var roleFilter = document.getElementById("roleFilter");
+    if (roleFilter) {
+      Array.prototype.slice.call(roleFilter.options).forEach(function (opt) {
+        if (opt.value && allowedRoles.indexOf(opt.value) === -1) opt.remove();
+      });
+    }
+    var roleSelect = document.getElementById("userRole");
+    if (roleSelect) {
+      Array.prototype.slice.call(roleSelect.options).forEach(function (opt) {
+        if (allowedRoles.indexOf(opt.value) === -1) opt.remove();
+      });
+    }
+    var h1 = document.querySelector(".page-header h1");
+    if (h1) {
+      h1.setAttribute("data-i18n", "admin_staff_management_title");
+      h1.textContent = "Staff Management";
+    }
+    var subtitle = document.querySelector(".page-header .subtitle");
+    if (subtitle) {
+      subtitle.setAttribute("data-i18n", "admin_staff_management_subtitle");
+      subtitle.textContent = "Manage cafeteria staff members";
+    }
+    var titleEl = document.querySelector("title");
+    if (titleEl) {
+      titleEl.setAttribute("data-i18n", "admin_staff_management_page_title");
+      titleEl.textContent = "Staff Management - Smart Cafeteria";
+    }
+    document.title = "Staff Management - Smart Cafeteria";
+  }
 
   /* ----------------------------------------------------------------
    * HELPERS
@@ -44,8 +78,7 @@ function __registerLangChange(fn) {
     system_admin: { key: "role_system_admin", en: "System Admin" },
     admin:    { key: "role_system_admin", en: "System Admin" },
     staff:    { key: "role_staff", en: "Staff" },
-    student:  { key: "role_student", en: "Student" },
-    tax_authority: { key: "role_tax_authority", en: "Tax Authority" }
+    student:  { key: "role_student", en: "Student" }
   };
   var STATUS_LABELS = {
     ACTIVE:    { key: "status_active", en: "Active" },
@@ -626,6 +659,7 @@ function __registerLangChange(fn) {
    * INIT
    * ---------------------------------------------------------------- */
   function init() {
+    applyCafeteriaAdminRestrictions();
     bindEvents();
     loadStats();
     loadUsers();

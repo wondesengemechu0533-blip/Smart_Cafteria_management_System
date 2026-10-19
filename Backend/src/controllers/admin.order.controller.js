@@ -5,6 +5,7 @@ const Payment = require('../models/Payment');
 const Notification = require('../models/Notification');
 const { PAYMENT_STATUS, REFUND_STATUS, ORDER_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
 const { logAction } = require('../utils/audit');
+const { computeRefundSummary } = require('../utils/money');
 const OrderStatusHistory = require('../models/OrderStatusHistory');
 const MenuItem = require('../models/MenuItem');
 const StockTransaction = require('../models/StockTransaction');
@@ -510,6 +511,13 @@ exports.cancelOrder = async (req, res) => {
             performedBy: req.user.id,
             orderId: order._id,
           });
+          // Keep stock alerts in sync with the restored quantity (best-effort).
+          try {
+            const { syncStockAlertsForItem } = require('../services/stock-alert.service');
+            await syncStockAlertsForItem(food);
+          } catch (e) {
+            console.warn('⚠️ Stock alert sync after admin cancellation restore failed:', e.message);
+          }
         }
       }
       order.inventoryRestored = true;
@@ -566,19 +574,20 @@ exports.cancelOrder = async (req, res) => {
     const refundAlreadyQueued = ['REFUND_REQUESTED', 'REFUND_APPROVED', 'REFUND_PROCESSING', 'REFUNDED'].includes(
       String(order.refundStatus || '').toUpperCase()
     );
-    if (paidForCancel && !refundAlreadyQueued && Number(order.totalAmount) > 0) {
+    if (paidForCancel && !refundAlreadyQueued && computeRefundSummary(order).refundAmount > 0) {
+      const refundSummary = computeRefundSummary(order);
       order.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
-      order.refundAmount = order.totalAmount;
+      order.refundAmount = refundSummary.refundAmount;
       await order.save();
       if (cancellation) {
         cancellation.refundStatus = REFUND_STATUS.REFUND_REQUESTED;
-        cancellation.refundAmount = order.totalAmount;
+        cancellation.refundAmount = refundSummary.refundAmount;
         await cancellation.save();
       }
       try {
         await Payment.findOneAndUpdate(
           { orderId: order._id },
-          { status: 'PAID', refundStatus: 'PENDING', refundAmount: order.totalAmount }
+          { status: 'PAID', refundStatus: 'PENDING', refundAmount: refundSummary.refundAmount }
         );
       } catch (_) {
         /* best effort */
@@ -592,7 +601,7 @@ exports.cancelOrder = async (req, res) => {
         userId: order.userId,
         title: 'Order Cancelled',
         message: refundQueued
-          ? `Your order #${order.orderId} has been cancelled. A refund of ${order.totalAmount} ETB will be processed by an administrator.`
+          ? `Your order #${order.orderId} has been cancelled. A refund of ${order.refundAmount} ETB will be processed by an administrator.`
           : `Your order #${order.orderId} has been cancelled${adminNote ? ': ' + adminNote : '.'}`,
         type: 'order',
         orderId: order.orderId,
@@ -741,34 +750,30 @@ exports.refundOrder = async (req, res) => {
     // of truth for every "process refund" button): request -> mark processing ->
     // confirm (provider confirmation). It re-checks the cancelled/paid/not-already-
     // refunded guards and notifies + broadcasts the refund to the customer.
+    // Refund Amount = order Subtotal (VAT excluded from the refund summary).
     const cancellation = await svc.completeOrderRefund({
       order,
       actorId: req.user.id,
-      amount: order.totalAmount,
+      amount: computeRefundSummary(order).refundAmount,
     });
 
-    // Keep the standalone Payment record in sync (best effort).
-    try {
-      await Payment.findOneAndUpdate(
-        { orderId: order._id },
-        {
-          status: 'REFUNDED',
-          refundStatus: 'REFUNDED',
-          refundedAt: new Date(),
-          refundAmount: cancellation.refundAmount,
-          refundReference: cancellation.refundReference,
-        }
-      );
-    } catch (_) {
-      /* best effort */
-    }
-
-    // Also update the embedded payment.status on the order document.
-    try {
-      order.payment.status = 'REFUNDED';
-      await order.save();
-    } catch (_) {
-      /* best effort */
+    // NOTE: completeOrderRefund marks the order, the cancellation and the
+    // Payment record REFUNDED, then notifies the customer - all inside
+    // svc.confirmRefund. This controller used to repeat the Payment write
+    // afterwards (best-effort, so it could silently fail), plus a third copy of
+    // the payment status on the order's embedded `payment` subdocument. That
+    // drift is gone; the refund is now committed in one place.
+    // Also mirrors the settled status onto the embedded payment subdocument so
+    // a serializer reading `order.payment.status` cannot disagree with the
+    // top-level `order.paymentStatus`.
+    if (order.payment) {
+      try {
+        order.payment.status = 'REFUNDED';
+        order.payment.providerReference = order.payment.providerReference || cancellation.refundReference;
+        await order.save();
+      } catch (embeddedError) {
+        console.error('⚠️ Embedded payment status sync failed:', embeddedError.message);
+      }
     }
 
     await logAction({

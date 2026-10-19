@@ -304,7 +304,9 @@
     var canvas = document.getElementById('revenueChart');
     if (!canvas || typeof Chart === 'undefined') return;
 
-    var days = (series && series.last7Days) || [];
+    // Accepts the day-array directly (chart.series). Also tolerates the old
+    // { last7Days: [...] } envelope and a bare {days,series} object.
+    var days = Array.isArray(series) ? series : (series && (series.series || series.last7Days)) || [];
     var labels = days.map(function (d) {
       var parts = d.date.split('-');
       return parts[1] + '/' + parts[2];
@@ -469,67 +471,26 @@
       .join('');
   }
 
-  function renderRecentPayments(payments) {
-    var tbody = document.getElementById('recentPaymentsTableBody');
-    if (!tbody) return;
-
-    if (!payments || payments.length === 0) {
-      tbody.innerHTML =
-        '<tr><td colspan="6" class="table-empty">' +
-        t('admin_no_payments_yet', 'No payments recorded yet.') +
-        '</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = payments
-      .map(function (p) {
-        var customer = p.customer ? p.customer.name : p.phone || '—';
-        var provider = p.provider || p.method || '—';
-        return (
-          '<tr>' +
-          '<td><strong>' +
-          window.esc(p.transactionId || '—') +
-          '</strong></td>' +
-          '<td>' +
-          window.esc(customer) +
-          '</td>' +
-          '<td>' +
-          money(p.amount) +
-          ' ' +
-          window.esc(p.currency || 'ETB') +
-          '</td>' +
-          '<td>' +
-          window.esc(provider) +
-          '</td>' +
-          '<td><span class="order-badge ' +
-          badgeClass(p.status) +
-          '">' +
-          window.esc(p.status || '—') +
-          '</span></td>' +
-          '<td>' +
-          formatDateTime(p.createdAt) +
-          '</td>' +
-          '</tr>'
-        );
-      })
-      .join('');
-  }
 
   /* ====================================================================
    * DATE RANGE & FILTERING
    * ==================================================================== */
   function applyDateRange(range) {
     currentDateRange = range;
-    var customInputs = document.querySelectorAll('.custom-date-input');
     var isCustom = range === 'custom';
-    customInputs.forEach(function (el) {
-      el.style.display = isCustom ? 'inline-block' : 'none';
-    });
+    var container = document.querySelector('.custom-date-inputs');
+    if (container) container.style.display = isCustom ? 'block' : 'none';
 
-    // Update active button
     document.querySelectorAll('.date-range-btn').forEach(function (btn) {
       btn.classList.toggle('active', btn.dataset.range === range);
     });
+
+    if (isCustom) {
+      var startEl = document.getElementById('startDateInput');
+      var endEl = document.getElementById('endDateInput');
+      if (startEl && endEl && startEl.value && endEl.value) loadDashboard();
+      return;
+    }
 
     loadDashboard();
   }
@@ -557,17 +518,10 @@
 
     // Clear table search boxes and reset any per-row filtering
     var orderSearch = document.getElementById('orderSearchInput');
-    var paymentSearch = document.getElementById('paymentSearchInput');
     if (orderSearch) orderSearch.value = '';
-    if (paymentSearch) paymentSearch.value = '';
     var oBody = document.getElementById('recentOrdersTableBody');
-    var pBody = document.getElementById('recentPaymentsTableBody');
     if (oBody)
       oBody.querySelectorAll('tr').forEach(function (row) {
-        row.style.display = '';
-      });
-    if (pBody)
-      pBody.querySelectorAll('tr').forEach(function (row) {
         row.style.display = '';
       });
 
@@ -740,6 +694,34 @@
   /* ====================================================================
    * DATA LOADING
    * ==================================================================== */
+  // Map the active date-range button (7d/30d/90d/custom) to the ?days= window
+  // the dashboard endpoint understands. Custom falls back to 7 until both
+  // dates are picked (setCustomDateRange warns first).
+  function currentRangeDays() {
+    if (currentDateRange === '30d') return 30;
+    if (currentDateRange === '90d') return 90;
+    if (currentDateRange === 'custom') {
+      var startEl = document.getElementById('startDateInput');
+      var endEl = document.getElementById('endDateInput');
+      if (startEl && endEl && startEl.value && endEl.value) {
+        var ms = new Date(endEl.value) - new Date(startEl.value);
+        var span = Math.round(ms / 86400000) + 1;
+        if (span >= 1 && span <= 90) return span;
+      }
+      return 7;
+    }
+    return 7;
+  }
+
+  function updateRevenueChartTitle(days) {
+    var titleEl = document.getElementById('revenueChartTitle');
+    if (!titleEl) return;
+    var key = 'admin_revenue_last' + days;
+    var fallback = 'Revenue (Last ' + days + ' Days)';
+    titleEl.innerHTML = '<i class="fa-solid fa-chart-column"></i> ' + t(key, fallback);
+    titleEl.setAttribute('data-i18n', key);
+  }
+
   async function loadDashboard() {
     if (!window.AdminAPI) return;
 
@@ -749,19 +731,20 @@
       updatedEl.textContent = 'Last updated: ' + now.toLocaleTimeString('en-US');
     }
 
-    // Parallel: dashboard stats + recent orders + recent payments + feedback stats
+    var days = currentRangeDays();
+    updateRevenueChartTitle(days);
+
+    // Parallel: dashboard stats + recent orders + feedback stats
     try {
       var results = await Promise.all([
-        window.AdminAPI.get('/admin/dashboard'),
+        window.AdminAPI.get('/admin/dashboard', { days: days }),
         window.AdminAPI.get('/admin/dashboard/recent-orders', { limit: 6 }),
-        window.AdminAPI.get('/admin/dashboard/recent-payments', { limit: 6 }),
         window.AdminAPI.get('/feedback/stats'),
       ]);
 
       var stats = results[0] && results[0].data;
       var ordersResponse = results[1] || {};
-      var paymentsResponse = results[2] || {};
-      var feedbackResponse = results[3] || {};
+      var feedbackResponse = results[2] || {};
 
       // Add feedback stats to main stats object for rendering
       if (stats && (feedbackResponse.stats || feedbackResponse.data)) {
@@ -771,14 +754,16 @@
       destroyCharts();
       renderStats(stats);
       if (stats) {
-        renderOrderStatusChart(stats.orders);
-        renderRevenueChart(stats.chart);
+        // Prefer the range-scoped series/counts (?days=N) and fall back to the
+        // legacy last7Days shape so older cached responses still render.
+        var chart = stats.chart || {};
+        renderOrderStatusChart(chart.ordersInRange || stats.orders);
+        renderRevenueChart(chart.series || chart.last7Days);
         if (stats.feedback) {
           renderFeedbackRatingChart(stats.feedback);
         }
       }
       renderRecentOrders(ordersResponse.orders);
-      renderRecentPayments(paymentsResponse.payments);
 
       if (window.AdminToast) window.AdminToast.show('Dashboard refreshed');
     } catch (error) {
@@ -786,16 +771,10 @@
         window.AdminToast.error('Failed to load dashboard: ' + (error.message || 'Server error'));
       }
       var oBody = document.getElementById('recentOrdersTableBody');
-      var pBody = document.getElementById('recentPaymentsTableBody');
       if (oBody)
         oBody.innerHTML =
           '<tr><td colspan="6" class="table-empty">' +
           t('admin_no_orders_yet', 'Could not load orders from server.') +
-          '</td></tr>';
-      if (pBody)
-        pBody.innerHTML =
-          '<tr><td colspan="6" class="table-empty">' +
-          t('admin_no_payments_yet', 'Could not load payments from server.') +
           '</td></tr>';
     }
   }
@@ -836,12 +815,6 @@
     if (orderSearch)
       orderSearch.addEventListener('input', function () {
         filterTable('orderSearchInput', 'recentOrdersTableBody');
-      });
-
-    var paymentSearch = document.getElementById('paymentSearchInput');
-    if (paymentSearch)
-      paymentSearch.addEventListener('input', function () {
-        filterTable('paymentSearchInput', 'recentPaymentsTableBody');
       });
 
     // Setup

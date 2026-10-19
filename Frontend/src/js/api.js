@@ -10,6 +10,37 @@ function tr(key, fallback, vars) {
  * Central API client.
  */
 
+// Keys that together describe "who is signed in" on the client. On a 401 the
+// session is dead, so ALL of them must go: clearing only `auth_token` used to
+// leave `role`/`userRole` behind, which meant every page's role guard still
+// believed a user was signed in and the page kept firing authenticated
+// requests that all answered 401 - the console filled with
+// "Failed to load resource ... 401 (Unauthorized)" and never recovered.
+const SESSION_STORAGE_KEYS = [
+    'auth_token', 'userRole', 'role', 'userProfile', 'current_user',
+    'userName', 'name', 'isLoggedIn', 'adminLoggedIn', 'customerLoggedIn',
+    'managerLoggedIn', 'kitchenLoggedIn', 'cashierLoggedIn', 'deliveryLoggedIn',
+    'taxAuthorityLoggedIn', 'redirect_after_auth'
+];
+
+let unauthorizedRedirecting = false;
+
+function clearLocalSession() {
+    try {
+        SESSION_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
+    } catch (e) { /* storage unavailable */ }
+}
+
+function redirectToLogin() {
+    let onLoginPage = false;
+    try { onLoginPage = /login\.html$/i.test(window.location.pathname); } catch (e) { /* ignore */ }
+    if (onLoginPage || unauthorizedRedirecting) return;
+    unauthorizedRedirecting = true;
+    try { sessionStorage.setItem('scos_session_expired', '1'); } catch (e) { /* ignore */ }
+    // Pages live under src/pages/<area>/, a sibling of common/.
+    window.location.href = '../common/login.html';
+}
+
 class ApiClient {
     constructor(baseURL) {
         const configured =
@@ -61,6 +92,7 @@ class ApiClient {
 
     async request(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
+        const isAuthEndpoint = /^\/auth\//.test(endpoint);
 
         const controller = new AbortController();
         const timeout = options.timeout || this.defaultTimeout;
@@ -124,11 +156,21 @@ class ApiClient {
                 error.code = data?.code || data?.errorCode || null;
 
                 if (response.status === 401) {
+                    // The JWT is missing, malformed, expired, or the backend
+                    // session lapsed. Drop the whole local session so no page
+                    // guard keeps a half-dead login alive, then send the user
+                    // back to sign in (mirrors the admin API client). The
+                    // sign-in endpoints themselves are exempt: a wrong password
+                    // is a normal 401 the form has to render, not a reason to
+                    // reload the login page.
                     this.removeToken();
+                    clearLocalSession();
 
                     window.dispatchEvent(
                         new CustomEvent("auth:unauthorized")
                     );
+
+                    if (!isAuthEndpoint) redirectToLogin();
                 }
 
                 throw error;

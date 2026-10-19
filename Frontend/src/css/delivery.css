@@ -332,6 +332,20 @@
 .empty-state-error { border: 1px dashed #f59e0b; }
 .empty-state-error .fa-plug-circle-xmark { color: #f59e0b; }
 .empty-state-error .btn-action { margin-top: 10px; }
+/* The machine-readable reason behind an empty/failed board: the HTTP status on
+   a failure, or the server's own count breakdown when the queue is genuinely
+   empty. Monospace so a status code reads as a code, and muted so it supports
+   the headline rather than competing with it. */
+.empty-state-status {
+  margin: 8px auto 0;
+  max-width: 46ch;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: #b45309;
+  overflow-wrap: anywhere;
+}
+body.dark-theme .empty-state-status { color: #fcd34d; }
 /* -------- Delivery GPS tracking ---------------------------------------------- */
 .d-gps {
   border-top: 1px dashed #e2e8f0;

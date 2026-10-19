@@ -335,11 +335,70 @@ class DeliveryGpsTracker {
     return this.start(orderId, { userInitiated: true });
   }
 
+  /**
+   * The delivery person's current fix, used to draw the route to a chosen
+   * destination immediately (before any watch uploads a point).
+   *
+   * Order of preference:
+   *   1. the freshest fix from a running watch (no new permission prompt),
+   *   2. a one-shot getCurrentPosition (prompts only when `allowPrompt` is true
+   *      and the browser has not already refused).
+   * Never invents a coordinate: returns null when unavailable.
+   *
+   * @returns {Promise<{latitude, longitude, accuracy, ts}|null>}
+   */
+  async currentFix({ timeoutMs = 8000, allowPrompt = true } = {}) {
+    // 1) A running watch already holds the freshest fix - use it, don't prompt.
+    for (const state of this.trackers.values()) {
+      if (state && state.lastFix && Number.isFinite(state.lastFix.latitude) && Number.isFinite(state.lastFix.longitude)) {
+        return { ...state.lastFix };
+      }
+    }
+    if (typeof navigator === "undefined" || !navigator.geolocation) return null;
+
+    // Only prompt when the caller allows it AND the browser has not refused.
+    try {
+      if (navigator.permissions && typeof navigator.permissions.query === "function") {
+        const status = await navigator.permissions.query({ name: "geolocation" });
+        if (status && status.state === "denied") return null;
+        if (status && status.state !== "granted" && !allowPrompt) return null;
+      }
+    } catch (e) {
+      /* Permissions API unavailable: fall through and let the request decide */
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      try {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const c = pos && pos.coords ? pos.coords : null;
+            if (!c || !Number.isFinite(c.latitude) || !Number.isFinite(c.longitude)) return finish(null);
+            finish({
+              latitude: c.latitude,
+              longitude: c.longitude,
+              accuracy: Number.isFinite(c.accuracy) ? c.accuracy : null,
+              ts: Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now(),
+            });
+          },
+          () => finish(null),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: timeoutMs }
+        );
+      } catch (e) {
+        finish(null);
+      }
+    });
+  }
+
   onChange(cb) {
     this._listeners.add(cb);
     return () => this._listeners.delete(cb);
   }
-
   _notify() {
     this._listeners.forEach((cb) => cb(this));
   }

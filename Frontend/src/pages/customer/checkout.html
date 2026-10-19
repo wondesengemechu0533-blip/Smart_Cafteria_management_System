@@ -6,7 +6,6 @@
     <title>Checkout - Cafeteria Menu</title>
     <!-- FontAwesome Icons -->
     <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="/src/css/style.css">
      <link rel="stylesheet" href="/src/css/cart.css">
        <link rel="stylesheet" href="/src/css/menu.css">
@@ -65,10 +64,24 @@
                         </label>
                     </div>
 
-                    <!-- Table Number Field (Visible for Dine-In) -->
+                    <!-- Table Selection (Visible for Dine-In) -->
                     <div class="form-group" id="table-number-group">
-                        <label for="table-number">Table Number <span class="required">*</span></label>
-                        <input type="text" id="table-number" placeholder="e.g., 12" required>
+                        <label for="table-select"><span data-i18n="select_table_label">Select Table</span> <span class="required">*</span></label>
+                        <select id="table-select" required>
+                            <option value="" data-i18n="select_table_placeholder">Select a table</option>
+                        </select>
+                        <!-- The selected table's number is mirrored here so the
+                             existing badge / payload plumbing keeps working. -->
+                        <input type="hidden" id="table-number" value="">
+                        <div id="table-loading" class="form-hint" style="display:none;">
+                            <i class="fa-solid fa-spinner fa-spin"></i>
+                            <span data-i18n="loading_tables">Loading tables…</span>
+                        </div>
+                        <div id="table-empty" class="form-hint" style="display:none;" data-i18n="no_tables_available">No tables currently available</div>
+                        <div id="table-error" class="form-hint" style="display:none;">
+                            <span data-i18n="tables_load_failed">Couldn't load tables.</span>
+                            <button type="button" id="table-retry-btn" class="sdd-back-btn" data-i18n="retry">Retry</button>
+                        </div>
                     </div>
 
                     <!-- Delivery Address Fields (Visible for Delivery) -->
@@ -238,7 +251,7 @@
 
     <!-- Connect scripts -->
     <script type="module" src="../../js/utils/i18n.js?v=20261005-ethiopia"></script>
-    <script type="module" src="../../js/checkout.js?v=20261005-textfix"></script>
+    <script type="module" src="../../js/checkout.js?v=20261017-table"></script>
     <script type="module" src="../../js/utils/storage.js"></script>
     <script type="module" src="../../js/utils/validators.js"></script>
     <script type="module" src="../../js/utils/formatters.js"></script>

@@ -204,6 +204,20 @@ class SocketClient {
             'delivery:failed',
             'delivery:cancelled',
             'delivery:ready-for-pickup',
+            // Dispatch-time frames emitted by kitchen.controller.js
+            // (sendOrderToDelivery) and order.controller.js (checkout).
+            //
+            // These were MISSING from this bridge, which is the whole reason
+            // "kitchen sent it to delivery but nothing appeared on the courier's
+            // Active Deliveries" happened with the socket connected the entire
+            // time: the server emitted to the `delivery` room, socket.js received
+            // the frame, and then threw it away because no `this.socket.on(...)`
+            // handler existed to re-emit it - so every `socketClient.on(...)`
+            // listener on the delivery pages (which are the ONLY path consumers
+            // have) was silently dead. Adding the name here is all it takes to
+            // make the pages refetch the board and show the order live.
+            'delivery:dispatch',
+            'order:ready-for-delivery',
         ];
         DELIVERY_STAGE_EVENTS.forEach((eventName) => {
             this.socket.on(eventName, (order) => {

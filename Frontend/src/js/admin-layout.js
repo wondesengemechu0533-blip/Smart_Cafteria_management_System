@@ -23,7 +23,9 @@ function tr(key, fallback, vars) {
     { id: 'admin-dashboard', path: 'dashboard.html', icon: 'fa-chart-line', label: 'Admin Dashboard', group: 'system' },
     { id: 'manager-overview', path: '../manager/dashboard.html', icon: 'fa-chart-line', label: 'Dashboard', group: 'system' },
     { id: 'issues', path: '../manager/issues.html', icon: 'fa-flag', label: 'Issue Reports', group: 'cafeteria' },
+    { id: 'resolution-requests', path: 'resolution-requests.html', icon: 'fa-file-signature', label: 'Resolution Requests', group: 'cafeteria' },
     { id: 'stock-alerts', path: '../manager/stock-alerts.html', icon: 'fa-triangle-exclamation', label: 'Stock Alerts', group: 'cafeteria' },
+    { id: 'inventory', path: '../manager/inventory.html', icon: 'fa-boxes-stacked', label: 'Inventory', group: 'cafeteria' },
     { id: 'security', path: 'security.html', icon: 'fa-shield-halved', label: 'Security', group: 'system' },
     { id: 'roles', path: 'roles.html', icon: 'fa-user-shield', label: 'Roles & Permissions', group: 'system' },
     { id: 'monitoring', path: 'monitoring.html', icon: 'fa-server', label: 'System Monitoring', group: 'system' },
@@ -43,7 +45,7 @@ function tr(key, fallback, vars) {
     { id: 'settings', path: 'settings.html', icon: 'fa-gear', label: 'Settings', group: 'system' },
     { id: 'profile', path: 'profile.html', icon: 'fa-user', label: 'My Profile', group: 'system' },
     { id: 'users', path: 'users.html', icon: 'fa-users', label: 'Users', group: 'system' },
-    { id: 'cafeterias', path: 'cafeterias.html', icon: 'fa-store', label: 'Cafeterias', group: 'system' },
+    { id: 'staff-management', path: 'users.html', icon: 'fa-user-plus', label: 'Staff Management', group: 'cafeteria' },
     { id: 'categories', path: 'categories.html', icon: 'fa-list', label: 'Categories', group: 'cafeteria' },
     { id: 'payments', path: 'payments.html', icon: 'fa-wallet', label: 'Payments', group: 'cafeteria' },
     { id: 'menu', path: 'menu.html', icon: 'fa-bowl-food', label: 'Menu / Foods', group: 'cafeteria' },
@@ -99,7 +101,7 @@ function tr(key, fallback, vars) {
       id: 'cafeteria',
       label: 'CAFETERIA ADMIN',
       labelKey: 'admin_cafeteria_admin',
-      pages: ['users', 'menu', 'categories', 'tables', 'payments', 'settings', 'stock-alerts'],
+      pages: ['staff-management', 'menu', 'categories', 'tables', 'settings', 'stock-alerts'],
     },
   ];
 
@@ -111,13 +113,12 @@ function tr(key, fallback, vars) {
       pages: [
         'manager-overview',
         'notifications',
-        'issues',
-        'stock-alerts',
         'orders',
         'deliveries',
         'cancellations',
         'feedback',
         'reports',
+        'inventory',
         'delivery-staff',
       ],
     },
@@ -126,6 +127,10 @@ function tr(key, fallback, vars) {
   // Current page detection
   function getCurrentPageId() {
     var path = window.location.pathname.split('/').pop().replace('.html', '');
+    if (path === 'users') {
+      var r = (localStorage.getItem('userRole') || localStorage.getItem('role') || '').toLowerCase();
+      if (r.indexOf('cafeteria') !== -1 && r.indexOf('admin') !== -1) return 'staff-management';
+    }
     return path || 'dashboard';
   }
 
@@ -277,6 +282,7 @@ function tr(key, fallback, vars) {
         var labelKeyMap = {
           dashboard: 'admin_dashboard',
           users: 'admin_users',
+          'staff-management': 'admin_staff_management',
           menu: 'admin_menu',
           categories: 'admin_categories',
           orders: 'admin_orders',
@@ -292,6 +298,7 @@ function tr(key, fallback, vars) {
           'manager-overview': 'admin_manager_overview',
           issues: 'admin_issue_reports',
           'stock-alerts': 'kitchen_nav_stock_alerts',
+          inventory: 'admin_inventory',
           activity: 'admin_activity',
           tables: 'admin_tables',
           settings: 'admin_settings',
@@ -828,7 +835,6 @@ function tr(key, fallback, vars) {
         'cafeteria_admin',
         'cafeteria admin',
         'manager',
-        'tax_authority',
       ];
       allowed = allowedRoles.includes(userRole) || allowedRoles.includes(role);
     }

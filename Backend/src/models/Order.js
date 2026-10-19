@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { PAYMENT_METHOD_VALUES } = require('../config/constants');
+const { computeRefundSummary } = require('../utils/money');
 
 /**
  * Order Schema - Matches Frontend Requirements
@@ -423,6 +424,13 @@ const OrderSchema = new mongoose.Schema(
 
 // Get order summary
 OrderSchema.methods.getSummary = function () {
+  // The refund summary (Subtotal / Service Fee / Total Paid / Refund Amount) is
+  // derived, never stored, and excludes VAT by design. Shipping it inside the
+  // summary means the customer cancellation page and the Manager/Admin refund
+  // dashboard render the exact numbers the backend will refund, instead of
+  // each recomputing them from the raw money fields.
+  const refundSummary = computeRefundSummary(this);
+
   return {
     orderId: this.orderId,
     customerName: this.customerName,
@@ -446,7 +454,13 @@ OrderSchema.methods.getSummary = function () {
     cafeteriaShare: this.cafeteriaShare,
     platformShare: this.platformShare,
     totalAmount: this.totalAmount,
+    refundSummary,
     status: this.status,
+    // `orderStatus` is the SCREAMING_SNAKE twin of `status` and both are
+    // stored, so consumers must be able to see both. Without this a client can
+    // only bucket on `status`, and a legacy row whose `status` is missing
+    // becomes unclassifiable.
+    orderStatus: this.orderStatus,
     paymentMethod: this.paymentMethod,
     paymentStatus: this.paymentStatus,
     refundStatus: this.refundStatus,

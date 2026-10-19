@@ -3,6 +3,7 @@ const Payment = require('../models/Payment');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { PAYMENT_STATUS, MESSAGES, HTTP_STATUS } = require('../config/constants');
+const { computeRefundSummary, resolveRefundAmount, round2 } = require('../utils/money');
 
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
@@ -350,18 +351,34 @@ exports.refundPayment = async (req, res) => {
       });
     }
 
-    // Validate refund amount
-    const refundableAmount = payment.amount - (payment.refundAmount || 0);
-    if (amount > refundableAmount) {
+    // Validate refund amount against the same refundable ceiling every other
+    // refund path uses: Refund Amount = order Subtotal (VAT excluded). The
+    // already-refunded portion is deducted so a second click can never pay out
+    // the same money twice.
+    const refundSummary = computeRefundSummary(linkedOrder);
+    const alreadyRefunded = Number(payment.refundAmount) || 0;
+    const refundableTotal = refundSummary.refundAmount;
+    const remaining = Math.max(0, round2(refundableTotal - alreadyRefunded));
+
+    const requested = Number(amount);
+    const refundValue = Number.isFinite(requested) && requested > 0 ? requested : remaining;
+    if (refundValue <= 0) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
         success: false,
-        error: `Refund amount exceeds available refundable amount (${refundableAmount} ETB)`,
+        error: 'Refund not allowed: the refundable amount has already been paid out.',
+      });
+    }
+    if (refundValue > remaining) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: `Refund amount exceeds available refundable amount (${remaining} ETB)`,
       });
     }
 
-    // Update payment
-    payment.refundAmount = (payment.refundAmount || 0) + amount;
-    const fullyRefunded = payment.refundAmount >= payment.amount;
+    // Update payment. `payment.amount` (what the gateway charged) is never
+    // touched - only the refund bookkeeping columns move.
+    payment.refundAmount = round2(alreadyRefunded + refundValue);
+    const fullyRefunded = refundableTotal > 0 && payment.refundAmount >= refundableTotal;
     if (fullyRefunded) {
       payment.status = 'REFUNDED';
       payment.refundedAt = new Date();
@@ -377,19 +394,42 @@ exports.refundPayment = async (req, res) => {
     // forever. Delegates to the shared refund flow so the order gets
     // refundedAt / refundAmount / refundReference, the customer notification
     // and the real-time frames exactly as the orders page does.
+    //
+    // This must NOT swallow its failure. It used to: a completeOrderRefund
+    // rejection (order not cancelled, refund already processed) was logged and
+    // discarded, and the endpoint still answered `{ success: true, message:
+    // 'Refund initiated successfully' } - leaving the Payment marked REFUNDED,
+    // the Order still PAID, no customer notification at all, and the operator
+    // believing it had worked. A refund that did not complete is an error.
     if (fullyRefunded) {
       try {
         const orderDoc = await Order.findById(payment.orderId);
-        if (orderDoc) {
-          await require('../services/cancellation.service').completeOrderRefund({
-            order: orderDoc,
-            actorId: req.user ? req.user.id : null,
-            amount: payment.refundAmount,
-            providerReference: payment.refundReference,
-          });
+        if (!orderDoc) {
+          throw Object.assign(new Error('Linked order not found'), { statusCode: 404 });
         }
+        await require('../services/cancellation.service').completeOrderRefund({
+          order: orderDoc,
+          actorId: req.user ? req.user.id : null,
+          amount: resolveRefundAmount(orderDoc, payment.refundAmount),
+          providerReference: payment.refundReference,
+        });
       } catch (refundError) {
-        console.error('⚠️ Order refund sync failed (payment refund):', refundError.message);
+        console.error('❌ Order refund failed (payment refund):', refundError.message);
+        // Roll the payment back so it cannot read REFUNDED against an order that
+        // was never refunded, then tell the operator it did not go through.
+        try {
+          payment.status = 'PAID';
+          payment.refundStatus = 'FAILED';
+          payment.refundedAt = null;
+          payment.refundAmount = Math.max(0, round2(alreadyRefunded));
+          await payment.save();
+        } catch (rollbackError) {
+          console.error('❌ Payment rollback failed:', rollbackError.message);
+        }
+        return res.status(refundError.statusCode || HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+          success: false,
+          error: refundError.message || 'Refund could not be completed. The payment was not marked as refunded.',
+        });
       }
     }
 
@@ -401,7 +441,7 @@ exports.refundPayment = async (req, res) => {
       userId: payment.userId,
       eventType: 'PAYMENT_REFUND_INITIATED',
       status: payment.status,
-      amount: amount,
+      amount: refundValue,
       reason: reason,
       performedBy: req.user?.id,
     });
@@ -412,6 +452,8 @@ exports.refundPayment = async (req, res) => {
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Refund initiated successfully',
+      refundAmount: refundValue,
+      refundSummary: computeRefundSummary(order),
       payment: serializePayment(payment, order, user),
     });
   } catch (error) {

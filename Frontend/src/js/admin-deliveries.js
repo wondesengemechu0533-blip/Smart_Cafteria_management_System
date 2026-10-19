@@ -920,14 +920,42 @@ async function markCompleted(orderId) {
     if (banner) banner.hidden = true;
   }
 
+  function emergencySoundEnabled() {
+    try { return localStorage.getItem("scos_emergency_sound_enabled") !== "0"; } catch (e) { return true; }
+  }
+  function emergencySoundToggleLabel(on) {
+    return on ? "Emergency Sound: ON" : "Emergency Sound: OFF";
+  }
+  function updateEmergencySoundToggle() {
+    var btn = document.getElementById("emergencySoundToggleBtn");
+    if (!btn) return;
+    var on = emergencySoundEnabled();
+    btn.textContent = emergencySoundToggleLabel(on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+  }
+  function toggleEmergencySound() {
+    var next = !emergencySoundEnabled();
+    try { localStorage.setItem("scos_emergency_sound_enabled", next ? "1" : "0"); } catch (e) { /* ignore */ }
+    if (next) {
+      if (activeEmergency) startEmergencyAlarm();
+    } else {
+      stopEmergencyAlarm();
+    }
+    updateEmergencySoundToggle();
+  }
+
   /**
    * Start the emergency alarm.
    *
    * Loops until stopEmergencyAlarm() is called, which only happens on
-   * acknowledgement or resolution. An unacknowledged SOS keeps sounding.
+   * acknowledgement, resolution, or when the manager disables the sound.
    */
   function startEmergencyAlarm() {
     if (typeof window.ScosNotify === "undefined") return;
+    if (!emergencySoundEnabled()) {
+      stopEmergencyAlarm();
+      return;
+    }
     if (typeof window.ScosNotify.isEmergencyLooping === "function" && window.ScosNotify.isEmergencyLooping()) return;
     try {
       window.ScosNotify.startLoop("emergency", "emergency", {
@@ -1170,6 +1198,10 @@ async function markCompleted(orderId) {
     var resolveBtn = document.getElementById("emergencyResolveBtn");
     if (resolveBtn) resolveBtn.addEventListener("click", resolveEmergency);
 
+    var emergencySoundBtn = document.getElementById("emergencySoundToggleBtn");
+    if (emergencySoundBtn) emergencySoundBtn.addEventListener("click", toggleEmergencySound);
+    updateEmergencySoundToggle();
+
     // Clicking the backdrop (not the dialog) closes the proof modal.
     var proofModal = document.getElementById("proofModal");
     if (proofModal) {
@@ -1254,6 +1286,7 @@ async function markCompleted(orderId) {
     loadAll();
     bindEvents();
     setupSocket();
+    updateEmergencySoundToggle();
 
     // Poll for emergencies as a safety net. The socket event is the fast path;
     // this guarantees a banner appears even if the frame was missed (reconnect,

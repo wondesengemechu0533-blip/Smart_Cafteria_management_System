@@ -136,6 +136,7 @@ exports.getMyFeedback = async (req, res) => {
   try {
     const feedback = await Feedback.find({ userId: req.user.id })
       .populate('orderId', 'orderId customerName items totalAmount')
+      .populate('replyBy', 'name role')
       .sort({ createdAt: -1 });
 
     res.status(HTTP_STATUS.OK).json({
@@ -151,6 +152,14 @@ exports.getMyFeedback = async (req, res) => {
         dishName: fb.dishName,
         status: fb.status,
         isRead: fb.isRead,
+        // The staff reply. This MUST be part of this payload: the customer
+        // feedback page renders the reply straight off this list, so omitting
+        // it here made every saved reply invisible to the customer.
+        reply: fb.reply || '',
+        repliedAt: fb.repliedAt || null,
+        repliedBy: fb.replyBy
+          ? { name: fb.replyBy.name, role: fb.replyBy.role }
+          : null,
         createdAt: fb.createdAt,
       })),
     });
@@ -198,6 +207,7 @@ exports.getAllFeedback = async (req, res) => {
     const feedback = await Feedback.find(filter)
       .populate('userId', 'name email phone role')
       .populate('orderId', 'orderId customerName')
+      .populate('replyBy', 'name role')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -229,6 +239,12 @@ exports.getAllFeedback = async (req, res) => {
         dishName: fb.dishName,
         status: fb.status,
         isRead: fb.isRead,
+        // Carried on the list (not just the detail endpoint) so the admin
+        // reply modal can pre-fill an existing reply instead of silently
+        // overwriting it with a blank box.
+        reply: fb.reply || '',
+        repliedAt: fb.repliedAt || null,
+        repliedBy: fb.replyBy ? { name: fb.replyBy.name, role: fb.replyBy.role } : null,
         createdAt: fb.createdAt,
       })),
     });
@@ -248,7 +264,8 @@ exports.getFeedbackById = async (req, res) => {
   try {
     const feedback = await Feedback.findById(req.params.id)
       .populate('userId', 'name email phone role')
-      .populate('orderId', 'orderId customerName');
+      .populate('orderId', 'orderId customerName')
+      .populate('replyBy', 'name role');
     if (!feedback) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Feedback not found' });
     }
@@ -272,7 +289,9 @@ exports.getFeedbackById = async (req, res) => {
         category: feedback.category,
         dishName: feedback.dishName,
         status: feedback.status,
-        reply: feedback.reply,
+        reply: feedback.reply || '',
+        repliedAt: feedback.repliedAt || null,
+        repliedBy: feedback.replyBy ? { name: feedback.replyBy.name, role: feedback.replyBy.role } : null,
         createdAt: feedback.createdAt,
       },
     });
@@ -360,7 +379,12 @@ exports.updateFeedbackStatus = async (req, res) => {
  */
 exports.replyToFeedback = async (req, res) => {
   try {
-    const { reply } = req.body;
+    // `resolved` is the admin modal's "Mark as resolved" toggle. When omitted
+    // it defaults to true, keeping the original auto-resolve-on-reply
+    // behaviour; when explicitly false the reply is stored but the feedback
+    // stays PENDING.
+    const { reply, resolved } = req.body;
+    const markResolved = resolved === undefined ? true : Boolean(resolved);
 
     if (!reply || typeof reply !== 'string' || !reply.trim()) {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({
@@ -383,7 +407,7 @@ exports.replyToFeedback = async (req, res) => {
     feedback.processedAt = new Date();
     feedback.processedBy = feedback.replyBy;
     feedback.isRead = true;
-    if (feedback.status === 'PENDING') {
+    if (markResolved && feedback.status === 'PENDING') {
       feedback.status = 'RESOLVED';
     }
 
@@ -398,6 +422,36 @@ exports.replyToFeedback = async (req, res) => {
       description: `Reply sent to feedback (rating ${feedback.rating})`,
       result: 'SUCCESS',
     });
+
+    // Tell the customer their reply landed. Without this the customer page
+    // only ever learned about a new reply on a full page reload, because
+    // nothing emitted the `notification:new` frame the feedback page listens
+    // for. Best-effort: a notification failure must not fail the reply.
+    try {
+      const { notifyUser } = require('../utils/notification');
+      await notifyUser(feedback.userId, {
+        title: 'Reply to your feedback',
+        message: `Our team replied to your feedback: "${feedback.reply}"`,
+        type: 'system',
+        link: '/src/pages/customer/feedback.html',
+      });
+    } catch (notifyError) {
+      console.warn('Feedback reply notification failed:', notifyError.message);
+    }
+
+    // Direct feedback frame for the customer page, so the reply is rendered
+    // the moment it is sent rather than after a notification round-trip.
+    try {
+      const { emitSocketEvent } = require('../utils/socket');
+      emitSocketEvent(`user:${feedback.userId}`, 'feedback:reply', {
+        id: String(feedback._id),
+        reply: feedback.reply,
+        repliedAt: feedback.repliedAt,
+        status: feedback.status,
+      });
+    } catch (_) {
+      /* realtime is best effort */
+    }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -502,6 +556,9 @@ exports.getFeedbackStats = async (req, res) => {
     const rejected = await Feedback.countDocuments({
       status: FEEDBACK_STATUS.REJECTED,
     });
+    // New (not yet read) feedback - the workload number dashboards show as
+    // "New Feedback". Server-sourced so it survives refresh for every device.
+    const unread = await Feedback.countDocuments({ isRead: false });
 
     // ✅ Calculate average rating
     const allFeedback = await Feedback.find();
@@ -525,6 +582,7 @@ exports.getFeedbackStats = async (req, res) => {
         pending,
         approved,
         rejected,
+        unread,
         averageRating: parseFloat(averageRating),
         ratingDistribution,
       },

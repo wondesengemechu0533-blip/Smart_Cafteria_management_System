@@ -14,7 +14,7 @@
          reachable; if the file is missing the dashboard still renders and the
          GPS panel says the map is unavailable. -->
     <link rel="stylesheet" href="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="/src/css/tracking-map.css?v=20261005-ethiopia">
+    <link rel="stylesheet" href="/src/css/tracking-map.css?v=20261018-gplaces">
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
 </head>
@@ -40,6 +40,10 @@
                 <div class="stat-card"><div class="num" id="statArrived">0</div><div class="lbl" data-i18n="delivery_stat_arrived">Arrived</div></div>
                 <div class="stat-card"><div class="num" id="statAwaitingComplete">0</div><div class="lbl" data-i18n="delivery_stat_awaiting_complete">Delivered</div></div>
                 <div class="stat-card"><div class="num" id="statCompleted">0</div><div class="lbl" data-i18n="delivery_stat_completed_past">Completed</div></div>
+                <!-- Unassigned, kitchen-ready orders ANY rider can claim. Counted
+                     separately from "Assigned to Me" so the tiles always add up to
+                     the number of cards actually on the board. -->
+                <div class="stat-card"><div class="num" id="statAvailable">0</div><div class="lbl" data-i18n="delivery_stat_available">Ready to Claim</div></div>
                 <div class="stat-card"><div class="num" id="statAssignedMe">0</div><div class="lbl" data-i18n="delivery_stat_assigned_me">Assigned to Me</div></div>
             </div>
 
@@ -87,12 +91,12 @@
     <!-- Leaflet must be loaded before delivery/deliveries.js renders a map. -->
     <script src="/public/assets/vendor/leaflet/1.9.4/dist/leaflet.js"></script>
     <script src="../../js/config.js"></script>
-    <script type="module" src="../../js/utils/i18n.js?v=20261005-ethiopia"></script>
+    <script type="module" src="../../js/utils/i18n.js?v=20261018-gplaces"></script>
     <script src="../../js/delivery-layout.js"></script>
     <script type="module" src="../../js/api.js"></script>
     <script type="module" src="../../js/socket.js"></script>
-    <script type="module" src="../../js/delivery/live-map-global.js?v=20261005-ethiopia"></script>
-    <script type="module" src="../../js/delivery/deliveries.js?v=20261005-ethiopia"></script>
+    <script type="module" src="../../js/delivery/live-map-global.js?v=20261018-gplaces"></script>
+    <script type="module" src="../../js/delivery/deliveries.js?v=20261018-gplaces"></script>
     <script type="module" src="../../js/components/unified-header.js"></script>
 
     <script>

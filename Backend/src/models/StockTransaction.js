@@ -12,7 +12,13 @@ const StockTransactionSchema = new mongoose.Schema(
       required: true,
     },
     performedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+    performedByRole: { type: String, default: null },
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
+    // Audit trail links: which restock request / issue report (if any) caused
+    // this stock movement.
+    restockRequestId: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest', default: null },
+    issueReportId: { type: mongoose.Schema.Types.ObjectId, ref: 'IssueReport', default: null },
+    cafeteriaId: { type: mongoose.Schema.Types.ObjectId, ref: 'Cafeteria', default: null },
   },
   { timestamps: true }
 );

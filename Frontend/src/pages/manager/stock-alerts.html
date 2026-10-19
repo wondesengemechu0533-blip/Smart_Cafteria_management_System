@@ -97,7 +97,41 @@
 
         .stock-loading { text-align: center; padding: 40px; color: #6b7280; }
 
-        .stock-source-inventory td { opacity: 0.75; }
+        .stock-source-inventory td { opacity: 0.85; }
+
+        /* Current / Minimum quantity columns */
+        .admin-table .qty-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .qty-min { color: #9ca3af; font-size: 0.82rem; }
+        .source-chip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            margin-left: 6px;
+            border-radius: 50%;
+            background: #eef2ff;
+            color: #4338ca;
+            font-size: 0.62rem;
+            vertical-align: middle;
+        }
+
+        .quality-hold-warning {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 4px solid #dc2626;
+            border-radius: 8px;
+            padding: 10px 12px;
+            color: #991b1b;
+            font-size: 0.88rem;
+        }
+        .field-hint { color: #6b7280; font-size: 0.8rem; margin: 6px 0 0; }
+
+        [data-theme="dark"] .quality-hold-warning { background: #3b0f0f; border-color: #7f1d1d; color: #fca5a5; }
+        [data-theme="dark"] .source-chip { background: #1e293b; color: #a5b4fc; }
 
         /* Detail modal */
         .stock-modal-backdrop {
@@ -147,6 +181,7 @@
             font-size: 0.92rem;
             resize: vertical;
         }
+        .stock-modal select,
         .stock-modal input {
             width: 100%;
             padding: 10px 12px;
@@ -216,7 +251,7 @@
                 <div>
                     <h1 data-i18n="manager_stock_alerts_title"><i class="fa-solid fa-triangle-exclamation"></i> Stock Alerts</h1>
                     <p data-i18n="manager_stock_alerts_subtitle" style="color:#6b7280;font-size:0.9rem;margin:4px 0 0;">
-                        Kitchen stock issue reports for your cafeteria — review, assign responsibility, and record the resolution.
+                        Kitchen stock issue reports for your cafeteria — review and acknowledge; the Cafeteria Admin records the resolution.
                     </p>
                 </div>
                 <div class="page-actions">
@@ -245,15 +280,16 @@
                             <tr>
                                 <th data-i18n="stock_col_item">Item</th>
                                 <th data-i18n="stock_col_type">Alert Type</th>
-                                <th>Severity</th>
-                                <th data-i18n="issue_col_reported_by">Reported By</th>
+                                <th data-i18n="stock_col_current">Current</th>
+                                <th data-i18n="stock_col_min">Min</th>
+                                <th data-i18n="stock_col_severity">Severity</th>
                                 <th data-i18n="issue_col_status">Status</th>
                                 <th data-i18n="issue_col_reported_at">Reported At</th>
                                 <th data-i18n="admin_col_actions">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="stockTableBody">
-                            <tr><td colspan="7" class="stock-loading" data-i18n="issue_loading">Loading stock alerts…</td></tr>
+                            <tr><td colspan="8" class="stock-loading" data-i18n="issue_loading">Loading stock alerts…</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -273,6 +309,7 @@
     <script src="../../js/admin-api.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/utils/resolution-options.js?v=20261015"></script>
     <script src="../../js/manager-stock-alerts.js"></script>
 </body>
 </html>

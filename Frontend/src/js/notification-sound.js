@@ -278,6 +278,9 @@
       el.currentTime = 0;
       // Real mp3 first (new-order.mp3); fall back to WebAudio chime.
       var p = el.play();
+      setTimeout(function () {
+        if (!anyLooping()) stopPlayback();
+      }, 2000);
       if (p && typeof p.then === 'function') {
         p.then(function () {
           unlocked = true;
@@ -344,6 +347,7 @@
     try {
       audioEl.pause();
       audioEl.currentTime = 0;
+      try { audioEl.load(); } catch (e) { /* ignore */ }
       return true;
     } catch (e) {
       return false;
@@ -542,6 +546,7 @@
         if (emergencyEl) {
           emergencyEl.pause();
           emergencyEl.currentTime = 0;
+          try { emergencyEl.load(); } catch (e) { /* ignore */ }
         }
       } catch (e) { /* ignore */ }
     },

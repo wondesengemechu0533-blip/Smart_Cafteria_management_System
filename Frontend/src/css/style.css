@@ -1621,6 +1621,35 @@ a {
     color: #64748b;
 }
 
+/* Completed refund: a money-back event, deliberately green rather than the
+   blue/orange used for order + promo notices. */
+.icon-refund {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+/* Machine-readable detail row shown under a refund notification body
+   (status + refund date/time), rendered from notification `meta`. */
+.notification-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.notification-meta .meta-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    border: 1px solid var(--border-color, #e2e8f0);
+    font-size: 0.72rem;
+    color: #475569;
+    white-space: nowrap;
+}
+
 .notification-body {
     flex-grow: 1;
 }

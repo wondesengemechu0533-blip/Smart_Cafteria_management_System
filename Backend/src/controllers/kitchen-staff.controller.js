@@ -22,7 +22,14 @@ exports.getKitchenShifts = async (req, res) => {
 
     let filter = {};
     if (status) filter.status = status;
-    if (staffId) filter.staffId = staffId;
+    // Kitchen staff always see only their own shifts (the schedule page only
+    // offers clock-in on own shifts anyway). Managers/admins may filter by
+    // staffId or see the full roster.
+    if (req.user && req.user.role === 'kitchen') {
+      filter.staffId = req.user.id;
+    } else if (staffId) {
+      filter.staffId = staffId;
+    }
 
     if (date) {
       const startDate = new Date(date);
@@ -360,29 +367,122 @@ exports.endBreak = async (req, res) => {
 
 /**
  * @desc    Get current shift for logged-in kitchen staff
- * @route   GET /api/kitchen-staff/shifts/current
+ * @route   GET /api/v1/kitchen-staff/shifts/current
  * @access  Private/Kitchen
  *
- * Response: { success, shift }
+ * Response: { success, shift, reason }
  */
 exports.getCurrentShift = async (req, res) => {
   try {
-    const shift = await KitchenShift.findOne({
-      staffId: req.user.id,
-      status: { $in: ['scheduled', 'active'] },
-    }).populate('staffId', 'name email phone');
+    const staffId = req.user.id;
+    const now = new Date();
+    const OPEN = ['scheduled', 'active'];
+
+    // WHY this is a ladder and not one query:
+    //
+    // It used to be a bare
+    //     KitchenShift.findOne({ staffId, status: { $in: ['scheduled','active'] } })
+    // with NO SORT. An unsorted findOne returns whichever document the engine
+    // happens to reach first, and with a full roster every cook has a MORNING,
+    // an AFTERNOON and an EVENING shift each day - so the "Current Shift" card
+    // rendered one arbitrary row of ~21. In this deployment it consistently came
+    // back as `evening`, which is why the kitchen only ever saw the evening
+    // shift and morning/afternoon appeared to be missing. The data was always
+    // there; nothing selected it.
+    //
+    // The order below is deterministic and answers the question the card is
+    // actually asking ("which shift am I on?").
+    const pop = 'staffId';
+
+    // 1. The shift being worked right now.
+    const inProgress = await KitchenShift.findOne({
+      staffId,
+      status: { $in: OPEN },
+      startTime: { $lte: now },
+      $or: [{ endTime: null }, { endTime: { $gt: now } }],
+    }).sort({ startTime: -1 }).populate(pop, 'name email phone');
+
+    // 2. Clocked in without a clock-out - the window may be stale, the badge is
+    //    not, so it wins over the next one due.
+    const clockedIn = await KitchenShift.findOne({
+      staffId,
+      clockInTime: { $ne: null },
+      clockOutTime: null,
+    }).sort({ clockInTime: -1 }).populate(pop, 'name email phone');
+
+    // 3. The next one due.
+    const next = await KitchenShift.findOne({
+      staffId,
+      status: { $in: OPEN },
+      startTime: { $gt: now },
+    }).sort({ startTime: 1 }).populate(pop, 'name email phone');
+
+    // 4. The most recent finished one, so the card can explain the gap instead
+    //    of rendering as though no shift ever existed.
+    const last = await KitchenShift.findOne({ staffId })
+      .sort({ startTime: -1 }).populate(pop, 'name email phone');
+
+    const shift = clockedIn || inProgress || next || last;
+    // String comparison rather than _id.equals(): the rung that answered may be
+    // a lean/plain object whose id is not an ObjectId, and `.equals` is a method
+    // that only exists on one.
+    const sameId = (a, b) => Boolean(a && b) && String(a._id) === String(b._id);
+    const reason = shift
+      ? (sameId(shift, clockedIn) ? 'clocked_in'
+        : sameId(shift, inProgress) ? 'in_progress'
+        : sameId(shift, next) ? 'upcoming'
+        : 'last')
+      : 'none';
 
     if (!shift) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({
         success: true,
         shift: null,
-        message: 'No active shift scheduled',
+        dayShifts: [],
+        reason,
+        message: 'No shift scheduled',
       });
     }
+
+    // The whole day this cook is on, not just the one row above.
+    //
+    // Every cook is scheduled morning + afternoon + evening, so a card that
+    // renders one shift hides two thirds of the working day. This is resolved
+    // HERE rather than in the browser because only the server knows which
+    // account is asking - /kitchen-staff/shifts returns EVERY cook's shifts,
+    // so grouping it client-side showed four of each. The day is chosen from
+    // the shift selected above, falling back to today.
+    const focusDay = shift.startTime
+      ? new Date(shift.startTime)
+      : new Date();
+    const dayStart = new Date(focusDay);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(focusDay);
+    dayEnd.setHours(23, 59, 59, 999);
+
+    const SHIFT_TYPE_ORDER = ['morning', 'afternoon', 'evening', 'night', 'custom'];
+    const dayRows = await KitchenShift.find({
+      staffId,
+      startTime: { $gte: dayStart, $lte: dayEnd },
+    })
+      .populate(pop, 'name email phone')
+      .lean();
+
+    dayRows.sort((a, b) => {
+      const ai = SHIFT_TYPE_ORDER.indexOf(String(a.shiftType || '').toLowerCase());
+      const bi = SHIFT_TYPE_ORDER.indexOf(String(b.shiftType || '').toLowerCase());
+      if (ai !== bi) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+      return new Date(a.startTime) - new Date(b.startTime);
+    });
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       shift: formatShift(shift),
+      dayShifts: dayRows.map(formatShift),
+      // Local calendar day (toISOString() would shift local midnight back a
+      // day in positive-offset timezones like UTC+3).
+      day: `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}`,
+      reason,
     });
   } catch (error) {
     console.error('❌ Get Current Shift Error:', error);
@@ -426,6 +526,10 @@ exports.getKitchenStaffMembers = async (req, res) => {
 
 function formatShift(shift) {
   return {
+    // `_id` as well as `id`: the schedule page builds its Clock In / Clock Out
+    // buttons from `shift._id`, so returning only `id` made every button POST to
+    // /kitchen-staff/shifts/undefined/clock-in. `id` stays for existing callers.
+    _id: shift._id,
     id: shift._id,
     staff: {
       id: shift.staffId?._id,

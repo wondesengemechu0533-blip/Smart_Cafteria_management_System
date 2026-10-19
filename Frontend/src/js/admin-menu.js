@@ -798,6 +798,7 @@ function tr(key, fallback, vars) {
 
     var stockForm = document.getElementById("stockForm");
     if (stockForm) stockForm.addEventListener("submit", handleStockSubmit);
+
   }
 
   function init() {

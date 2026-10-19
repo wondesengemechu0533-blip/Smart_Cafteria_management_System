@@ -256,7 +256,7 @@ function updateCancelButton(s) {
         `;
     } else if (s === "pending" || s === "received") {
         // Cancellation is only allowed BEFORE preparation begins (status
-        // pending/received). Cancelling immediately grants a full refund
+        // pending/received). Cancelling immediately refunds the order subtotal
         // because the order has not been cooked yet.
         const url = new URL(window.location.href);
         const id = url.searchParams.get("orderId") || url.searchParams.get("id");
@@ -264,7 +264,7 @@ function updateCancelButton(s) {
             <a href="cancel-order.html?id=${encodeURIComponent(id || "")}"
                 class="btn btn-outline-danger"
                 style="width: 100%; display: inline-block; text-align: center; color: #dc3545; border: 1px solid #dc3545; padding: 10px; border-radius: 6px; background: transparent; cursor: pointer; font-weight: 600; text-decoration: none; box-sizing: border-box;">
-                <i class="fa-solid fa-ban"></i> Cancel Order (Full Refund)
+                <i class="fa-solid fa-ban"></i> Cancel Order
             </a>
         `;
     } else {
@@ -782,6 +782,20 @@ function setupRealtime(orderId) {
 let statusPollTimer = null;
 
 /**
+ * Stop the status poll for good.
+ *
+ * WHY this needs a reason: the poll only ever stopped on a TERMINAL STATUS it had
+ * managed to read. If the request itself can never succeed - the viewer is not
+ * this order's owner (403) or the order does not exist (404) - that status is
+ * never read, so the loop ran every 5s for the entire life of the tab.
+ */
+function stopStatusPolling(reason) {
+    try { clearInterval(statusPollTimer); } catch (e) {}
+    statusPollTimer = null;
+    if (reason) console.log(`[order-status] live status poll stopped (${reason}).`);
+}
+
+/**
  * Poll the backend for the live order status every few seconds and advance the
  * timeline as the kitchen / delivery staff update it.  This is a reliability
  * fallback for the socket: even if realtime fails, the tracker still reflects
@@ -794,8 +808,13 @@ function startStatusPolling(orderId) {
     // Polling hits the authenticated backend endpoint, so only poll when the
     // customer has a token. Guests still get live updates through the socket.
     if (!localStorage.getItem("auth_token")) return;
-    try { clearInterval(statusPollTimer); } catch (e) {}
+    stopStatusPolling(); // replace any existing timer
     statusPollTimer = setInterval(async () => {
+        // A tick already queued when the poll was stopped (403 / 404 / terminal)
+        // can still fire once. clearInterval prevents the NEXT one, not this one,
+        // so the guard is what actually guarantees a stopped poll makes no
+        // further requests.
+        if (statusPollTimer === null) return;
         try {
             const live = await fetchLiveStatus(orderId);
             if (!live || !live.status) return;
@@ -829,10 +848,21 @@ function startStatusPolling(orderId) {
             const terminal =
                 (s === "served" || s === "delivered" || s === "completed" || s === "cancelled") && refundSettled;
             if (terminal) {
-                try { clearInterval(statusPollTimer); statusPollTimer = null; } catch (e) {}
+                stopStatusPolling("terminal status reached");
             }
         } catch (err) {
-            // Backend unreachable or not logged in; keep local state as-is.
+            // 403 = this session may never read this order (not the owner, or the
+            // account lost access). 404 = no such order. Both are PERMANENT, and
+            // retrying every 5s could never succeed - it just piled one guaranteed
+            // 403 onto the console and one round trip onto the server every five
+            // seconds for as long as the tab stayed open.
+            //
+            // Everything else (timeout, offline, 5xx) is transient: the tab keeps
+            // polling so a momentary network blip does not freeze the tracker.
+            const status = err && err.status;
+            if (status === 403 || status === 404) {
+                stopStatusPolling(`permanent ${status}`);
+            }
         }
     }, 5000);
 }

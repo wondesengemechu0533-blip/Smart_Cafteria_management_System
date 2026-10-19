@@ -7,8 +7,7 @@
  */
 
 const { getSettingsMap } = require('../utils/settings');
-
-const round2 = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const { round2, computeRefundSummary, resolveRefundAmount } = require('../utils/money');
 
 /**
  * Compute the full monetary breakdown for an order/cart.
@@ -80,4 +79,4 @@ async function computeOrderCharges({
   };
 }
 
-module.exports = { computeOrderCharges, round2 };
+module.exports = { computeOrderCharges, round2, computeRefundSummary, resolveRefundAmount };

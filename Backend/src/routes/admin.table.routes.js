@@ -12,7 +12,7 @@ const {
 } = require('../controllers/admin.table.controller');
 
 router.use(protect);
-router.use(authorize('cafeteria_admin', 'manager'));
+router.use(authorize('cafeteria_admin', 'manager', 'admin', 'ADMIN', 'system_admin'));
 
 router.get('/', getAllTables);
 router.get('/stats', getTableStats);

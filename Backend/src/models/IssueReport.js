@@ -1,15 +1,21 @@
 const mongoose = require('mongoose');
 
 /**
- * IssueReport Schema - Kitchen Staff issue reports awaiting a Cafeteria
- * Manager response/solution.
+ * IssueReport Schema - Kitchen Staff issue reports awaiting Cafeteria Manager
+ * review and Cafeteria Admin resolution.
  *
  * Workflow (only these transitions are valid):
- *   PENDING -> ACCEPTED -> RESOLVED
+ *   OPEN → UNDER_REVIEW → REQUEST_SENT → RESOLVED
+ *
+ * - OPEN: kitchen staff just submitted the report.
+ * - UNDER_REVIEW: manager clicked "Review Report" and recorded investigation notes.
+ * - REQUEST_SENT: manager submitted a ResolutionRequest to the Cafeteria Admin.
+ * - RESOLVED: Admin processed the request and marked the report resolved.
  *
  * Frontend Usage:
- * - kitchen/issues.html: Kitchen Staff creates reports, views manager solution
- * - manager/issues.html: Cafeteria Manager accepts reports and sends solutions
+ * - kitchen/issues.html: Kitchen Staff creates reports, views status + solution
+ * - manager/issues.html: Manager reviews reports, submits admin requests
+ * - admin/issues.html (or manager/issues.html admin-gated): Admin processes requests
  *
  * Note: existing models were inspected first and none fit this workflow -
  * StockAlert is inventory-specific (active/acknowledged/resolved/cancelled),
@@ -17,8 +23,9 @@ const mongoose = require('mongoose');
  * KitchenReport stores performance metrics. A dedicated model is required.
  */
 const ISSUE_REPORT_STATUS = {
-  PENDING: 'PENDING',
-  ACCEPTED: 'ACCEPTED',
+  OPEN: 'OPEN',
+  UNDER_REVIEW: 'UNDER_REVIEW',
+  REQUEST_SENT: 'REQUEST_SENT',
   RESOLVED: 'RESOLVED',
 };
 
@@ -53,7 +60,7 @@ const IssueReportSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: Object.values(ISSUE_REPORT_STATUS),
-      default: ISSUE_REPORT_STATUS.PENDING,
+      default: ISSUE_REPORT_STATUS.OPEN,
     },
     // Authenticated Kitchen Staff user who submitted the report. Stamped
     // server-side from the JWT - never accepted from the client.
@@ -69,22 +76,54 @@ const IssueReportSchema = new mongoose.Schema(
       ref: 'Cafeteria',
       default: null,
     },
-    // Manager acceptance (PENDING -> ACCEPTED)
-    acceptedBy: {
+    // Manager review (OPEN → UNDER_REVIEW). Investigation notes record what
+    // the manager inspected before submitting a request to the Admin.
+    investigationNotes: {
+      type: String,
+      trim: true,
+      default: null,
+      maxlength: [2000, 'Investigation notes cannot exceed 2000 characters'],
+    },
+    investigatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       default: null,
     },
-    acceptedAt: {
+    investigatedAt: {
       type: Date,
       default: null,
     },
-    // Manager solution/reply (ACCEPTED -> RESOLVED)
+    // Link to the ResolutionRequest the manager submitted to the Cafeteria
+    // Admin (UNDER_REVIEW → REQUEST_SENT). Traceability only - resolving the
+    // request also resolves this report, but they remain separate records.
+    resolutionRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'ResolutionRequest',
+      default: null,
+    },
+    // Admin resolution details (REQUEST_SENT → RESOLVED). Populated when the
+    // Admin resolves the linked ResolutionRequest.
     solution: {
       type: String,
       trim: true,
       default: null,
       maxlength: [2000, 'Solution cannot exceed 2000 characters'],
+    },
+    resolutionReason: {
+      type: String,
+      trim: true,
+      default: null,
+      maxlength: [200, 'Resolution reason cannot exceed 200 characters'],
+    },
+    resolutionSolution: {
+      type: String,
+      trim: true,
+      default: null,
+      maxlength: [200, 'Resolution solution cannot exceed 200 characters'],
+    },
+    resolutionQuantity: {
+      type: Number,
+      default: null,
     },
     repliedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -97,6 +136,28 @@ const IssueReportSchema = new mongoose.Schema(
     },
     resolvedAt: {
       type: Date,
+      default: null,
+    },
+    // Optional link to the menu item this issue concerns (e.g. an Ingredient
+    // Shortage or Quality Issue report about "Coffee"). Used so the manager
+    // can request a restock or apply a quality hold for the right item.
+    itemId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MenuItem',
+      default: null,
+    },
+    // Link to the restock request raised while handling this issue. The link
+    // is traceability only - resolving the issue never resolves the request
+    // (or a stock alert) and vice versa.
+    restockRequestId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'RestockRequest',
+      default: null,
+    },
+    // Link to a stock alert for the same item, when one exists.
+    alertId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'StockAlert',
       default: null,
     },
   },

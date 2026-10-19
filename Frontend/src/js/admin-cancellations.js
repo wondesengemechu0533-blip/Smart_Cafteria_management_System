@@ -55,6 +55,34 @@ function tr(key, fallback, vars) {
     return Number(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  /**
+   * The refund summary is calculated by the backend (Backend/src/utils/money.js)
+   * and shipped on every cancellation record as `refundSummary`, so the numbers
+   * rendered here are literally the ones that will be refunded. VAT is not part
+   * of a refund summary and is never shown.
+   */
+  function refundSummary(c) {
+    var helper = window.RefundSummary;
+    if (helper && typeof helper.computeRefundSummary === "function") return helper.computeRefundSummary(c);
+
+    var round = function (v) { return Math.round(((Number(v) || 0) + Number.EPSILON) * 100) / 100; };
+    var serviceFee = Math.max(0, Number(c.serviceFee) || 0);
+    var subtotal = Number(c.orderSubtotal !== undefined ? c.orderSubtotal : c.subtotal) || 0;
+    if (subtotal <= 0) {
+      var vat = Math.max(0, Number(c.orderVatAmount) || Number(c.vatAmount) || 0);
+      var deliveryFee = Math.max(0, Number(c.deliveryFee) || 0);
+      subtotal = Math.max(0, (Number(c.orderAmount) || 0) - serviceFee - deliveryFee - vat);
+    }
+    subtotal = Math.max(0, round(subtotal));
+    return {
+      subtotal: subtotal,
+      serviceFee: round(serviceFee),
+      totalPaid: round(subtotal + serviceFee),
+      refundAmount: subtotal,
+      currency: "ETB"
+    };
+  }
+
   function openModal(id) { var el = document.getElementById(id); if (el) el.classList.add("open"); }
   function closeModal(id) { var el = document.getElementById(id); if (el) el.classList.remove("open"); }
   function closeAllModals() { document.querySelectorAll(".modal-overlay.open").forEach(function(m) { m.classList.remove("open"); }); }
@@ -242,14 +270,13 @@ function tr(key, fallback, vars) {
       }
     }
 
-    var subtotal = Number(c.orderSubtotal) || 0;
-    var serviceFee = Number(c.serviceFee) || 0;
-    var total = Number(c.orderAmount) || 0;
-    setText("modalCancSubtotal", money(subtotal) + " ETB");
-    setText("modalCancServiceFee", money(serviceFee) + " ETB");
-    setText("modalCancVat", money(Number(c.orderVatAmount) || 0) + " ETB");
-    setText("modalCancTotal", money(total) + " ETB");
-    setText("modalCancRefundNote", money(Number(c.orderSubtotal) || 0) + " ETB");
+    // Refund summary: Subtotal / Service Fee / Total Paid (Subtotal + Service
+    // Fee, VAT excluded) / Refund Amount (= Subtotal). No VAT line.
+    var summary = refundSummary(c);
+    setText("modalCancSubtotal", money(summary.subtotal) + " ETB");
+    setText("modalCancServiceFee", money(summary.serviceFee) + " ETB");
+    setText("modalCancTotalPaid", money(summary.totalPaid) + " ETB");
+    setText("modalCancRefundAmountTotal", money(summary.refundAmount) + " ETB");
 
     var noteEl = document.getElementById("cancAdminNote");
     if (noteEl) noteEl.value = "";
@@ -303,10 +330,10 @@ function tr(key, fallback, vars) {
 
     try {
       if (action === "approve") {
-        // Admin-controlled refund amount (full by default, or 0 for no refund,
-        // or a partial amount). Backend honors this value.
+        // The default refund is the order Subtotal (Refund Amount = Subtotal);
+        // the backend prompts only to allow a partial refund or 0 for none.
         var refundInput = window.prompt(
-          "Refund amount to issue (ETB). Enter 0 for no refund, or leave blank for the order Subtotal only (VAT is not refunded):"
+          "Refund amount to issue (ETB). Leave blank to refund the order Subtotal, or enter 0 for no refund."
         );
         var payload = { adminNote: adminNote };
         if (refundInput !== null && refundInput !== "") {

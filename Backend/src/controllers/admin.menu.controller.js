@@ -11,12 +11,16 @@ const VALID_CATEGORIES = ['breakfast', 'main-meals', 'fasting', 'beverages', 'sn
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
 
 function sanitize(item) {
+  const { getStockStatus } = require('../services/stock-alert.service');
   return {
     id: item._id,
-    name: { en: item.name.en, am: item.name.am },
+    name: { en: (item.name && item.name.en) || '', am: (item.name && item.name.am) || '' },
     category: item.category,
     price: item.price,
-    description: { en: item.description.en || '', am: item.description.am || '' },
+    description: {
+      en: (item.description && item.description.en) || '',
+      am: (item.description && item.description.am) || '',
+    },
     icon: item.icon,
     image: item.image,
     preparationTime: item.preparationTime,
@@ -25,6 +29,7 @@ function sanitize(item) {
     isActive: item.isActive,
     stockQuantity: item.stockQuantity,
     lowStockThreshold: item.lowStockThreshold,
+    stockStatus: getStockStatus(item),
     availabilityStatus: item.availabilityStatus,
     isPopular: item.isPopular,
     isRecommended: item.isRecommended,
@@ -258,7 +263,18 @@ exports.createMenuItem = async (req, res) => {
         newQuantity: stock,
         action: 'ADD',
         performedBy: req.user.id,
+        performedByRole: req.user.role || null,
+        cafeteriaId: itemCafeteriaId || null,
       });
+
+    // Keep the stock-alert lifecycle in sync (an item created at/below its
+    // minimum threshold immediately gets an active alert). Best-effort.
+    try {
+      const { syncStockAlertsForItem } = require('../services/stock-alert.service');
+      await syncStockAlertsForItem(item);
+    } catch (e) {
+      console.warn('⚠️ Stock alert sync after menu item create failed:', e.message);
+    }
 
     await logAction({
       req,
@@ -411,6 +427,16 @@ exports.updateMenuItem = async (req, res) => {
 
     await item.save();
 
+    // Re-run the stock-alert lifecycle after any stock/threshold/availability
+    // edit so Low Stock / Out of Stock alerts match the latest configuration.
+    // Best-effort: alert bookkeeping must never fail a menu save.
+    try {
+      const { syncStockAlertsForItem } = require('../services/stock-alert.service');
+      await syncStockAlertsForItem(item);
+    } catch (e) {
+      console.warn('⚠️ Stock alert sync after menu item update failed:', e.message);
+    }
+
     await logAction({
       req,
       action: 'FOOD_UPDATED',
@@ -446,6 +472,23 @@ exports.toggleAvailability = async (req, res) => {
     const item = await MenuItem.findById(req.params.id);
     if (!item) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'Menu item not found' });
+    }
+
+    // Quality hold: an item with an open quality issue cannot be flipped back
+    // to available until the quality alert is inspected and resolved.
+    if (boolAvailable) {
+      const StockAlert = require('../models/StockAlert');
+      const openQuality = await StockAlert.countDocuments({
+        itemId: item._id,
+        alertType: 'quality_issue',
+        status: { $in: ['active', 'acknowledged'] },
+      });
+      if (openQuality > 0 || item.qualityHold === true) {
+        return res.status(HTTP_STATUS.CONFLICT).json({
+          success: false,
+          error: 'This item has a pending quality issue. Resolve the quality alert before marking it available again.',
+        });
+      }
     }
 
     item.availability = boolAvailable;
@@ -572,9 +615,10 @@ exports.updateStock = async (req, res) => {
       { new: true }
     );
     if (!item) return res.status(HTTP_STATUS.CONFLICT).json({ success: false, error: 'Stock changed; please retry' });
-    item.availabilityStatus =
-      item.stockQuantity === 0 ? 'OUT_OF_STOCK' : item.availability === false ? 'UNAVAILABLE' : 'AVAILABLE';
+    const { recalculateAvailability } = require('../services/stock-alert.service');
+    recalculateAvailability(item);
     await item.save();
+    const { normalizeRole } = require('../config/roles');
     await StockTransaction.create({
       foodId: item._id,
       previousQuantity: current.stockQuantity,
@@ -582,7 +626,31 @@ exports.updateStock = async (req, res) => {
       newQuantity: item.stockQuantity,
       action,
       performedBy: req.user.id,
+      performedByRole: normalizeRole(req.user.role),
+      cafeteriaId: item.cafeteriaId || null,
     });
+    await logAction({
+      req,
+      action: 'STOCK_UPDATED',
+      entityType: 'MenuItem',
+      entityId: String(item._id),
+      description: `${req.user.name || 'Admin'} ${action.toLowerCase()}ed stock of "${item.name.en}": ${current.stockQuantity} → ${item.stockQuantity}`,
+      cafeteriaId: item.cafeteriaId,
+      metadata: {
+        itemId: String(item._id),
+        previousQuantity: current.stockQuantity,
+        quantityChanged: item.stockQuantity - current.stockQuantity,
+        newQuantity: item.stockQuantity,
+        stockAction: action,
+      },
+    });
+    // Keep Low Stock / Out of Stock alerts in sync with the new quantity.
+    try {
+      const { syncStockAlertsForItem } = require('../services/stock-alert.service');
+      await syncStockAlertsForItem(item);
+    } catch (e) {
+      console.warn('⚠️ Stock alert sync after stock update failed:', e.message);
+    }
     res.json({ success: true, item: sanitize(item) });
   } catch (error) {
     res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ success: false, error: MESSAGES.SERVER_ERROR });

@@ -72,6 +72,24 @@ function registerLangChange(fn) {
     else window.addEventListener('language:changed', fn);
 }
 
+// Only Cafeteria Admin / System Admin may resolve a stock alert (the backend
+// answers 403 to everyone else) - hide the Resolve action for other roles.
+function canResolveStockAlerts() {
+    let role = '';
+    if (window.ScosRoles && window.ScosRoles.getCurrentRole) {
+        role = window.ScosRoles.getCurrentRole();
+    } else {
+        try {
+            const cu = JSON.parse(localStorage.getItem('current_user') || 'null');
+            role = (cu && cu.role) || localStorage.getItem('userRole') || localStorage.getItem('role') || '';
+        } catch (e) {
+            role = localStorage.getItem('userRole') || localStorage.getItem('role') || '';
+        }
+    }
+    if (window.ScosRoles && window.ScosRoles.normalizeRole) role = window.ScosRoles.normalizeRole(role);
+    return ['cafeteria_admin', 'admin', 'system_admin'].indexOf(String(role || '').toLowerCase()) !== -1;
+}
+
 registerLangChange(() => {
     try {
         if (!document.getElementById('alertsList')) return;
@@ -224,6 +242,8 @@ function renderAlerts() {
             const isOut = alert.stockStatus === 'OUT_OF_STOCK';
             const stockBadgeClass = isOut ? 'status-out-of-stock' : 'status-low-stock';
             const stockStatusLabel = isOut ? tr('stock_out_of_stock', 'OUT OF STOCK') : tr('stock_low_stock', 'LOW STOCK');
+            const isDone = alert.status === 'resolved' || alert.status === 'cancelled';
+            const statusLabel = window.translateStatus ? window.translateStatus(alert.status) : escapeHtml(alert.status);
 
             card.innerHTML = `
                 <div class="alert-content">
@@ -232,7 +252,8 @@ function renderAlerts() {
                         <div>
                             <div class="alert-title">${escapeHtml(alert.itemName)}</div>
                             <span class="severity-badge severity-${escapeHtml(severity)}">${escapeHtml(formatSeverity(severity))}</span>
-                            <span class="status-badge ${stockBadgeClass}">${stockStatusLabel}</span>
+                            <span class="status-badge ${isDone ? '' : stockBadgeClass}" ${isDone ? 'style="background:#dcfce7;color:#166534;"' : ''}>${isDone ? statusLabel : stockStatusLabel}</span>
+                            ${alert.status === 'acknowledged' ? `<span class="status-badge status-acknowledged">${statusLabel}</span>` : ''}
                         </div>
                     </div>
 
@@ -247,7 +268,7 @@ function renderAlerts() {
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Status</span>
-                            <span class="detail-value">${stockStatusLabel}</span>
+                            <span class="detail-value">${isDone ? statusLabel : stockStatusLabel}</span>
                         </div>
                         <div class="detail-item">
                             <span class="detail-label">Last Updated</span>
@@ -258,6 +279,14 @@ function renderAlerts() {
                     <div class="alert-reason">
                         <strong>Issue:</strong> ${escapeHtml(alert.reason)}
                     </div>
+
+                    ${renderManagerResponse(alert)}
+                </div>
+
+                <div class="alert-actions">
+                    <button class="btn btn-acknowledge" onclick="openDetails('${escapeHtml(alert.id)}')">
+                        ${escapeHtml(tr('stock_view_details', 'View Details'))}
+                    </button>
                 </div>
             `;
         } else {
@@ -301,12 +330,15 @@ function renderAlerts() {
                 </div>
 
                 <div class="alert-actions">
+                    <button class="btn btn-acknowledge" onclick="openDetails('${escapeHtml(alert.id)}')">
+                        ${escapeHtml(tr('stock_view_details', 'View Details'))}
+                    </button>
                     ${alert.status === 'active' ? `
                         <button class="btn btn-acknowledge" onclick="acknowledgeAlert('${escapeHtml(alert.id)}')">
                             Mark Acknowledged
                         </button>
                     ` : ''}
-                    ${alert.status !== 'resolved' ? `
+                    ${alert.status !== 'resolved' && canResolveStockAlerts() ? `
                         <button class="btn btn-resolve" onclick="resolveAlert('${escapeHtml(alert.id)}')">
                             Mark Resolved
                         </button>
@@ -336,16 +368,151 @@ function renderManagerResponse(alert) {
         const meta = [];
         if (alert.resolvedBy) meta.push(escapeHtml(alert.resolvedBy));
         if (alert.resolvedAt) meta.push(formatDateTime(alert.resolvedAt));
+        const resolutionLines = [];
+        if (alert.resolutionReason) {
+            resolutionLines.push(`<strong>${escapeHtml(tr('resolution_reason_label', 'Resolution Reason'))}:</strong> ${escapeHtml(alert.resolutionReason)}`);
+        }
+        if (alert.resolutionSolution) {
+            resolutionLines.push(`<strong>${escapeHtml(tr('resolution_solution_label', 'Solution / Corrective Action'))}:</strong> ${escapeHtml(alert.resolutionSolution)}`);
+        }
+        if (alert.resolutionNote) {
+            resolutionLines.push(escapeHtml(alert.resolutionNote));
+        }
         parts.push(
             `<div class="alert-response response-resolved"><i class="fa-solid fa-circle-check"></i> ` +
             `<strong>${escapeHtml(tr('stock_resolved_label', 'Resolved'))}:</strong> ` +
-            `${escapeHtml(alert.resolutionNote || tr('stock_no_resolution', 'No resolution note.'))}` +
+            (resolutionLines.length ? resolutionLines.join('<br>') : escapeHtml(tr('stock_no_resolution', 'No resolution note.'))) +
             (meta.length ? `<span class="response-meta">${meta.join(' · ')}</span>` : '') +
             `</div>`
         );
     }
 
     return parts.join('');
+}
+
+function detailRow(label, value) {
+    return `
+        <div class="detail-item">
+            <span class="detail-label">${escapeHtml(label)}</span>
+            <span class="detail-value">${value == null || value === '' ? '—' : value}</span>
+        </div>
+    `;
+}
+
+function alertStatusBadge(alert) {
+    const status = alert.status || 'active';
+    const label = window.translateStatus ? window.translateStatus(status) : status;
+    if (status === 'resolved') {
+        return `<span class="status-badge" style="background:#dcfce7;color:#166534;">${escapeHtml(tr('issue_status_resolved', 'Resolved'))}</span>`;
+    }
+    if (status === 'cancelled') {
+        return `<span class="status-badge" style="background:#f1f5f9;color:#64748b;">${escapeHtml(label)}</span>`;
+    }
+    return `<span class="status-badge status-${escapeHtml(status)}">${escapeHtml(label)}</span>`;
+}
+
+function renderDetails(alert) {
+    const content = document.getElementById('detailsContent');
+    if (!content) return;
+
+    const isResolved = alert.status === 'resolved';
+    const qtyAtCreation = alert.quantityAtCreation ?? null;
+
+    const resolutionHtml = isResolved
+        ? `
+            <div class="alert-response response-resolved">
+                <i class="fa-solid fa-circle-check"></i>
+                <strong>${escapeHtml(tr('stock_resolved_label', 'Resolved'))}:</strong>
+                ${alert.resolutionReason ? `<div><strong>${escapeHtml(tr('resolution_reason_label', 'Resolution Reason'))}:</strong> ${escapeHtml(alert.resolutionReason)}</div>` : ''}
+                ${alert.resolutionSolution ? `<div><strong>${escapeHtml(tr('resolution_solution_label', 'Solution / Corrective Action'))}:</strong> ${escapeHtml(alert.resolutionSolution)}</div>` : ''}
+                ${alert.resolutionNote ? `<div>${escapeHtml(alert.resolutionNote)}</div>` : `<div>${escapeHtml(tr('stock_no_resolution', 'No resolution note.'))}</div>`}
+                ${alert.resolvedBy || alert.resolvedAt ? `<span class="response-meta">${[
+                    alert.resolvedBy ? escapeHtml(alert.resolvedBy) : '',
+                    alert.resolvedAt ? formatDateTime(alert.resolvedAt) : ''
+                ].filter(Boolean).join(' · ')}</span>` : ''}
+            </div>
+        `
+        : `<div class="alert-response"><i class="fa-solid fa-circle-info"></i> ${escapeHtml(tr('stock_not_resolved_yet', 'This alert has not been resolved yet.'))}</div>`;
+
+    content.innerHTML = `
+        <div class="alert-details" style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;">
+            ${detailRow(tr('stock_detail_item_name', 'Item Name'), escapeHtml(alert.itemName || '—'))}
+            ${detailRow(tr('stock_detail_item_id', 'Item ID'), escapeHtml(alert.itemId ? String(alert.itemId) : '—'))}
+            ${detailRow(tr('stock_detail_alert_type', 'Alert Type'), escapeHtml(formatAlertType(alert.alertType)))}
+            ${detailRow(tr('stock_detail_severity', 'Severity'), escapeHtml(formatSeverity(alert.severity)))}
+            ${detailRow(tr('stock_detail_created_qty', 'Quantity When Alert Created'), qtyAtCreation == null ? escapeHtml(tr('stock_detail_qty_not_stored', 'Not recorded')) : escapeHtml(qtyAtCreation))}
+            ${detailRow(tr('stock_detail_current_qty', 'Current Inventory Quantity'), escapeHtml(alert.currentQuantity ?? '—'))}
+            ${detailRow(tr('stock_detail_status', 'Status'), alertStatusBadge(alert))}
+            ${detailRow(tr('stock_detail_created_at', 'Reported At'), formatDateTime(alert.createdAt))}
+        </div>
+        <div class="alert-reason" style="margin-top:12px;">
+            <strong>${escapeHtml(tr('stock_detail_reason', 'Original Reason'))}:</strong> ${escapeHtml(alert.reason || '—')}
+        </div>
+        <h4 style="margin:16px 0 8px;">${escapeHtml(tr('stock_detail_resolution', 'Resolution'))}</h4>
+        ${resolutionHtml}
+    `;
+}
+
+async function openDetails(alertId) {
+    const modal = document.getElementById('detailsModal');
+    const content = document.getElementById('detailsContent');
+    if (!modal || !content) return;
+
+    modal.classList.add('active');
+    content.innerHTML = `
+        <div class="empty-state">
+            <div class="empty-icon"><i class="fa-solid fa-spinner fa-spin"></i></div>
+            <p>${escapeHtml(tr('stock_details_loading', 'Loading alert details…'))}</p>
+        </div>
+    `;
+
+    // Authoritative record from the API; fall back to the cached list entry
+    // (e.g. transient network hiccup) so details still open.
+    let alert = allAlerts.find((a) => String(a.id) === String(alertId)) || null;
+
+    try {
+        const apiBase = getApiBase();
+        const token = localStorage.getItem('auth_token');
+        const response = await fetch(`${apiBase}/kitchen/stock-alerts/${encodeURIComponent(alertId)}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        let data = null;
+        try { data = await response.json(); } catch (parseError) { data = null; }
+
+        if (response.ok && data && data.success && data.alert) {
+            alert = data.alert;
+        } else if (!alert) {
+            const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
+            content.innerHTML = `
+                <div class="empty-state error-state">
+                    <p>${escapeHtml(tr('stock_details_failed', 'Unable to load alert details.'))}</p>
+                    <p class="error-detail">${escapeHtml(message)}</p>
+                </div>
+            `;
+            return;
+        }
+    } catch (error) {
+        console.warn('[Stock Alerts] Network error loading details:', error && (error.message || error));
+        if (!alert) {
+            content.innerHTML = `
+                <div class="empty-state error-state">
+                    <p>${escapeHtml(tr('stock_details_failed', 'Unable to load alert details.'))}</p>
+                    <p class="error-detail">${escapeHtml(tr('stock_server_unreachable', 'Cannot reach the server. Check your connection and retry.'))}</p>
+                </div>
+            `;
+            return;
+        }
+    }
+
+    renderDetails(alert);
+}
+
+function closeDetailsModal() {
+    const modal = document.getElementById('detailsModal');
+    if (modal) modal.classList.remove('active');
 }
 
 function filterAlerts() {
@@ -482,13 +649,94 @@ async function acknowledgeAlert(alertId) {
     }
 }
 
-async function resolveAlert(alertId) {
-    if (!confirm(tr('stock_confirm_resolve', 'Mark this alert as resolved?'))) return;
+function resolveAlert(alertId) {
+    openResolveModal(alertId);
+}
+
+function populateResolveSelect(selectEl, options) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">' + escapeHtml(tr('select_option', 'Select an option')) + '</option>' +
+        options.map((opt) => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`).join('');
+}
+
+function openResolveModal(alertId) {
+    const modal = document.getElementById('resolveModal');
+    if (!modal) return;
+    const idInput = document.getElementById('resolveAlertId');
+    const reasonSel = document.getElementById('resolveReason');
+    const solSel = document.getElementById('resolveSolution');
+    const otherGroup = document.getElementById('resolveOtherGroup');
+    const form = document.getElementById('resolveForm');
+    if (form) form.reset();
+    if (idInput) idInput.value = alertId || '';
+    const opts = window.ScosResolution;
+    const category = opts && opts.categoryForStockAlert ? opts.categoryForStockAlert() : 'stock';
+    populateResolveSelect(reasonSel, opts && opts.reasonsFor ? opts.reasonsFor(category) : ['Out of Stock', 'Low Stock', 'Expired Items', 'Supplier Delay', 'Incorrect Stock Record', 'Other']);
+    populateResolveSelect(solSel, opts && opts.solutionsFor ? opts.solutionsFor(category) : ['Restocked Items', 'Updated Stock Quantity', 'Ordered New Supplies', 'Removed Expired Items', 'Contacted Supplier', 'Corrected Inventory Record', 'Other']);
+    if (otherGroup) otherGroup.style.display = 'none';
+    modal.classList.add('active');
+}
+
+function closeResolveModal() {
+    const modal = document.getElementById('resolveModal');
+    if (modal) modal.classList.remove('active');
+}
+
+document.getElementById('resolveForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const alertId = document.getElementById('resolveAlertId')?.value;
+    const reasonSel = document.getElementById('resolveReason');
+    const solSel = document.getElementById('resolveSolution');
+    const otherInput = document.getElementById('resolveOther');
+    const detailsInput = document.getElementById('resolveDetails');
+
+    const setError = (sel, message) => {
+        const group = sel?.closest('.form-group');
+        let err = group?.querySelector('.form-error');
+        if (group && !err) {
+            err = document.createElement('div');
+            err.className = 'form-error';
+            group.appendChild(err);
+        }
+        if (err) err.textContent = message || '';
+    };
+    setError(reasonSel, '');
+    setError(solSel, '');
+    setError(otherInput, '');
+
+    const reason = reasonSel?.value || '';
+    const solution = solSel?.value || '';
+    const otherText = otherInput?.value.trim() || '';
+    const details = detailsInput?.value.trim() || '';
+
+    if (!reason) {
+        setError(reasonSel, tr('reason_required', 'Resolution reason is required.'));
+        reasonSel?.focus();
+        return;
+    }
+    if (!solution) {
+        setError(solSel, tr('solution_required', 'Solution is required.'));
+        solSel?.focus();
+        return;
+    }
+    if ((reason === 'Other' || solution === 'Other') && !otherText) {
+        setError(otherInput, tr('other_required', 'Please explain the Other selection.'));
+        otherInput?.focus();
+        return;
+    }
+    if (!alertId) {
+        showNotification(tr('stock_not_found', 'Stock alert not found'), 'error');
+        return;
+    }
+
+    const noteParts = [];
+    if (otherText) noteParts.push(tr('resolution_other_prefix', 'Other explanation') + ': ' + otherText);
+    if (details) noteParts.push(details);
 
     try {
         const apiBase = getApiBase();
         const url = `${apiBase}/kitchen/stock-alerts/${alertId}/resolve`;
-        console.log(`[Stock Alerts] PATCH ${url}`);
         const token = localStorage.getItem('auth_token');
         const response = await fetch(url, {
             method: 'PATCH',
@@ -496,28 +744,39 @@ async function resolveAlert(alertId) {
                 'Authorization': `Bearer ${token}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({})
+            body: JSON.stringify({
+                resolutionReason: reason,
+                resolutionSolution: solution,
+                resolutionNote: noteParts.join('\n\n') || null
+            })
         });
 
-        console.log(`[Stock Alerts] HTTP ${response.status}`);
         let data = null;
         try { data = await response.json(); } catch (parseError) { data = null; }
 
         if (!response.ok || !data || !data.success) {
             const message = (data && (data.error || data.message)) || `HTTP ${response.status}`;
-            console.error(`[Stock Alerts] Resolve failed: ${message}`);
             showNotification((message && (typeof window.translateErrorMessage === 'function' ? window.translateErrorMessage(message) : message)) || tr('stock_failed_resolve', 'Failed to resolve alert'), 'error');
             return;
         }
 
         showNotification(tr('stock_resolve_success', 'Alert marked as resolved'), 'success');
+        closeResolveModal();
         loadStockAlerts();
 
     } catch (error) {
         console.error('[Stock Alerts] Network error resolving alert:', error && (error.message || error));
         showNotification(tr('stock_failed_resolve', 'Failed to resolve alert'), 'error');
     }
-}
+});
+
+document.getElementById('resolveForm')?.addEventListener('change', (e) => {
+    if (e.target?.id !== 'resolveReason' && e.target?.id !== 'resolveSolution') return;
+    const reason = document.getElementById('resolveReason')?.value || '';
+    const solution = document.getElementById('resolveSolution')?.value || '';
+    const otherGroup = document.getElementById('resolveOtherGroup');
+    if (otherGroup) otherGroup.style.display = (reason === 'Other' || solution === 'Other') ? '' : 'none';
+});
 
 function showNotification(message, type = 'info') {
     const container = document.getElementById('notificationContainer');

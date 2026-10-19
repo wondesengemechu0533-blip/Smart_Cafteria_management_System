@@ -60,6 +60,15 @@ const KDS = {
     // worked, so it is only ever requested when someone explicitly asks for it.
     includeUnpaid: false,
     loadError: null,
+    // Latched when the server answers 403 on a kitchen route. A 403 is a
+    // PERMANENT answer - the signed-in account is not a kitchen account (or its
+    // role changed in the DB) - so every timer is stopped and the tab leaves.
+    //
+    // WHY: without this the board polled /kitchen/dashboard every 15s forever,
+    // printing the same stack trace and adding a real round trip to Mongo on top
+    // of the bandwidth that was already the reason the first request timed out.
+    // deliveries.js guards this the same way (abortForSessionChange).
+    sessionAborted: false,
     // The board is polled every 15s, but on a slow database link a single
     // response can take longer than that. Without this handle the next tick
     // starts a SECOND request while the first is still running, and the two (then
@@ -534,6 +543,9 @@ const KDS = {
             return merged.size;
         } catch (error) {
             console.warn('Failed to load kitchen notifications:', error && error.message);
+            // A 401/403 here is the same dead session the dashboard poll sees;
+            // stop the board rather than keep retrying a rejected credential.
+            this.handleSessionError(error);
             return 0;
         }
     },
@@ -1370,6 +1382,7 @@ const KDS = {
      * tick after a failure starts a genuinely fresh attempt.
      */
     requestDashboard() {
+        if (this.sessionAborted) return Promise.resolve(null);
         if (this._boardRequest) return this._boardRequest;
         this._boardRequest = Promise.resolve()
             .then(() => api.get(this.dashboardUrl(), { timeout: this.DASHBOARD_TIMEOUT_MS }))
@@ -1377,7 +1390,54 @@ const KDS = {
         return this._boardRequest;
     },
 
+    /**
+     * Leave because this session can no longer use the kitchen board.
+     *
+     * Every timer is cleared FIRST. The board poll, the notification poll and
+     * the ticket clock would otherwise keep hitting the API with a token the
+     * server rejects, each one a guaranteed round trip that can only repeat the
+     * same 403.
+     */
+    abortForSessionChange(status) {
+        if (this.sessionAborted) return;
+        this.sessionAborted = true;
+        [this.pollInterval, this.notifPollInterval, this.updateInterval].forEach((timer) => {
+            if (timer) clearInterval(timer);
+        });
+        this.pollInterval = null;
+        this.notifPollInterval = null;
+        this.updateInterval = null;
+        if (status === 401) {
+            console.warn('[kds] 401 from a kitchen route - the session is missing, expired or invalid. Leaving for login.');
+        } else {
+            console.warn('[kds] 403 from a kitchen route - leaving. This account is not a kitchen account.');
+        }
+        // Guarded: the abort is correct in a browser, but the KDS object is also
+        // exercised by DOM-less test hosts that have no location to navigate.
+        // Leaving the timers stopped is the important half either way.
+        if (typeof window !== 'undefined' && window.location) {
+            window.location.href = '../common/login.html';
+        }
+    },
+
+    /**
+     * A 401 or 403 on any kitchen route is a PERMANENT answer for this session:
+     * 401 = no/expired/invalid token, 403 = this account is not a kitchen
+     * account. Neither can ever succeed on retry, so the page must stop instead
+     * of polling forever with a credential the server already rejected.
+     * Returns true when the caller should abandon this refresh.
+     */
+    handleSessionError(error) {
+        const status = error && Number(error.status);
+        if (status === 401 || status === 403) {
+            this.abortForSessionChange(status);
+            return true;
+        }
+        return false;
+    },
+
     async loadInitialOrders(options) {
+        if (this.sessionAborted) return;
         try {
             const response = await this.requestDashboard();
             if (response.success) {
@@ -1421,10 +1481,15 @@ const KDS = {
             // Keep whatever is already on screen, but tell the truth about why
             // it may be stale instead of leaving an unexplained empty table.
             this.loadError = (error && error.message) || 'Could not reach the kitchen queue.';
+            // Reported FIRST, navigated away SECOND. The kitchen has to be told
+            // why the board is empty before the tab leaves - a 403 that silently
+            // redirects looks identical to a page that just failed to load.
+            this.handleSessionError(error);
         }
     },
 
     async refreshOrders() {
+        if (this.sessionAborted) return;
         try {
             const response = await this.requestDashboard();
             if (response.success) {
@@ -1464,6 +1529,8 @@ const KDS = {
         } catch (error) {
             console.error('Failed to refresh orders:', error);
             this.loadError = (error && error.message) || 'Could not reach the kitchen queue.';
+            // Reported first, navigated away second - see loadInitialOrders().
+            this.handleSessionError(error);
         }
     },
 
@@ -1533,6 +1600,12 @@ const KDS = {
         // Merged, so a "board refresh" frame (the order already known) cannot
         // blank the items a previous full load supplied.
         this.orders.set(String(order.orderId), this.mergeOrder(this.orders.get(String(order.orderId)), order));
+        // A genuinely new order (not already on the board) must also raise the
+        // kitchen alert + notification sound exactly once. Replayed frames for an
+        // already-known order are treated as a board refresh and stay silent.
+        if (!wasKnown) {
+            this.raiseNewOrderAlert(order);
+        }
         // Re-render the table so the new order appears at the top immediately
         // Sorted by newest-first via getFilteredOrders(), no toast/sound emitted.
         this.render();

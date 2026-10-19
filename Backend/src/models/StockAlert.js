@@ -25,6 +25,15 @@ const StockAlertSchema = new mongoose.Schema(
       enum: ['out_of_stock', 'low_stock', 'ingredient_shortage', 'quality_issue'],
       default: 'out_of_stock',
     },
+    // 'system'  → automatic threshold alert maintained by the stock-alert
+    //             lifecycle service (low stock / out of stock).
+    // 'manual'  → reported by a human (kitchen staff report issue form,
+    //             mark-unavailable action, ...).
+    alertSource: {
+      type: String,
+      enum: ['system', 'manual'],
+      default: 'manual',
+    },
     severity: {
       type: String,
       enum: ['low', 'medium', 'high', 'critical'],
@@ -34,14 +43,17 @@ const StockAlertSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    // System-generated threshold alerts have no human reporter; manual
+    // reports always carry the authenticated reporter's id.
     reportedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      required: false,
+      default: null,
     },
     reportedByRole: {
       type: String,
-      enum: ['kitchen', 'admin'],
+      enum: ['kitchen', 'admin', 'manager', 'system'],
       default: 'kitchen',
     },
     status: {
@@ -70,6 +82,18 @@ const StockAlertSchema = new mongoose.Schema(
     },
     resolutionNote: {
       type: String,
+      default: null,
+    },
+    resolutionReason: {
+      type: String,
+      default: null,
+    },
+    resolutionSolution: {
+      type: String,
+      default: null,
+    },
+    resolutionQuantity: {
+      type: Number,
       default: null,
     },
     resolvedBy: {
@@ -113,5 +137,18 @@ StockAlertSchema.index({ status: 1 });
 StockAlertSchema.index({ reportedBy: 1 });
 StockAlertSchema.index({ createdAt: -1 });
 StockAlertSchema.index({ cafeteriaId: 1, status: 1 });
+
+// Hard guarantee against duplicate ACTIVE system threshold alerts for the
+// same item + condition (e.g. two concurrent Low Stock alerts for Coffee).
+// Application code also de-duplicates via findOne, but this index makes the
+// invariant hold even under races.
+StockAlertSchema.index(
+  { itemId: 1, alertType: 1 },
+  {
+    unique: true,
+    name: 'one_active_system_alert_per_item_type',
+    partialFilterExpression: { status: 'active', alertSource: 'system', itemId: { $type: 'objectId' } },
+  }
+);
 
 module.exports = mongoose.model('StockAlert', StockAlertSchema);
