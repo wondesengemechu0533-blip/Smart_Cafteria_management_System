@@ -1,5 +1,12 @@
 require('dotenv').config();
 
+// Pin the process timezone to the reporting timezone of the business.
+// Ethiopia (Africa/Addis_Ababa) is a fixed UTC+03:00 offset with no daylight
+// saving, so the whole application - order days, payment days, report period
+// boundaries - resolves to the same calendar day regardless of where the
+// server is hosted. Set before any Date is created so every module sees it.
+process.env.TZ = process.env.TZ || 'Africa/Addis_Ababa';
+
 const path = require('path');
 const http = require('http');
 const express = require('express');

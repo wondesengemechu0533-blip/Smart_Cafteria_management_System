@@ -27,7 +27,7 @@ const {
 // ALL ROUTES REQUIRE KITCHEN ROLE (or admin, who can view it too)
 // ============================================================
 router.use(protect);
-router.use(authorize('kitchen', 'admin', 'cafeteria_admin', 'manager', 'kitchen_staff', 'staff', 'foodmaker'));
+router.use(authorize('kitchen', 'admin', 'manager', 'kitchen_staff', 'staff', 'foodmaker'));
 
 /**
  * @route   GET /api/kitchen/dashboard
@@ -207,14 +207,12 @@ router.patch('/stock-alerts/:id/acknowledge', acknowledgeStockAlert);
 /**
  * @route   PATCH /api/kitchen/stock-alerts/:id/resolve
  * @desc    Resolve a stock alert (records resolution note, admin id, timestamp).
- *          Resolution is restricted to cafeteria/system admins on top of the
- *          broad role gate above: the Cafeteria Manager may acknowledge and
- *          request restock, but never mark an alert as resolved (403).
- * @access  Private/Cafeteria Admin, Private/Admin
+ *          Managers, Admins and System Admins can resolve stock alerts.
+ * @access  Private/Admin/Manager
  */
 router.patch(
   '/stock-alerts/:id/resolve',
-  authorize('cafeteria_admin', 'admin', 'system_admin'),
+  authorize('manager', 'admin', 'system_admin'),
   resolveStockAlert
 );
 

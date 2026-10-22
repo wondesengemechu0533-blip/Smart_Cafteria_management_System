@@ -11,9 +11,9 @@ const {
   getReceipt,
 } = require('../controllers/cashier.controller');
 
-// Cashier dashboard is restricted to cashier + cafeteria management roles.
+// Cashier dashboard is restricted to cashier + management roles.
 router.use(protect);
-router.use(authorize('cashier', 'admin', 'ADMIN', 'cafeteria_admin', 'manager'));
+router.use(authorize('cashier', 'admin', 'ADMIN', 'manager'));
 
 /**
  * @route   GET /api/v1/cashier/dashboard

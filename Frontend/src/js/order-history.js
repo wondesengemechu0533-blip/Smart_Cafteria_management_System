@@ -33,9 +33,9 @@ function filterOrdersLocally(orders, filterStatus) {
         // `status` is the primary vocabulary; `orderStatus` is its
         // SCREAMING_SNAKE twin and the only one present on some legacy rows.
         const currentStatus = String(order.status || order.orderStatus || "pending").trim().toLowerCase();
-        if (bucket === "completed") return currentStatus === "completed" || currentStatus === "served";
-        if (bucket === "pending") return ["pending", "preparing", "ready", "ready_for_delivery", "picked_up", "out_for_delivery", "arrived", "delivered", "received"].includes(currentStatus);
-        if (bucket === "cancelled") return currentStatus === "cancelled" || currentStatus === "canceled";
+        if (bucket === "completed") return currentStatus === "completed";
+        if (bucket === "pending") return ["pending", "preparing", "ready", "arrived", "out_for_delivery", "delivered"].includes(currentStatus);
+        if (bucket === "cancelled") return currentStatus === "cancelled";
         if (bucket === "refunded") {
             return String(order.paymentStatus || "").toUpperCase() === "REFUNDED" ||
                 String(order.refundStatus || "").toUpperCase() === "REFUNDED" ||

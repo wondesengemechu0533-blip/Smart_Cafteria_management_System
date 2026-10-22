@@ -4,6 +4,42 @@ const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
 const Report = require('../models/Report');
 const { MESSAGES, HTTP_STATUS } = require('../config/constants');
+const { getSettingsMap } = require('../utils/settings');
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/**
+ * The CONFIGURED tax settings.
+ *
+ * The VAT rate used to be hard-coded to 15% inside these reports, so any
+ * cafeteria that configured a different rate (or turned VAT off) had its
+ * revenue and tax figures silently mis-stated. The rate now always comes from
+ * the Settings collection; an order that stored its own rate keeps using it.
+ */
+async function loadTaxConfig() {
+  const map = await getSettingsMap();
+  return {
+    vatEnabled: map.vat_enabled !== false && map.vat_enabled !== 'false',
+    vatRate: Math.max(0, Number(map.vat_rate) || 0),
+  };
+}
+
+/**
+ * VAT charged on one order.
+ *
+ * `totalAmount` is VAT-inclusive, so the VAT part of it is
+ * totalAmount * rate / (100 + rate).
+ */
+function orderVatAmount(order, config) {
+  const storedRate = Number(order.vatRate) || 0;
+  const rate = storedRate > 0 ? storedRate : config.vatRate;
+  const enabled = order.vatEnabled !== false && config.vatEnabled;
+  if (!enabled || rate <= 0) return 0;
+  const stored = Number(order.vatAmount) || Number(order.taxAmount) || 0;
+  if (stored > 0) return stored;
+  return round2(((Number(order.totalAmount) || 0) * rate) / (100 + rate));
+}
+
 
 /**
  * @desc    Generate daily orders report
@@ -253,18 +289,12 @@ exports.getRevenueReport = async (req, res) => {
 
     const orders = await Order.find(filter).lean();
 
+    const taxConfig = await loadTaxConfig();
     const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
     const agg = orders.reduce(
       (acc, o) => {
-        const vatRate = Number(o.vatRate) || 0;
-        const vatEnabled = o.vatEnabled !== false;
-        const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
-        const effectiveVatAmount =
-          o.vatAmount ||
-          o.taxAmount ||
-          0 ||
-          (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+        const effectiveVatAmount = orderVatAmount(o, taxConfig);
         acc.orderCount++;
         acc.gross = acc.gross + (o.totalAmount || 0);
         acc.subtotal = acc.subtotal + (o.subtotal || 0);
@@ -307,17 +337,9 @@ exports.getRevenueReport = async (req, res) => {
       const d = o.createdAt ? o.createdAt : new Date();
       const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       if (!daily[date]) daily[date] = { orders: 0, gross: 0, vat: 0, subtotal: 0, serviceFees: 0, deliveryFees: 0 };
-      const vatRate = Number(o.vatRate) || 0;
-      const vatEnabled = o.vatEnabled !== false;
-      const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
-      const effectiveVatAmount =
-        o.vatAmount ||
-        o.taxAmount ||
-        0 ||
-        (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
       daily[date].orders++;
       daily[date].gross += o.totalAmount || 0;
-      daily[date].vat += effectiveVatAmount;
+      daily[date].vat += orderVatAmount(o, taxConfig);
       daily[date].subtotal += o.subtotal || 0;
       daily[date].serviceFees += o.serviceFee || 0;
       daily[date].deliveryFees += o.deliveryFee || 0;
@@ -382,22 +404,16 @@ exports.getTaxComplianceReport = async (req, res) => {
       .select('totalAmount vatAmount taxAmount vatRate vatEnabled createdAt orderId')
       .lean();
 
+    const taxConfig = await loadTaxConfig();
     const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
     const totals = orders.reduce(
       (acc, o) => {
-        const vatRate = Number(o.vatRate) || 0;
-        const vatEnabled = o.vatEnabled !== false;
-        const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
-        const effectiveVatAmount =
-          o.vatAmount ||
-          o.taxAmount ||
-          0 ||
-          (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
+        const effectiveVatAmount = orderVatAmount(o, taxConfig);
         acc.grossSales = acc.grossSales + (o.totalAmount || 0);
         acc.vatCollected = acc.vatCollected + effectiveVatAmount;
         acc.taxableBase = acc.taxableBase + (o.totalAmount || 0) - effectiveVatAmount;
-        if (vatEnabled) acc.vatInclusiveOrders++;
+        if (o.vatEnabled !== false && taxConfig.vatEnabled) acc.vatInclusiveOrders++;
         else acc.vatExemptOrders++;
         return acc;
       },
@@ -409,16 +425,8 @@ exports.getTaxComplianceReport = async (req, res) => {
       const d = o.createdAt ? o.createdAt : new Date();
       const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       if (!months[m]) months[m] = { grossSales: 0, vatCollected: 0 };
-      const vatRate = Number(o.vatRate) || 0;
-      const vatEnabled = o.vatEnabled !== false;
-      const effectiveVatRate = vatRate || (vatEnabled ? 15 : 0);
-      const effectiveVatAmount =
-        o.vatAmount ||
-        o.taxAmount ||
-        0 ||
-        (effectiveVatRate ? round2((o.totalAmount * effectiveVatRate) / (100 + effectiveVatRate)) : 0);
       months[m].grossSales += o.totalAmount || 0;
-      months[m].vatCollected += effectiveVatAmount;
+      months[m].vatCollected += orderVatAmount(o, taxConfig);
     });
 
     const monthlyBreakdown = Object.entries(months)

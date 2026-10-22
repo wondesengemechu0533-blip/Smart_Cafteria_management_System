@@ -13,15 +13,29 @@ const {
   getReportById,
   deleteReport,
 } = require('../controllers/report.controller');
+const { getFinanceReport, getTaxReport } = require('../controllers/admin.report.controller');
 const { validateReportQuery } = require('../validators/report.validator');
 
 router.use(protect);
 
+// Financial dashboard (Revenue / System Analytics).
+//
+// These two endpoints back the dedicated financial page: revenue + collection
+// reconciliation, and the VAT / tax compliance view with transaction-level
+// records. The cafeteria scope is resolved from the authenticated user, so a
+// manager only ever sees their own cafeteria while a system admin sees all.
+router.get(
+  '/finance',
+  authorize('admin', 'ADMIN', 'system_admin', 'manager'),
+  getFinanceReport
+);
+router.get('/tax', authorize('admin', 'ADMIN', 'system_admin', 'manager'), getTaxReport);
+
 // Government / tax authority - restricted to VAT compliance figures only.
-// System admins and cafeteria admins may also view for reconciliation.
+// System admins may also view for reconciliation.
 router.get(
   '/tax-compliance',
-  authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'),
+  authorize('admin', 'ADMIN', 'system_admin'),
   getTaxComplianceReport
 );
 
@@ -29,7 +43,7 @@ router.get(
 // management, cashiers (for the daily cash-up) and tax authority (VAT remittance).
 router.get(
   '/revenue',
-  authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager', 'cashier'),
+  authorize('admin', 'ADMIN', 'system_admin', 'manager', 'cashier'),
   getRevenueReport
 );
 
@@ -38,7 +52,6 @@ router.use(
     'admin',
     'ADMIN',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'staff',
     'kitchen_staff',

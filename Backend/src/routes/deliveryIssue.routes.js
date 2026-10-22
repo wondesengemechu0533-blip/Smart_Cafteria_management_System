@@ -4,7 +4,6 @@ const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
 const {
   SYSTEM_ADMIN_ROLES,
-  CAFETERIA_ADMIN_ROLES,
   MANAGEMENT_ROLES,
 } = require('../config/roles');
 const issueController = require('../controllers/deliveryIssue.controller');
@@ -39,7 +38,7 @@ const upload = multer({
 });
 
 const DELIVERY_ROLES = ['delivery', 'DELIVERY_STAFF', 'delivery_staff', 'delivery_person'];
-const MANAGER_ROLES = [...new Set([...SYSTEM_ADMIN_ROLES, ...CAFETERIA_ADMIN_ROLES, ...MANAGEMENT_ROLES])];
+const MANAGER_ROLES = [...new Set([...SYSTEM_ADMIN_ROLES, ...MANAGEMENT_ROLES])];
 
 router.use(protect);
 

@@ -25,6 +25,14 @@ const SESSION_STORAGE_KEYS = [
 
 let unauthorizedRedirecting = false;
 
+// HTTP statuses worth repeating for a read-only request. The backend answers
+// 503 with { retryable: true } when MongoDB is momentarily unreachable (an
+// Atlas replica-set failover, a brief network drop) - that is a transient
+// condition, not a broken endpoint.
+const RETRYABLE_STATUS = { 502: true, 503: true, 504: true };
+const MAX_RETRY_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 600;
+
 function clearLocalSession() {
     try {
         SESSION_STORAGE_KEYS.forEach((key) => localStorage.removeItem(key));
@@ -42,6 +50,11 @@ function redirectToLogin() {
 }
 
 class ApiClient {
+    // Exposed so the retry policy is inspectable (and testable) from outside.
+    static RETRYABLE_STATUS = RETRYABLE_STATUS;
+    static MAX_RETRY_ATTEMPTS = MAX_RETRY_ATTEMPTS;
+    static RETRY_BASE_DELAY_MS = RETRY_BASE_DELAY_MS;
+
     constructor(baseURL) {
         const configured =
             (typeof window.__API_URL === "string" && window.__API_URL) ||
@@ -91,6 +104,54 @@ class ApiClient {
     }
 
     async request(endpoint, options = {}) {
+        // Transient backend failures (a MongoDB Atlas failover or a brief
+        // network drop) come back as 503 with { retryable: true }. The backend
+        // has been flagging those for a while, but nothing ever read the flag,
+        // so a single blip turned every open dashboard into a wall of failed
+        // requests. Read-only requests are now retried automatically with a
+        // short backoff before the failure is surfaced to the caller.
+        const method = (options.method || "GET").toUpperCase();
+        const maxAttempts = ApiClient.isRetryableMethod(method)
+            ? ApiClient.MAX_RETRY_ATTEMPTS
+            : 1;
+
+        let lastError = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await this._requestOnce(endpoint, options);
+            } catch (error) {
+                lastError = error;
+                if (!ApiClient.shouldRetry(error, attempt, maxAttempts)) throw error;
+                await ApiClient.delay(ApiClient.RETRY_BASE_DELAY_MS * attempt);
+            }
+        }
+
+        throw lastError;
+    }
+
+    static isRetryableMethod(method) {
+        // Only safe, side-effect-free verbs are replayed: a write must never
+        // be sent twice because of a timeout.
+        return method === "GET" || method === "HEAD";
+    }
+
+    static shouldRetry(error, attempt, maxAttempts) {
+        if (!error) return false;
+        if (attempt >= maxAttempts) return false;
+        // The backend explicitly told us whether this failure is worth
+        // repeating; honour that verdict first.
+        if (error.retryable === false) return false;
+        if (error.retryable === true) return true;
+        if (!error.status) return false;
+        return Boolean(ApiClient.RETRYABLE_STATUS[error.status]);
+    }
+
+    static delay(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async _requestOnce(endpoint, options = {}) {
         const url = `${this.baseURL}${endpoint}`;
         const isAuthEndpoint = /^\/auth\//.test(endpoint);
 
@@ -154,6 +215,17 @@ class ApiClient {
                 // specific condition (e.g. DELIVERY_ON_HOLD) instead of
                 // string-matching the human message.
                 error.code = data?.code || data?.errorCode || null;
+                // Carry the backend's own verdict on whether this failure is
+                // worth repeating. The backend marks a transient database
+                // outage with { retryable: true }; an explicit false wins over
+                // the generic status heuristic.
+                if (data && data.retryable === false) {
+                    error.retryable = false;
+                } else {
+                    error.retryable =
+                        Boolean(data && data.retryable === true) ||
+                        Boolean(RETRYABLE_STATUS[response.status]);
+                }
 
                 if (response.status === 401) {
                     // The JWT is missing, malformed, expired, or the backend
@@ -182,7 +254,11 @@ class ApiClient {
                 const timeoutMsg = typeof window.translateErrorMessage === 'function'
                     ? window.translateErrorMessage('timeout')
                     : tr("error_timeout", "Request timed out. Please try again.");
-                throw new Error(timeoutMsg);
+                const timeoutError = new Error(timeoutMsg);
+                // A timeout is NOT replayed: repeating it would triple the wait
+                // before the caller finally hears about it.
+                timeoutError.retryable = false;
+                throw timeoutError;
             }
             // Network failure (backend down) - provide actionable message
             if (error instanceof TypeError && error.message === "Failed to fetch") {
@@ -193,7 +269,9 @@ class ApiClient {
                         const noHost = typeof window.translateErrorMessage === 'function'
                             ? window.translateErrorMessage('network')
                             : tr("error_connect", "Could not connect to backend server.");
-                        throw new Error(noHost);
+                        const noHostError = new Error(noHost);
+                        noHostError.retryable = true;
+                        throw noHostError;
                     }
                     try {
                         const altUrl = url.replace(this.baseURL, altHost);
@@ -213,7 +291,11 @@ class ApiClient {
                             const localized = typeof window.translateErrorMessage === 'function'
                                 ? window.translateErrorMessage(rawMsg, altData?.code || altData?.errorCode)
                                 : rawMsg;
-                            const e2 = new Error(localized); e2.status = altRes.status; e2.data = altData; e2.rawMessage = rawMsg; throw e2;
+                            const e2 = new Error(localized); e2.status = altRes.status; e2.data = altData; e2.rawMessage = rawMsg;
+                            e2.retryable = altData && altData.retryable === false
+                                ? false
+                                : Boolean(altData && altData.retryable === true) || Boolean(RETRYABLE_STATUS[altRes.status]);
+                            throw e2;
                         }
                         return altData;
                     } catch {}
@@ -221,7 +303,11 @@ class ApiClient {
                 const netMsg = typeof window.translateErrorMessage === 'function'
                     ? window.translateErrorMessage('network')
                     : tr("error_connect_dev", "Could not connect to backend server. Please ensure the backend is running on port 5000.");
-                throw new Error(netMsg);
+                const netError = new Error(netMsg);
+                // A backend that is momentarily unreachable comes back; a
+                // read-only request is safe to repeat.
+                netError.retryable = true;
+                throw netError;
             }
 
             throw error;

@@ -25,13 +25,13 @@ router.get('/order/:orderId', protect, getPaymentByOrder);
 router.get(
   '/stats',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   getPaymentStats
 );
 router.get(
   '/',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateAdminPaymentFilter),
   getAllPayments
 );

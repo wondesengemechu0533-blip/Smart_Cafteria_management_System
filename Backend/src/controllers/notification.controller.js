@@ -1,10 +1,110 @@
 const Notification = require('../models/Notification');
 const { MESSAGES, HTTP_STATUS } = require('../config/constants');
 const { respondWithError } = require('../utils/respondError');
+const { normalizeRole } = require('../config/roles');
 
 // Roles that must be told about order lifecycle events. The kitchen acts on
 // them; the cafeteria/system management panels surface them for oversight.
 const ORDER_EVENT_ROLES = ['kitchen', 'manager', 'cafeteria_admin', 'admin', 'system_admin'];
+
+/**
+ * The ONLY notification type the Kitchen Staff inbox (list + badge) may show.
+ *
+ * `order` is the type the backend raises when a customer successfully places
+ * and pays for an order (see models/Notification.js NOTIFICATION_TYPES and
+ * services/order-queue.service.js). Every other type belongs to a different
+ * surface - feedback, refunds, delivery events, stock alerts, account changes,
+ * announcements, generic system notices - and must never reach the kitchen
+ * inbox, the kitchen dashboard panel or the kitchen badge.
+ */
+const KITCHEN_NOTIFICATION_TYPES = ['order'];
+
+/**
+ * Order states the kitchen must not act on. A cancelled or failed order is
+ * not kitchen work: the board keeps it in its own buckets (see
+ * kitchen.controller.js) and the kitchen must never be told to prepare it.
+ */
+const KITCHEN_BLOCKED_ORDER_STATUSES = ['CANCELLED', 'FAILED'];
+
+/**
+ * Human label for the order type shown on the kitchen notification.
+ */
+const ORDER_TYPE_LABELS = {
+  'dine-in': 'Dine-in',
+  dinein: 'Dine-in',
+  takeaway: 'Takeaway',
+  take_away: 'Takeaway',
+  'take-away': 'Takeaway',
+  delivery: 'Delivery',
+};
+
+function orderTypeLabel(orderType) {
+  const key = String(orderType || '').trim().toLowerCase();
+  if (!key) return null;
+  return ORDER_TYPE_LABELS[key] || orderType;
+}
+
+function statusToken(value) {
+  const token = String(value == null ? '' : value).trim();
+  return token ? token.toUpperCase() : null;
+}
+
+/**
+ * Is the request made by Kitchen Staff (in any of its stored spellings)?
+ */
+function isKitchenUser(user) {
+  if (!user) return false;
+  return normalizeRole(user.role) === 'kitchen';
+}
+
+/**
+ * Is this order still kitchen work?
+ *
+ * Mirrors the kitchen board's own gate (KITCHEN_PAID_FILTER in
+ * kitchen.controller.js): an order only belongs to the kitchen once its
+ * payment is confirmed, and a cancelled/failed order never does.
+ */
+function isKitchenEligibleOrder(order) {
+  if (!order) return false;
+  if (statusToken(order.paymentStatus) !== 'PAID') return false;
+  const orderStatus = statusToken(order.orderStatus || order.status);
+  if (KITCHEN_BLOCKED_ORDER_STATUSES.includes(orderStatus)) return false;
+  return true;
+}
+
+/**
+ * Keep only the kitchen notifications that point at a real order the kitchen
+ * still has to work on.
+ *
+ * The type filter alone is not enough: a stored row can outlive its order
+ * (the order was deleted, cancelled, or was never paid), and a kitchen that
+ * is told to prepare a cancelled order cooks food nobody will buy. The order
+ * is therefore re-read and checked before the notification is returned.
+ */
+async function filterKitchenOrderNotifications(notifications) {
+  const list = Array.isArray(notifications) ? notifications : [];
+  if (!list.length) return [];
+
+  const orderIds = [
+    ...new Set(
+      list
+        .map((notif) => notif && notif.orderId)
+        .filter((id) => id !== null && id !== undefined && id !== '')
+    ),
+  ];
+  if (!orderIds.length) return [];
+
+  const Order = require('../models/Order');
+  const orders = await Order.find({ orderId: { $in: orderIds } })
+    .select('orderId orderStatus status paymentStatus')
+    .lean();
+
+  const eligible = new Set(
+    (orders || []).filter(isKitchenEligibleOrder).map((order) => order.orderId)
+  );
+
+  return list.filter((notif) => notif && eligible.has(notif.orderId));
+}
 
 /**
  * @desc    Serialise a Notification document to the shape the API and the
@@ -35,18 +135,27 @@ function serializeNotification(notif) {
 }
 
 /**
- * @desc    Get notification preferences (sound on/off)
+ * @desc    Get the AUTHENTICATED user's notification preferences
  * @route   GET /api/notifications/preferences
  * @access  Private
+ *
+ * Every role (Cafeteria Manager, System Admin, staff) manages its OWN
+ * preferences. The platform-wide notify_* SETTINGs are only the default
+ * policy - they are never a user's personal state.
  */
 exports.getPreferences = async (req, res) => {
   try {
     const User = require('../models/User');
-    const user = await User.findById(req.user.id).select('notificationSoundEnabled');
+    const user = await User.findById(req.user.id).select('notificationSoundEnabled notificationPreferences');
+    const prefs = (user && user.notificationPreferences) || {};
     res.status(HTTP_STATUS.OK).json({
       success: true,
       preferences: {
         soundEnabled: user ? user.notificationSoundEnabled !== false : true,
+        newOrders: prefs.newOrders !== false,
+        lowStock: prefs.lowStock !== false,
+        dailySales: prefs.dailySales === true,
+        securityLogin: prefs.securityLogin !== false,
       },
     });
   } catch (error) {
@@ -56,20 +165,61 @@ exports.getPreferences = async (req, res) => {
 };
 
 /**
- * @desc    Update notification preferences (sound on/off)
+ * @desc    Update the AUTHENTICATED user's notification preferences
  * @route   PUT /api/notifications/preferences
  * @access  Private
- * Body: { soundEnabled: boolean }
+ * Body: { soundEnabled?, newOrders?, lowStock?, dailySales?, securityLogin? }
+ *
+ * Only the caller's own document is written - there is no way to reach another
+ * account's preferences through this endpoint.
  */
 exports.updatePreferences = async (req, res) => {
   try {
-    const soundEnabled = req.body.soundEnabled === true || req.body.soundEnabled === 'true';
+    const body = req.body || {};
+    const asBool = (value) => value === true || value === 'true' || value === 1 || value === '1';
+    const has = (key) => Object.prototype.hasOwnProperty.call(body, key) && body[key] !== undefined;
+
+    const update = {};
+
+    if (has('soundEnabled')) {
+      update.notificationSoundEnabled = asBool(body.soundEnabled);
+    }
+    if (has('newOrders')) {
+      update['notificationPreferences.newOrders'] = asBool(body.newOrders);
+    }
+    if (has('lowStock')) {
+      update['notificationPreferences.lowStock'] = asBool(body.lowStock);
+    }
+    if (has('dailySales')) {
+      update['notificationPreferences.dailySales'] = asBool(body.dailySales);
+    }
+    if (has('securityLogin')) {
+      update['notificationPreferences.securityLogin'] = asBool(body.securityLogin);
+    }
+
+    if (Object.keys(update).length === 0) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'No notification preference supplied',
+      });
+    }
+
     const User = require('../models/User');
-    await User.updateOne({ _id: req.user.id }, { $set: { notificationSoundEnabled: soundEnabled } });
+    await User.updateOne({ _id: req.user.id }, { $set: update });
+
+    const user = await User.findById(req.user.id).select('notificationSoundEnabled notificationPreferences');
+    const prefs = (user && user.notificationPreferences) || {};
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      preferences: { soundEnabled },
-      message: soundEnabled ? 'Notification sound enabled' : 'Notification sound muted',
+      preferences: {
+        soundEnabled: user ? user.notificationSoundEnabled !== false : true,
+        newOrders: prefs.newOrders !== false,
+        lowStock: prefs.lowStock !== false,
+        dailySales: prefs.dailySales === true,
+        securityLogin: prefs.securityLogin !== false,
+      },
+      message: 'Notification preferences updated',
     });
   } catch (error) {
     console.error('❌ Update Notification Preferences Error:', error);
@@ -81,26 +231,56 @@ exports.updatePreferences = async (req, res) => {
  * @desc    Get user's notifications
  * @route   GET /api/notifications
  * @access  Private
- * Query Params: unread (true/false)
+ * Query Params: unread (true/false), types (comma separated), limit (max 500)
+ *
+ * Kitchen Staff are restricted to customer-order notifications only: the
+ * server decides this from the authenticated role, so no client can widen
+ * the kitchen inbox by asking for another type. Every other role keeps the
+ * full list it always had.
  */
 exports.getNotifications = async (req, res) => {
   try {
     const { unread, types, limit } = req.query;
     let filter = { userId: req.user.id };
     if (unread === 'true') filter.isRead = false;
+
+    // Kitchen Staff see customer orders and nothing else.
+    const kitchenOnly = isKitchenUser(req.user);
+    if (kitchenOnly) {
+      filter.type = { $in: KITCHEN_NOTIFICATION_TYPES };
+      filter.orderId = { $exists: true, $nin: [null, ''] };
+    }
+
     // Optional narrowing, used by the kitchen panel to show order events only.
+    // For the kitchen this is INTERSECTED with the allowlist above, never a
+    // replacement: `?types=feedback` can therefore never smuggle a
+    // non-order notification into the kitchen inbox.
     if (types) {
       const wanted = String(types)
         .split(',')
         .map((t) => t.trim())
         .filter(Boolean);
-      if (wanted.length) filter.type = { $in: wanted };
+      if (wanted.length) {
+        const allowed = kitchenOnly
+          ? wanted.filter((t) => KITCHEN_NOTIFICATION_TYPES.includes(t))
+          : wanted;
+        if (!allowed.length) {
+          return res.status(HTTP_STATUS.OK).json({ success: true, count: 0, notifications: [] });
+        }
+        filter.type = { $in: allowed };
+      }
     }
 
     let query = Notification.find(filter).sort({ createdAt: -1 });
     const max = Number(limit);
     if (Number.isInteger(max) && max > 0 && max <= 500) query = query.limit(max);
-    const notifications = await query;
+    let notifications = await query;
+
+    if (kitchenOnly) {
+      // A stored row is only shown when its order still exists and is still
+      // kitchen work (paid, not cancelled/failed).
+      notifications = await filterKitchenOrderNotifications(notifications);
+    }
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -117,13 +297,30 @@ exports.getNotifications = async (req, res) => {
 };
 
 /**
+ * Count the notifications the caller is allowed to see.
+ *
+ * For the kitchen this is the number of unread ORDER notifications only, so
+ * the badge can never be inflated by a feedback/refund/system notice that the
+ * kitchen inbox does not even show.
+ */
+async function countUnreadNotifications(user) {
+  const filter = { userId: user.id, isRead: false };
+  if (!isKitchenUser(user)) return Notification.countDocuments(filter);
+
+  filter.type = { $in: KITCHEN_NOTIFICATION_TYPES };
+  filter.orderId = { $exists: true, $nin: [null, ''] };
+  const rows = await Notification.find(filter).select('orderId').lean();
+  return (await filterKitchenOrderNotifications(rows)).length;
+}
+
+/**
  * @desc    Get unread notification count
  * @route   GET /api/notifications/unread
  * @access  Private
  */
 exports.getUnreadCount = async (req, res) => {
   try {
-    const count = await Notification.countDocuments({ userId: req.user.id, isRead: false });
+    const count = await countUnreadNotifications(req.user);
     res.status(HTTP_STATUS.OK).json({ success: true, count });
   } catch (error) {
     console.error('❌ Get Unread Count Error:', error);
@@ -323,6 +520,10 @@ function emitNotificationToUser(notification) {
  * always read the same way to the kitchen, and so the on-screen wording the
  * requirement asks for ("New Customer Order" / "Order Cancelled") is decided
  * by the backend rather than re-guessed by every client.
+ *
+ * A new-order notification has to carry everything the kitchen needs to act
+ * without opening the ticket: order number, customer, ordered items with
+ * their quantities, order type, order time, payment status and order status.
  */
 function describeOrderEvent(order, eventType) {
   const items = Array.isArray(order.items) ? order.items : [];
@@ -345,12 +546,27 @@ function describeOrderEvent(order, eventType) {
     };
   }
 
+  const itemSummary = items
+    .map((item) => `${item && item.name ? item.name : 'Item'} x${Number(item && item.quantity) || 0}`)
+    .join(', ');
+  const typeLabel = orderTypeLabel(order.orderType);
+  const paymentStatus = statusToken(order.paymentStatus);
+  const orderStatus = statusToken(order.orderStatus || order.status);
+
+  const details = [];
+  if (itemSummary) details.push(`Items: ${itemSummary}.`);
+  if (typeLabel) details.push(`Order type: ${typeLabel}.`);
+  if (paymentStatus) details.push(`Payment status: ${paymentStatus}.`);
+  if (orderStatus) details.push(`Order status: ${orderStatus}.`);
+
   return {
     type: 'order',
     title: 'New Customer Order',
     message: `New order #${order.orderId} from ${order.customerName || 'a customer'} (${itemCount} item${
       itemCount === 1 ? '' : 's'
-    }${Number.isFinite(total) ? `, total ${total.toFixed(2)} ETB` : ''}).`,
+    }${Number.isFinite(total) ? `, total ${total.toFixed(2)} ETB` : ''}).${
+      details.length ? ` ${details.join(' ')}` : ''
+    }`,
   };
 }
 
@@ -387,6 +603,18 @@ exports.notifyRolesOfOrderEvent = async (order, roles, opts = {}) => {
     totalAmount: order.totalAmount ?? null,
     cafeteriaId: order.cafeteriaId || null,
     itemCount: order.itemCount ?? null,
+    // Everything the kitchen card has to show, so the notification is
+    // actionable on its own: what was ordered (and how much of it), how the
+    // order was placed, when it came in, and whether it is paid / still live.
+    items: (Array.isArray(order.items) ? order.items : []).map((item) => ({
+      name: (item && item.name) || null,
+      quantity: Number(item && item.quantity) || 0,
+    })),
+    orderTypeLabel: orderTypeLabel(order.orderType),
+    paymentStatus: statusToken(order.paymentStatus),
+    orderStatus: statusToken(order.orderStatus || order.status),
+    orderTime: order.orderTime || order.orderDate || order.createdAt || null,
+    customerPhone: order.customerPhone || null,
   };
   if (eventType === 'cancelled') {
     meta.cancellationReason = order.cancellationReason || null;

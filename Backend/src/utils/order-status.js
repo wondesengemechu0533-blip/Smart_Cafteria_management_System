@@ -161,15 +161,56 @@ function countByBucket(orders) {
   return counts;
 }
 
+/**
+ * Canonical status used by every report.
+ *
+ * The Order document stores the same lifecycle twice - `status` (lowercase,
+ * kitchen flow) and `orderStatus` (SCREAMING_SNAKE, admin flow) - and the two
+ * can disagree. Reports need ONE value per order, so the two fields are merged
+ * here: the furthest step of the fulfilment flow wins, and a cancellation on
+ * either side always wins.
+ *
+ * This used to be copy-pasted into three controllers/services, which is how
+ * the report counts drifted apart. One definition, imported everywhere.
+ */
+const REPORT_STATUS_FLOW = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'COMPLETED'];
+
+/**
+ * @param {object} order
+ * @returns {string} one of PENDING / PREPARING / READY / SERVED / COMPLETED /
+ *                   CANCELLED (or the raw stored value when it is unknown).
+ */
+function canonicalOrderStatus(order) {
+  if (!order) return 'PENDING';
+  const upper = String(order.orderStatus || '')
+    .trim()
+    .toUpperCase();
+  const lower = String(order.status || '')
+    .trim()
+    .toUpperCase();
+
+  if (upper === 'CANCELLED' || lower === 'CANCELLED') return 'CANCELLED';
+
+  const upperIndex = REPORT_STATUS_FLOW.indexOf(upper);
+  const lowerIndex = REPORT_STATUS_FLOW.indexOf(lower);
+
+  if (upperIndex === -1 && lowerIndex === -1) return upper || lower || 'PENDING';
+  if (upperIndex === -1) return lower;
+  if (lowerIndex === -1) return upper;
+  return upperIndex >= lowerIndex ? upper : lower;
+}
+
 module.exports = {
   ACTIVE_STATUS_VALUES,
   COMPLETED_STATUS_VALUES,
   CANCELLED_STATUS_VALUES,
   FAILED_STATUS_VALUES,
   BUCKETS,
+  REPORT_STATUS_FLOW,
   normalizeStatusValue,
   bucketForValue,
   bucketForOrder,
+  canonicalOrderStatus,
   isRefunded,
   matchesBucket,
   bucketQuery,

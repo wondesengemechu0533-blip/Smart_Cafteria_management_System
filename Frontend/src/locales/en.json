@@ -796,6 +796,8 @@
   "admin_users_page_title": "Users Management - Smart Cafeteria",
   "admin_users_subtitle": "Manage all users in the system",
   "admin_users_title": "Users Management",
+  "manager_staff_management_title": "Staff Management",
+  "manager_staff_management_subtitle": "Manage cafeteria staff members",
   "admin_view_all": "View All",
   "admin_view_menu_item": "View Menu Item",
   "all": "All",
@@ -2059,5 +2061,7 @@
   "🇬🇧 English": "🇬🇧 English",
   "🍔 Food Availability": "🍔 Food Availability",
   "🔍 Filter": "🔍 Filter",
-  "🚨 Stock Alerts": "🚨 Stock Alerts"
+  "🚨 Stock Alerts": "🚨 Stock Alerts",
+  "Manager Profile": "Manager Profile",
+  "Manager Profile - Smart Cafeteria": "Manager Profile - Smart Cafeteria"
 }

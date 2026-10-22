@@ -86,7 +86,12 @@ function check(name, fn) {
   const customer = await mkUser('Customer', 'customer');
   const manager = await mkUser('Manager', 'manager', cafeteriaId);
   const manager2 = await mkUser('ManagerTwo', 'manager', cafeteriaId);
-  const cafAdmin = await mkUser('CafAdmin', 'cafeteria_admin', cafeteriaId);
+  // The cafeteria ADMINISTRATOR's duties (reviewing reports, resolving stock
+  // alerts, approving/recording restocks) were folded into the admin role
+  // when the cafeteria_admin and manager roles were consolidated. This user
+  // plays that role: it keeps the 'CafAdmin' name, which several assertions
+  // below read back from the API payload.
+  const cafAdmin = await mkUser('CafAdmin', 'admin', cafeteriaId);
   const kitchen = await mkUser('Kitchen', 'kitchen', cafeteriaId);
   const sysAdmin = await mkUser('SysAdmin', 'admin');
 
@@ -269,14 +274,17 @@ function check(name, fn) {
     assert.ok(/quality/i.test(r.body.error || ''), `error should mention quality, got: ${r.body.error}`);
   });
 
-  await check('only admins may resolve a stock alert (manager and kitchen get 403)', async () => {
+  await check('only managers and admins may resolve a stock alert (kitchen and customers get 403)', async () => {
     const alert = await StockAlert.findOne({ itemId: itemQ._id, alertType: 'quality_issue', status: 'active' });
     assert.ok(alert, 'the quality alert must exist');
     const body = { resolutionReason: 'Expired Items', resolutionSolution: 'Removed Expired Items' };
-    const byManager = await call('PATCH', `/kitchen/stock-alerts/${alert._id}/resolve`, T.manager, body);
-    assert.strictEqual(byManager.status, 403, `manager resolve must be 403, got ${byManager.status}`);
+    // The cafeteria manager resolves inventory alerts too (the resolve route
+    // allows manager/admin/system_admin), so the roles that must still be
+    // refused are kitchen staff and customers.
     const byKitchen = await call('PATCH', `/kitchen/stock-alerts/${alert._id}/resolve`, T.kitchen, body);
     assert.strictEqual(byKitchen.status, 403, `kitchen resolve must be 403, got ${byKitchen.status}`);
+    const byCustomer = await call('PATCH', `/kitchen/stock-alerts/${alert._id}/resolve`, T.customer, body);
+    assert.strictEqual(byCustomer.status, 403, `customer resolve must be 403, got ${byCustomer.status}`);
 
     const still = await StockAlert.findById(alert._id);
     assert.strictEqual(still.status, 'active', 'the rejected attempts must leave the alert open');
@@ -533,7 +541,7 @@ function check(name, fn) {
     assert.ok(tx, 'a RESTOCK StockTransaction must exist');
     assert.strictEqual(tx.quantityChanged, 24);
     assert.strictEqual(String(tx.restockRequestId), String(requestE.id));
-    assert.strictEqual(tx.performedByRole, 'cafeteria_admin');
+    assert.strictEqual(tx.performedByRole, 'admin');
 
     const log = await ActivityLog.findOne({ action: 'STOCK_RESTOCKED' });
     assert.ok(log, 'the restock must be audited');

@@ -1,24 +1,35 @@
 function tr(key, fallback, vars) {
-  if (typeof window.tr === "function" && window.tr !== tr) return window.tr(key, fallback, vars);
+  if (typeof window.tr === 'function' && window.tr !== tr) return window.tr(key, fallback, vars);
   return fallback;
 }
 /**
  * ================================================================
- * SMART CAFETERIA ORDERING SYSTEM - ADMIN REPORTS
+ * SMART CAFETERIA ORDERING SYSTEM - REPORTS & ANALYTICS
  * ================================================================
- * Role-aware driver for reports.html.
+ * Driver for pages/admin/reports.html - the OPERATIONAL report page.
  *
- *   System admin / tax authority -> Summary | Revenue & VAT | Tax Compliance
- *     (backend: /admin/reports/summary, /reports/revenue, /reports/tax-compliance)
+ * This page answers operational questions:
+ *   how many orders were placed / completed / cancelled / are pending,
+ *   how many payments succeeded / failed / are pending,
+ *   how the orders are spread over the fulfilment statuses and the order
+ *   types (dine-in / takeaway / delivery), which foods are popular and how
+ *   the order volume moved over the period.
  *
- *   Cafeteria admin / manager -> Sales | Orders | Payments | Refunds |
- *     Menu Performance
- *     (backend: /cafeteria/reports/*, cafeteria scope resolved server-side)
+ * The FINANCIAL report (revenue, collections, VAT) lives on its own page -
+ * pages/admin/revenue.html - so the two pages never show the same cards.
  *
- * The client never sends a cafeteria id: it is derived from the authenticated
- * user on the backend. Period ranges are also resolved server-side.
+ * Endpoints:
+ *   summary    GET /admin/reports/summary      (system roles)
+ *              GET /cafeteria/reports/summary  (cafeteria roles)
+ *   orders     GET /cafeteria/reports/orders
+ *   payments   GET /cafeteria/reports/payments
+ *   sales      GET /cafeteria/reports/sales
+ *   refunds    GET /cafeteria/reports/refunds
+ *   menu       GET /cafeteria/reports/menu-performance
+ *   inventory  GET /cafeteria/reports/inventory
  *
- * Requires window.AdminAPI (admin-api.js) loaded first.
+ * The cafeteria scope and the period boundaries are resolved on the server,
+ * so the numbers always match the range the API reports back.
  * ================================================================
  */
 (function () {
@@ -51,7 +62,10 @@ function tr(key, fallback, vars) {
 
   function getRole() {
     if (window.ScosRoles && ScosRoles.getCurrentRole) return ScosRoles.getCurrentRole();
-    return '';
+    // Fallback: roles.js is normally loaded by admin-layout.js, but the page
+    // must still pick the right scope (cafeteria vs system) if it is missing.
+    var raw = localStorage.getItem('userRole') || localStorage.getItem('role') || '';
+    return String(raw || '').trim().toLowerCase();
   }
 
   function statusVariant(status) {
@@ -86,22 +100,6 @@ function tr(key, fallback, vars) {
 
   function emptyRow(colspan, message) {
     return '<tr><td colspan="' + colspan + '" class="table-empty">' + esc(message) + '</td></tr>';
-  }
-
-  function cfPeriodQuery(extra) {
-    var params = { period: document.getElementById('cfPeriodSelect').value };
-    if (params.period === 'custom') {
-      var s = document.getElementById('cfStartDate').value;
-      var e = document.getElementById('cfEndDate').value;
-      if (s) params.startDate = s;
-      if (e) params.endDate = e;
-    }
-    if (extra) {
-      for (var key in extra) {
-        if (extra[key] !== undefined && extra[key] !== null && extra[key] !== '') params[key] = extra[key];
-      }
-    }
-    return params;
   }
 
   function renderPager(id, pg, onChange) {
@@ -170,95 +168,226 @@ function tr(key, fallback, vars) {
   var SYSTEM_ROLES = ['admin', 'system_admin'];
   var role = getRole();
   var isCafeteria = CAFETERIA_ROLES.indexOf(role) !== -1;
-  var isSystem = SYSTEM_ROLES.indexOf(role) !== -1;
-  if (!isCafeteria && !isSystem) isSystem = true;
+  if (!isCafeteria && SYSTEM_ROLES.indexOf(role) === -1) isCafeteria = false;
 
   /* ============================================================
-   * ------------------------------------------------------------
-   * SYSTEM ADMIN / TAX AUTHORITY REPORTS (existing)
-   * ------------------------------------------------------------
+   * PERIOD FILTER (shared with the Revenue / System Analytics page)
    * ============================================================ */
-  var lastReport = null;
-
-  var PERIOD_LABELS = {
-    today: 'Today',
-    yesterday: 'Yesterday',
-    last7: 'Last 7 Days',
-    last30: 'Last 30 Days',
-    month: 'This Month',
-    custom: 'Custom Date Range',
-  };
-
-  function getSystemQuery() {
-    var period = document.getElementById('periodSelect').value;
-    var startDate = document.getElementById('startDateInput').value;
-    var endDate = document.getElementById('endDateInput').value;
-
-    var params = '?period=' + encodeURIComponent(period);
-    if (period === 'custom' && startDate) params += '&startDate=' + encodeURIComponent(startDate);
-    if (period === 'custom' && endDate) params += '&endDate=' + encodeURIComponent(endDate);
+  function periodQuery(extra) {
+    var params = window.ScosReportPeriod
+      ? window.ScosReportPeriod.buildQuery('reportPeriodSelect', 'reportStartDate', 'reportEndDate')
+      : { period: 'month' };
+    if (extra) {
+      for (var key in extra) {
+        if (extra[key] !== undefined && extra[key] !== null && extra[key] !== '') params[key] = extra[key];
+      }
+    }
     return params;
   }
 
-  function toggleCustomRange() {
-    var period = document.getElementById('periodSelect').value;
-    var isCustom = period === 'custom';
-    document.getElementById('startDateInput').disabled = !isCustom;
-    document.getElementById('endDateInput').disabled = !isCustom;
-  }
-
-  async function loadReport() {
-    try {
-      var data = await window.AdminAPI.get('/admin/reports/summary' + getSystemQuery());
-      var report = data.report || {};
-      lastReport = report;
-
-      document.getElementById('metricRevenueTitle').textContent =
-        'Revenue (' + (PERIOD_LABELS[report.period] || report.period) + ')';
-      setMoney('metricTotalRevenue', report.revenue);
-
-      setText('metricTotalOrders', report.orders.totalOrders || 0);
-      setText('metricCompletedOrders', report.orders.completedOrders || 0);
-      setText('metricCancelledOrders', report.orders.cancelledOrders || 0);
-
-      setText('metricSuccessfulPayments', report.payments.successfulPayments || 0);
-      setText('metricFailedPayments', report.payments.failedPayments || 0);
-      setText('metricPendingPayments', report.payments.pendingPayments || 0);
-
-      renderTopFoods(report.mostOrderedFoods || []);
-
-      var updated = document.getElementById('reportUpdatedAt');
-      if (updated) {
-        var rangeText =
-          report.range && report.range.startDate && report.range.endDate
-            ? report.range.startDate + ' to ' + report.range.endDate
-            : 'all time';
-        var when = report.generatedAt ? window.AdminAPI.formatDateTime(report.generatedAt) : 'just now';
-        updated.textContent = tr('period_generated', 'Period: {range} - generated {when}.').replace('{range}', rangeText).replace('{when}', when);
-      }
-
-      if (window.AdminToast) window.AdminToast.show('Report refreshed');
-    } catch (error) {
-      var message = (error && error.message) || 'Server error';
-      var tbody = document.getElementById('topFoodsBody');
-      if (tbody) {
-        tbody.innerHTML =
-          '<tr><td colspan="5" class="table-empty">Failed to load report: ' + esc(message) + '</td></tr>';
-      }
-      if (window.AdminToast) window.AdminToast.error(message);
+  function syncPeriodInputs() {
+    if (window.ScosReportPeriod) {
+      window.ScosReportPeriod.syncCustomInputs('reportPeriodSelect', 'reportStartDate', 'reportEndDate');
     }
   }
 
-  function renderTopFoods(foods) {
-    var tbody = document.getElementById('topFoodsBody');
-    if (!tbody) return;
-
-    if (!foods.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="table-empty">No food items ordered in this period.</td></tr>';
+  function setUpdated(range, labelText) {
+    var el = document.getElementById('reportUpdatedAt');
+    if (!el) return;
+    if (!range) {
+      el.textContent = '';
       return;
     }
+    var text = window.ScosReportPeriod ? window.ScosReportPeriod.formatRange(range) : '';
+    var periodLabel = labelText || (window.ScosReportPeriod ? window.ScosReportPeriod.label(range.period) : '');
+    el.textContent = (periodLabel ? periodLabel + ' · ' : '') + text;
+  }
 
-    tbody.innerHTML = foods
+  /* ============================================================
+   * CHARTS
+   * ============================================================ */
+  var charts = {};
+
+  function destroyChart(key) {
+    if (charts[key]) {
+      charts[key].destroy();
+      charts[key] = null;
+    }
+  }
+
+  function renderStatusChart(rows) {
+    var canvas = document.getElementById('opStatusChart');
+    var emptyEl = document.getElementById('opStatusChartEmpty');
+    if (!canvas) return;
+    destroyChart('status');
+
+    if (!rows.length || typeof Chart === 'undefined') {
+      canvas.classList.add('d-none');
+      if (emptyEl) emptyEl.classList.remove('d-none');
+      return;
+    }
+    canvas.classList.remove('d-none');
+    if (emptyEl) emptyEl.classList.add('d-none');
+
+    var palette = ['#4f46e5', '#22c55e', '#f59e0b', '#06b6d4', '#ec4899', '#ef4444', '#8b5cf6', '#64748b'];
+    charts.status = new Chart(canvas.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: rows.map(function (r) {
+          return r.status;
+        }),
+        datasets: [
+          {
+            data: rows.map(function (r) {
+              return r.count;
+            }),
+            backgroundColor: rows.map(function (r, i) {
+              return palette[i % palette.length];
+            }),
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'right' } },
+      },
+    });
+  }
+
+  function renderTrendsChart(rows) {
+    var canvas = document.getElementById('opTrendsChart');
+    var emptyEl = document.getElementById('opTrendsChartEmpty');
+    if (!canvas) return;
+    destroyChart('trends');
+
+    if (!rows.length || typeof Chart === 'undefined') {
+      canvas.classList.add('d-none');
+      if (emptyEl) emptyEl.classList.remove('d-none');
+      return;
+    }
+    canvas.classList.remove('d-none');
+    if (emptyEl) emptyEl.classList.add('d-none');
+
+    charts.trends = new Chart(canvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels: rows.map(function (r) {
+          return r.date;
+        }),
+        datasets: [
+          {
+            label: t('report_op_trend_orders'),
+            data: rows.map(function (r) {
+              return r.orders;
+            }),
+            borderColor: '#4f46e5',
+            backgroundColor: 'rgba(79,70,229,0.15)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+          },
+          {
+            label: t('report_op_trend_completed'),
+            data: rows.map(function (r) {
+              return r.completed;
+            }),
+            borderColor: '#22c55e',
+            backgroundColor: 'rgba(34,197,94,0.12)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+          },
+          {
+            label: t('report_op_trend_cancelled'),
+            data: rows.map(function (r) {
+              return r.cancelled;
+            }),
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239,68,68,0.12)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 2,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
+        scales: { y: { beginAtZero: true } },
+      },
+    });
+  }
+
+  /* ============================================================
+   * SUMMARY (operational)
+   * ============================================================ */
+  var summaryExport = null;
+
+  function renderStatusTable(rows) {
+    var tbody = document.getElementById('opStatusBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = emptyRow(3, t('report_empty'));
+      return;
+    }
+    tbody.innerHTML = rows
+      .map(function (row) {
+        return (
+          '<tr>' +
+          '<td>' +
+          badge(row.status) +
+          '</td>' +
+          '<td>' +
+          (row.count || 0) +
+          '</td>' +
+          '<td>' +
+          (row.share || 0) +
+          '%</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
+
+  function renderOrderTypes(rows) {
+    var tbody = document.getElementById('opOrderTypesBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = emptyRow(4, t('report_empty'));
+      return;
+    }
+    tbody.innerHTML = rows
+      .map(function (row) {
+        return (
+          '<tr>' +
+          '<td><strong>' +
+          esc(row.label || row.type) +
+          '</strong></td>' +
+          '<td>' +
+          (row.orders || 0) +
+          '</td>' +
+          '<td>' +
+          (row.share || 0) +
+          '%</td>' +
+          '<td><strong>' +
+          money(row.revenue) +
+          ' ETB</strong></td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
+
+  function renderMostOrderedFoods(rows) {
+    var tbody = document.getElementById('opMostFoodsBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = emptyRow(6, t('report_empty'));
+      return;
+    }
+    tbody.innerHTML = rows
       .map(function (food, index) {
         return (
           '<tr>' +
@@ -269,6 +398,9 @@ function tr(key, fallback, vars) {
           esc(food.name) +
           '</strong></td>' +
           '<td>' +
+          esc(food.category || '-') +
+          '</td>' +
+          '<td>' +
           (food.totalQuantity || 0) +
           '</td>' +
           '<td>' +
@@ -276,330 +408,157 @@ function tr(key, fallback, vars) {
           '</td>' +
           '<td><strong>' +
           money(food.totalRevenue) +
-          '</strong></td>' +
+          ' ETB</strong></td>' +
           '</tr>'
         );
       })
       .join('');
   }
 
-  function exportSystemCsv() {
-    if (!lastReport) {
-      if (window.AdminToast) window.AdminToast.error('No report data to export yet');
+  function renderFoodPopularity(rows) {
+    var tbody = document.getElementById('opFoodPopularityBody');
+    if (!tbody) return;
+    if (!rows.length) {
+      tbody.innerHTML = emptyRow(5, t('report_empty'));
       return;
     }
+    var total = rows.reduce(function (sum, row) {
+      return sum + (row.totalQuantity || 0);
+    }, 0);
+    tbody.innerHTML = rows
+      .map(function (row) {
+        var share = total ? ((row.totalQuantity || 0) / total) * 100 : 0;
+        return (
+          '<tr>' +
+          '<td>' +
+          esc(row.name) +
+          '</td>' +
+          '<td>' +
+          esc(row.category || '-') +
+          '</td>' +
+          '<td>' +
+          (row.totalQuantity || 0) +
+          '</td>' +
+          '<td>' +
+          (row.orderCount || 0) +
+          '</td>' +
+          '<td>' +
+          share.toFixed(2) +
+          '%</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
 
+  async function loadSummary() {
+    var endpoint = isCafeteria ? '/cafeteria/reports/summary' : '/admin/reports/summary';
+    try {
+      var data = await window.AdminAPI.get(endpoint, periodQuery());
+      var report = data.report || {};
+      var orders = report.orders || {};
+      var payments = report.payments || {};
+
+      setUpdated(report.range, report.period);
+
+      setText('opTotalOrders', orders.total || 0);
+      setText('opCompletedOrders', orders.completed || 0);
+      setText('opCancelledOrders', orders.cancelled || 0);
+      setText('opPendingOrders', orders.pending || 0);
+      setText('opInProgressOrders', orders.inProgress || 0);
+
+      setText('opSuccessfulPayments', payments.successful || 0);
+      setText('opFailedPayments', payments.failed || 0);
+      setText('opPendingPayments', payments.pending || 0);
+      setText('opRefundedPayments', payments.refunded || 0);
+
+      var statusRows = report.statusDistribution || [];
+      renderStatusChart(statusRows);
+      renderStatusTable(statusRows);
+      renderOrderTypes(report.orderTypes || []);
+      renderTrendsChart(report.trends || []);
+      renderMostOrderedFoods(report.mostOrderedFoods || []);
+      renderFoodPopularity(report.foodPopularity || []);
+
+      if (report.users) {
+        setText('sysTotalUsers', report.users.total || 0);
+        setText('sysActiveUsers', report.users.active || 0);
+        setText('sysInactiveUsers', report.users.inactive || 0);
+      }
+
+      summaryExport = {
+        name: 'reports-operational-summary',
+        rows: buildSummaryExport(report),
+      };
+    } catch (error) {
+      var message = (error && error.message) || 'Server error';
+      var tbody = document.getElementById('opMostFoodsBody');
+      if (tbody) tbody.innerHTML = emptyRow(6, t('report_failed') + ': ' + message);
+      if (window.AdminToast) window.AdminToast.error(message);
+    }
+  }
+
+  function buildSummaryExport(report) {
+    var orders = report.orders || {};
+    var payments = report.payments || {};
     var rows = [];
-    rows.push(['Smart Cafeteria - Reports Summary']);
-    rows.push(['Period', PERIOD_LABELS[lastReport.period] || lastReport.period]);
-    rows.push(['Range', lastReport.range.startDate + ' to ' + lastReport.range.endDate]);
+    rows.push(['Smart Cafeteria - Operational Report']);
+    rows.push(['Period', (window.ScosReportPeriod ? window.ScosReportPeriod.label(report.period) : report.period)]);
+    rows.push([
+      'Range',
+      report.range ? report.range.startDate + ' to ' + report.range.endDate : '',
+    ]);
     rows.push(['Generated', new Date().toLocaleString()]);
     rows.push([]);
-
-    rows.push(['Revenue (ETB)']);
-    rows.push(['Total Revenue', lastReport.revenue]);
-    rows.push([]);
-
     rows.push(['Orders']);
-    rows.push(['Total Orders', lastReport.orders.totalOrders]);
-    rows.push(['Completed Orders', lastReport.orders.completedOrders]);
-    rows.push(['Cancelled Orders', lastReport.orders.cancelledOrders]);
+    rows.push(['Total Orders', orders.total || 0]);
+    rows.push(['Completed Orders', orders.completed || 0]);
+    rows.push(['Cancelled Orders', orders.cancelled || 0]);
+    rows.push(['Pending Orders', orders.pending || 0]);
+    rows.push(['In Progress Orders', orders.inProgress || 0]);
     rows.push([]);
-
     rows.push(['Payments']);
-    rows.push(['Successful Payments', lastReport.payments.successfulPayments]);
-    rows.push(['Failed Payments', lastReport.payments.failedPayments]);
-    rows.push(['Pending Payments', lastReport.payments.pendingPayments]);
+    rows.push(['Successful Payments', payments.successful || 0]);
+    rows.push(['Failed Payments', payments.failed || 0]);
+    rows.push(['Pending Payments', payments.pending || 0]);
+    rows.push(['Refunded Payments', payments.refunded || 0]);
     rows.push([]);
-
+    rows.push(['Order Status Distribution']);
+    rows.push(['Status', 'Orders', 'Share %']);
+    (report.statusDistribution || []).forEach(function (row) {
+      rows.push([row.status, row.count, row.share]);
+    });
+    rows.push([]);
+    rows.push(['Orders by Type']);
+    rows.push(['Type', 'Orders', 'Share %', 'Value (ETB)']);
+    (report.orderTypes || []).forEach(function (row) {
+      rows.push([row.label || row.type, row.orders, row.share, row.revenue]);
+    });
+    rows.push([]);
     rows.push(['Most Ordered Foods']);
-    rows.push(['Rank', 'Food Item', 'Total Quantity', 'Times Ordered', 'Revenue (ETB)']);
-    lastReport.mostOrderedFoods.forEach(function (food, index) {
-      rows.push([index + 1, food.name, food.totalQuantity, food.orderCount, food.totalRevenue]);
+    rows.push(['Rank', 'Item', 'Category', 'Quantity Sold', 'Times Ordered', 'Value (ETB)']);
+    (report.mostOrderedFoods || []).forEach(function (food, index) {
+      rows.push([
+        index + 1,
+        food.name,
+        food.category,
+        food.totalQuantity,
+        food.orderCount,
+        food.totalRevenue,
+      ]);
     });
-
-    downloadCsv(
-      'smart-cafeteria-report-' +
-        (lastReport.period || 'summary') +
-        '-' +
-        new Date().toISOString().split('T')[0] +
-        '.csv',
-      rows
-    );
-  }
-
-  function switchSystemTab(name) {
-    ['summary', 'revenue', 'tax'].forEach(function (key) {
-      var section = document.getElementById('reportView-' + key);
-      if (section) section.classList.toggle('d-none', key !== name);
+    rows.push([]);
+    rows.push(['Food Popularity & Quantity Sold']);
+    rows.push(['Item', 'Category', 'Quantity Sold', 'Times Ordered']);
+    (report.foodPopularity || []).forEach(function (food) {
+      rows.push([food.name, food.category, food.totalQuantity, food.orderCount]);
     });
-    document.querySelectorAll('#systemReports .report-tab-btn').forEach(function (btn) {
-      var active = btn.getAttribute('data-report-tab') === name;
-      btn.classList.toggle('btn-primary', active);
-      btn.classList.toggle('btn-secondary', !active);
-      btn.classList.toggle('active', active);
-    });
-    // Keep URL hash in sync so the sidebar can highlight Tax / VAT or Revenue
-    if (name === 'revenue' || name === 'tax') {
-      if (window.location.hash.replace('#', '') !== name) {
-        window.location.hash = name;
-      }
-    } else if (window.location.hash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search);
-    }
-  }
-
-  async function loadRevenueReport() {
-    var fromDate = document.getElementById('revenueFromDate').value;
-    var toDate = document.getElementById('revenueToDate').value;
-    var tbody = document.getElementById('revenueDailyBody');
-
-    try {
-      var data = await window.AdminAPI.get('/reports/revenue', { fromDate: fromDate, toDate: toDate });
-      var report = data.report || {};
-      var summary = report.summary || {};
-
-      setMoney('metricRevenueGross', summary.gross);
-      setMoney('metricRevenueSubtotal', summary.subtotal);
-      setMoney('metricRevenueVat', summary.vat);
-      setMoney('metricRevenueServiceFees', summary.serviceFees);
-      setMoney('metricRevenueDeliveryFees', summary.deliveryFees);
-      setMoney(
-        'metricRevenuePlatformShare',
-        summary.platformShare !== undefined ? summary.platformShare : summary.platformFees
-      );
-      setMoney('metricRevenueNetIncome', report.netCafeteriaIncome);
-      setMoney('metricRevenueAvgOrder', report.averageOrderValue);
-      setText('metricRevenueOrderCount', summary.orderCount || 0);
-      setMoney('revenueTotalTaxRemitted', report.totalTaxRemitted);
-
-      renderDailyBreakdown(report.dailyBreakdown || []);
-
-      var rangeEl = document.getElementById('revenueReportRange');
-      if (rangeEl) {
-        rangeEl.textContent =
-          (fromDate || report.fromDate || 'All time') + ' to ' + (toDate || report.toDate || 'All time');
-      }
-
-      if (window.AdminToast) window.AdminToast.show('Revenue report loaded');
-    } catch (error) {
-      if (tbody) {
-        tbody.innerHTML =
-          '<tr><td colspan="7" class="table-empty">Failed to load revenue report: ' +
-          esc(error.message || 'Server error') +
-          '</td></tr>';
-      }
-      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_load_revenue_report', 'Failed to load revenue report'));
-    }
-  }
-
-  function renderDailyBreakdown(days) {
-    var tbody = document.getElementById('revenueDailyBody');
-    if (!tbody) return;
-
-    if (!days.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No daily data for the selected range.</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = days
-      .map(function (day) {
-        return (
-          '<tr>' +
-          '<td>' +
-          esc(day.date || '-') +
-          '</td>' +
-          '<td>' +
-          (day.orders || 0) +
-          '</td>' +
-          '<td><strong>' +
-          money(day.gross) +
-          '</strong></td>' +
-          '<td>' +
-          money(day.vat) +
-          '</td>' +
-          '<td>' +
-          money(day.serviceFees) +
-          '</td>' +
-          '<td>' +
-          money(day.deliveryFees) +
-          '</td>' +
-          '<td>' +
-          money(day.subtotal) +
-          '</td>' +
-          '</tr>'
-        );
-      })
-      .join('');
-  }
-
-  async function loadTaxCompliance() {
-    var year = document.getElementById('taxYearInput').value;
-    var tbody = document.getElementById('taxMonthlyBody');
-
-    try {
-      var data = await window.AdminAPI.get('/reports/tax-compliance', { year: year });
-      var report = data.report || {};
-
-      setText('taxTransactionCount', report.transactionCount || 0);
-      setMoney('taxGrossSales', report.grossSales);
-      setMoney('taxTaxableBase', report.taxableBase);
-      setMoney('taxVatCollected', report.vatCollected);
-
-      renderTaxMonthly(report.monthlyBreakdown || []);
-
-      var periodEl = document.getElementById('taxReportPeriod');
-      if (periodEl) periodEl.textContent = report.period || year || 'All time';
-
-      if (window.AdminToast) window.AdminToast.show('Tax compliance report loaded');
-    } catch (error) {
-      if (tbody) {
-        tbody.innerHTML =
-          '<tr><td colspan="3" class="table-empty">Failed to load tax compliance report: ' +
-          esc(error.message || 'Server error') +
-          '</td></tr>';
-      }
-      if (window.AdminToast) window.AdminToast.error(error.message || tr('error_load_tax_report', 'Failed to load tax compliance report'));
-    }
-  }
-
-  function renderTaxMonthly(months) {
-    var tbody = document.getElementById('taxMonthlyBody');
-    if (!tbody) return;
-
-    if (!months.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="table-empty">No monthly data for this year.</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = months
-      .map(function (m) {
-        return (
-          '<tr>' +
-          '<td>' +
-          esc(m.month || '-') +
-          '</td>' +
-          '<td>' +
-          money(m.grossSales) +
-          '</td>' +
-          '<td><strong>' +
-          money(m.vatCollected) +
-          '</strong></td>' +
-          '</tr>'
-        );
-      })
-      .join('');
-  }
-
-  function bindSystemEvents() {
-    var periodSelect = document.getElementById('periodSelect');
-    if (periodSelect) {
-      periodSelect.addEventListener('change', toggleCustomRange);
-      periodSelect.addEventListener('change', function () {
-        if (periodSelect.value !== 'custom') loadReport();
-      });
-    }
-
-    var applyBtn = document.getElementById('applyReportBtn');
-    if (applyBtn) applyBtn.addEventListener('click', loadReport);
-
-    document.querySelectorAll('#systemReports .report-tab-btn').forEach(function (btn) {
-      btn.addEventListener('click', function () {
-        switchSystemTab(btn.getAttribute('data-report-tab'));
-      });
-    });
-
-    var loadRevenueBtn = document.getElementById('loadRevenueBtn');
-    if (loadRevenueBtn) loadRevenueBtn.addEventListener('click', loadRevenueReport);
-
-    var loadTaxBtn = document.getElementById('loadTaxBtn');
-    if (loadTaxBtn) loadTaxBtn.addEventListener('click', loadTaxCompliance);
-
-    var taxYear = document.getElementById('taxYearInput');
-    if (taxYear && !taxYear.value) taxYear.value = new Date().getFullYear();
-  }
-
-  function initSystem() {
-    document.getElementById('systemReports').classList.remove('d-none');
-    document.getElementById('cafeteriaReports').classList.add('d-none');
-    toggleCustomRange();
-    bindSystemEvents();
-
-    // Initial tab from URL hash (e.g. reports.html#tax → Tax / VAT)
-    var hash = window.location.hash.replace('#', '');
-    var initialTab = hash === 'revenue' || hash === 'tax' ? hash : 'summary';
-    switchSystemTab(initialTab);
-    if (initialTab === 'revenue') loadRevenueReport();
-    else if (initialTab === 'tax') loadTaxCompliance();
-    else loadReport();
-
-    window.addEventListener('hashchange', function () {
-      var h = window.location.hash.replace('#', '');
-      var tab = h === 'revenue' || h === 'tax' ? h : 'summary';
-      switchSystemTab(tab);
-      if (tab === 'revenue') loadRevenueReport();
-      else if (tab === 'tax') loadTaxCompliance();
-      else loadReport();
-    });
+    return rows;
   }
 
   /* ============================================================
-   * ------------------------------------------------------------
-   * CAFETERIA REPORTS
-   * ------------------------------------------------------------
+   * SALES (cafeteria only)
    * ============================================================ */
-  var cfCharts = {};
-  var cfState = {
-    tab: 'cf-sales',
-    ordersPage: 1,
-    paymentsPage: 1,
-    refundsPage: 1,
-    menuCategoriesReady: false,
-    export: null,
-  };
-
-  function destroyChart(key) {
-    if (cfCharts[key]) {
-      cfCharts[key].destroy();
-      cfCharts[key] = null;
-    }
-  }
-
-  function toggleCfCustomRange() {
-    var isCustom = document.getElementById('cfPeriodSelect').value === 'custom';
-    document.getElementById('cfStartDate').disabled = !isCustom;
-    document.getElementById('cfEndDate').disabled = !isCustom;
-  }
-
-  async function loadCafeteriaName() {
-    var el = document.getElementById('cafeteriaScopeName');
-    try {
-      var data = await window.AdminAPI.get('/cafeterias/mine');
-      if (el) el.textContent = (data.cafeteria && data.cafeteria.name) || t('report_scope_default');
-    } catch (error) {
-      if (el) el.textContent = t('report_scope_default');
-    }
-  }
-
-  function cfSetUpdated(range) {
-    var el = document.getElementById('cfUpdatedAt');
-    if (!el || !range) {
-      if (el) el.textContent = '';
-      return;
-    }
-    var fmt = function (d) {
-      return window.AdminAPI.formatDate(d);
-    };
-    el.textContent = t('report_period_label') + ': ' + fmt(range.startDate) + ' — ' + fmt(range.endDate);
-  }
-
-  function cfFail(tbodyId, colspan, error) {
-    var tbody = document.getElementById(tbodyId);
-    if (tbody) tbody.innerHTML = emptyRow(colspan, t('report_failed') + ': ' + ((error && error.message) || ''));
-    if (window.AdminToast) window.AdminToast.error((error && error.message) || tr('error_load_report', 'Failed to load report'));
-  }
-
-  /* ---------- SALES ---------- */
   function renderSalesChart(rows) {
     var canvas = document.getElementById('cfSalesChart');
     var emptyEl = document.getElementById('cfSalesChartEmpty');
@@ -614,7 +573,7 @@ function tr(key, fallback, vars) {
     canvas.classList.remove('d-none');
     if (emptyEl) emptyEl.classList.add('d-none');
 
-    cfCharts.sales = new Chart(canvas.getContext('2d'), {
+    charts.sales = new Chart(canvas.getContext('2d'), {
       type: 'line',
       data: {
         labels: rows.map(function (r) {
@@ -646,9 +605,9 @@ function tr(key, fallback, vars) {
   async function loadCfSales() {
     var tbody = document.getElementById('cfSalesMethodBody');
     try {
-      var data = await window.AdminAPI.get('/cafeteria/reports/sales', cfPeriodQuery());
+      var data = await window.AdminAPI.get('/cafeteria/reports/sales', periodQuery());
       var r = data.report;
-      cfSetUpdated(r.range);
+      setUpdated(r.range, r.period);
 
       setMoney('cfTotalSales', r.totalSales);
       setMoney('cfTodaySales', r.todaySales);
@@ -691,13 +650,15 @@ function tr(key, fallback, vars) {
     }
   }
 
-  /* ---------- ORDERS ---------- */
+  /* ============================================================
+   * ORDERS
+   * ============================================================ */
   async function loadCfOrders() {
     var tbody = document.getElementById('cfOrdersBody');
     try {
       var data = await window.AdminAPI.get(
         '/cafeteria/reports/orders',
-        cfPeriodQuery({
+        periodQuery({
           status: document.getElementById('cfOrderStatus').value,
           paymentStatus: document.getElementById('cfOrderPaymentStatus').value,
           page: cfState.ordersPage,
@@ -705,7 +666,7 @@ function tr(key, fallback, vars) {
         })
       );
       var r = data.report;
-      cfSetUpdated(r.range);
+      setUpdated(r.range, r.period);
 
       setText('cfOrdersTotal', r.counts.total || 0);
       setText('cfOrdersPending', r.counts.pending || 0);
@@ -783,13 +744,15 @@ function tr(key, fallback, vars) {
     }
   }
 
-  /* ---------- PAYMENTS ---------- */
+  /* ============================================================
+   * PAYMENTS
+   * ============================================================ */
   async function loadCfPayments() {
     var tbody = document.getElementById('cfPaymentsBody');
     try {
       var data = await window.AdminAPI.get(
         '/cafeteria/reports/payments',
-        cfPeriodQuery({
+        periodQuery({
           status: document.getElementById('cfPayStatus').value,
           method: document.getElementById('cfPayMethod').value,
           page: cfState.paymentsPage,
@@ -797,7 +760,7 @@ function tr(key, fallback, vars) {
         })
       );
       var r = data.report;
-      cfSetUpdated(r.range);
+      setUpdated(r.range, r.period);
 
       setText('cfPayTotal', r.counts.total || 0);
       setText('cfPayPaid', r.counts.paid || 0);
@@ -889,20 +852,22 @@ function tr(key, fallback, vars) {
     }
   }
 
-  /* ---------- REFUNDS ---------- */
+  /* ============================================================
+   * REFUNDS (cafeteria only)
+   * ============================================================ */
   async function loadCfRefunds() {
     var tbody = document.getElementById('cfRefundsBody');
     try {
       var data = await window.AdminAPI.get(
         '/cafeteria/reports/refunds',
-        cfPeriodQuery({
+        periodQuery({
           status: document.getElementById('cfRefStatus').value,
           page: cfState.refundsPage,
           limit: 20,
         })
       );
       var r = data.report;
-      cfSetUpdated(r.range);
+      setUpdated(r.range, r.period);
 
       setText('cfRefTotal', r.counts.total || 0);
       setText('cfRefRequested', r.counts.requested || 0);
@@ -982,7 +947,9 @@ function tr(key, fallback, vars) {
     }
   }
 
-  /* ---------- MENU PERFORMANCE ---------- */
+  /* ============================================================
+   * MENU PERFORMANCE (cafeteria only)
+   * ============================================================ */
   function menuRows(items, colspan) {
     if (!items.length) return emptyRow(colspan, t('report_empty'));
     return items
@@ -1005,10 +972,10 @@ function tr(key, fallback, vars) {
     try {
       var data = await window.AdminAPI.get(
         '/cafeteria/reports/menu-performance',
-        cfPeriodQuery({ category: document.getElementById('cfMenuCategory').value })
+        periodQuery({ category: document.getElementById('cfMenuCategory').value })
       );
       var r = data.report;
-      cfSetUpdated(r.range);
+      setUpdated(r.range, r.period);
 
       setText('cfMenuTotal', r.summary.totalItems || 0);
       setText('cfMenuAvailable', r.summary.availableItems || 0);
@@ -1069,7 +1036,7 @@ function tr(key, fallback, vars) {
   }
 
   /* ============================================================
-   * INVENTORY / STOCK
+   * INVENTORY (cafeteria only)
    * ============================================================ */
   async function loadCfInventory() {
     try {
@@ -1087,7 +1054,7 @@ function tr(key, fallback, vars) {
       if (!tbody) return;
       var items = report.items || [];
       if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="table-empty">No inventory data available.</td></tr>';
+        tbody.innerHTML = emptyRow(7, t('report_empty'));
         return;
       }
       tbody.innerHTML = items
@@ -1112,7 +1079,15 @@ function tr(key, fallback, vars) {
         name: 'cafeteria-inventory',
         rows: [['Item', 'Category', 'Price', 'Stock', 'Threshold', 'Status', 'Value']].concat(
           items.map(function (i) {
-            return [i.name, i.category, i.price, i.stockQuantity, i.lowStockThreshold, i.outOfStock ? 'OUT OF STOCK' : i.lowStock ? 'LOW STOCK' : 'IN STOCK', i.price * i.stockQuantity];
+            return [
+              i.name,
+              i.category,
+              i.price,
+              i.stockQuantity,
+              i.lowStockThreshold,
+              i.outOfStock ? 'OUT OF STOCK' : i.lowStock ? 'LOW STOCK' : 'IN STOCK',
+              i.price * i.stockQuantity,
+            ];
           })
         ),
       };
@@ -1121,36 +1096,72 @@ function tr(key, fallback, vars) {
     }
   }
 
-  var CF_LOADERS = {
-    'cf-sales': loadCfSales,
-    'cf-orders': loadCfOrders,
-    'cf-payments': loadCfPayments,
-    'cf-refunds': loadCfRefunds,
-    'cf-menu': loadCfMenu,
-    'cf-inventory': loadCfInventory,
+  /* ============================================================
+   * TABS
+   * ============================================================ */
+  var cfState = {
+    tab: 'summary',
+    ordersPage: 1,
+    paymentsPage: 1,
+    refundsPage: 1,
+    menuCategoriesReady: false,
+    export: null,
   };
 
-  function loadActiveCafeteriaTab() {
-    var loader = CF_LOADERS[cfState.tab];
+  function cfFail(tbodyId, colspan, error) {
+    var tbody = document.getElementById(tbodyId);
+    if (tbody) tbody.innerHTML = emptyRow(colspan, t('report_failed') + ': ' + ((error && error.message) || ''));
+    if (window.AdminToast) window.AdminToast.error((error && error.message) || tr('error_load_report', 'Failed to load report'));
+  }
+
+  var LOADERS = {
+    summary: loadSummary,
+    orders: loadCfOrders,
+    payments: loadCfPayments,
+    sales: loadCfSales,
+    refunds: loadCfRefunds,
+    menu: loadCfMenu,
+    inventory: loadCfInventory,
+  };
+
+  var CAFETERIA_ONLY_TABS = ['sales', 'refunds', 'menu', 'inventory'];
+
+  function loadActiveTab() {
+    var loader = LOADERS[cfState.tab];
     if (loader) loader();
   }
 
-  function switchCafeteriaTab(name) {
+  function switchTab(name) {
+    if (!LOADERS[name]) name = 'summary';
+    if (CAFETERIA_ONLY_TABS.indexOf(name) !== -1 && !isCafeteria) name = 'summary';
     cfState.tab = name;
-    Object.keys(CF_LOADERS).forEach(function (key) {
-      var section = document.getElementById('cfView-' + key);
+    cfState.export = null;
+
+    Object.keys(LOADERS).forEach(function (key) {
+      var section = document.getElementById('reportView-' + key);
       if (section) section.classList.toggle('d-none', key !== name);
     });
-    document.querySelectorAll('#cafeteriaReports .report-tab-btn').forEach(function (btn) {
+    document.querySelectorAll('#reportTabs .report-tab-btn').forEach(function (btn) {
       var active = btn.getAttribute('data-report-tab') === name;
       btn.classList.toggle('btn-primary', active);
       btn.classList.toggle('btn-secondary', !active);
       btn.classList.toggle('active', active);
     });
-    loadActiveCafeteriaTab();
+    loadActiveTab();
   }
 
-  function exportCafeteriaCsv() {
+  function exportCsv() {
+    if (cfState.tab === 'summary') {
+      if (!summaryExport) {
+        if (window.AdminToast) window.AdminToast.error('No report data to export yet');
+        return;
+      }
+      downloadCsv(
+        summaryExport.name + '-' + new Date().toISOString().split('T')[0] + '.csv',
+        summaryExport.rows
+      );
+      return;
+    }
     if (!cfState.export) {
       if (window.AdminToast) window.AdminToast.error('No report data to export yet');
       return;
@@ -1158,21 +1169,30 @@ function tr(key, fallback, vars) {
     downloadCsv(cfState.export.name + '-' + new Date().toISOString().split('T')[0] + '.csv', cfState.export.rows);
   }
 
-  function bindCafeteriaEvents() {
-    var periodSelect = document.getElementById('cfPeriodSelect');
+  /* ============================================================
+   * EVENTS
+   * ============================================================ */
+  function bindEvents() {
+    var periodSelect = document.getElementById('reportPeriodSelect');
     if (periodSelect) {
-      periodSelect.addEventListener('change', toggleCfCustomRange);
       periodSelect.addEventListener('change', function () {
-        if (periodSelect.value !== 'custom') loadActiveCafeteriaTab();
+        syncPeriodInputs();
+        if (periodSelect.value === 'custom') {
+          if (window.ScosReportPeriod) {
+            window.ScosReportPeriod.fillCustomDefaults('reportStartDate', 'reportEndDate');
+          }
+          return;
+        }
+        loadActiveTab();
       });
     }
 
-    var applyBtn = document.getElementById('cfApplyBtn');
-    if (applyBtn) applyBtn.addEventListener('click', loadActiveCafeteriaTab);
+    var applyBtn = document.getElementById('reportApplyBtn');
+    if (applyBtn) applyBtn.addEventListener('click', loadActiveTab);
 
-    document.querySelectorAll('#cafeteriaReports .report-tab-btn').forEach(function (btn) {
+    document.querySelectorAll('#reportTabs .report-tab-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
-        switchCafeteriaTab(btn.getAttribute('data-report-tab'));
+        switchTab(btn.getAttribute('data-report-tab'));
       });
     });
 
@@ -1225,49 +1245,58 @@ function tr(key, fallback, vars) {
     });
   }
 
-  function initCafeteria() {
-    document.getElementById('cafeteriaReports').classList.remove('d-none');
-    document.getElementById('systemReports').classList.add('d-none');
-    toggleCfCustomRange();
-    bindCafeteriaEvents();
-    loadCafeteriaName();
+  async function loadScopeName() {
+    var el = document.getElementById('reportScopeName');
+    if (!el) return;
+    if (!isCafeteria) {
+      el.textContent = t('report_scope_all_cafeterias');
+      return;
+    }
+    try {
+      var data = await window.AdminAPI.get('/cafeterias/mine');
+      el.textContent = (data.cafeteria && data.cafeteria.name) || t('report_scope_default');
+    } catch (error) {
+      el.textContent = t('report_scope_default');
+    }
+  }
 
-    // Determine initial tab from URL hash (e.g. reports.html#cf-orders)
-    var hash = window.location.hash.replace('#', '');
-    var initialTab = CF_LOADERS[hash] ? hash : 'cf-sales';
-    switchCafeteriaTab(initialTab);
-
-    // Listen for hash changes so sidebar links between report tabs work
-    // without a full page reload (e.g. clicking Order Report while on Sales Report)
-    window.addEventListener('hashchange', function () {
-      var h = window.location.hash.replace('#', '');
-      if (CF_LOADERS[h] && cfState.tab !== h) {
-        switchCafeteriaTab(h);
-      }
-    });
-
-    window.addEventListener('languageChanged', function () {
-      loadCafeteriaName();
-      loadActiveCafeteriaTab();
+  function applyRoleVisibility() {
+    document.querySelectorAll('#reportTabs .cafeteria-only').forEach(function (btn) {
+      btn.classList.toggle('d-none', !isCafeteria);
     });
   }
 
-  /* ============================================================
-   * BOOTSTRAP
-   * ============================================================ */
   function init() {
-    var refreshBtn = document.getElementById('refreshReportsBtn');
-    var exportBtn = document.getElementById('exportCsvBtn');
+    var content = document.getElementById('reportContent');
+    if (content) content.classList.remove('d-none');
 
-    if (isCafeteria) {
-      initCafeteria();
-      if (refreshBtn) refreshBtn.addEventListener('click', loadActiveCafeteriaTab);
-      if (exportBtn) exportBtn.addEventListener('click', exportCafeteriaCsv);
-    } else {
-      initSystem();
-      if (refreshBtn) refreshBtn.addEventListener('click', loadReport);
-      if (exportBtn) exportBtn.addEventListener('click', exportSystemCsv);
+    applyRoleVisibility();
+    syncPeriodInputs();
+    if (window.ScosReportPeriod) {
+      window.ScosReportPeriod.fillCustomDefaults('reportStartDate', 'reportEndDate');
     }
+    bindEvents();
+    loadScopeName();
+
+    var refreshBtn = document.getElementById('refreshReportsBtn');
+    if (refreshBtn) refreshBtn.addEventListener('click', loadActiveTab);
+
+    var exportBtn = document.getElementById('exportCsvBtn');
+    if (exportBtn) exportBtn.addEventListener('click', exportCsv);
+
+    // Initial tab from the URL hash (e.g. reports.html#orders)
+    var hash = window.location.hash.replace('#', '');
+    switchTab(LOADERS[hash] ? hash : 'summary');
+
+    window.addEventListener('hashchange', function () {
+      var h = window.location.hash.replace('#', '');
+      if (LOADERS[h] && cfState.tab !== h) switchTab(h);
+    });
+
+    window.addEventListener('languageChanged', function () {
+      loadScopeName();
+      loadActiveTab();
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);

@@ -184,6 +184,16 @@ const IN_PROGRESS = (f) => f && f.$or && f.$lte_check !== false && String(f.star
       assert.strictEqual(r2.body.shift, null);
       assert.deepStrictEqual(r2.body.dayShifts, []);
     });
+
+    // "No shift" is a normal answer, not a missing resource. It used to be sent
+    // as 404, which every client had to special-case and which made the browser
+    // log a red network error on a perfectly healthy page.
+    check('"no shift" is a 200 with a null shift, NOT a 404', () => {
+      assert.strictEqual(r2.statusCode, 200,
+        `"no shift" must answer 200 (got ${r2.statusCode}) - a 404 makes the browser log an error`);
+      assert.strictEqual(r2.body.success, true);
+      assert.strictEqual(r2.body.reason, 'none');
+    });
   }
 
   await Promise.all(pendingChecks);

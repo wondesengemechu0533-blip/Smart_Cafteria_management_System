@@ -1172,8 +1172,8 @@
   "mgr_staff_err_username": "á‹¨á‰°áŒ á‰ƒáˆš áˆµáˆ 3-30 áŠá‹°áˆ áˆ˜áˆ†áŠ‘ áŠ áˆˆá‰ á‰µá¤ áŠá‹°áˆá£ á‰áŒ¥áˆ­ áŠ¥áŠ“ áŠ áˆµáˆ­áˆµ á‰¥á‰»á¢",
   "mgr_staff_err_password_short": "á‹¨á‹­áˆˆá á‰ƒáˆ á‰¢á‹«áŠ•áˆµ 8 áŠá‹°áˆ áˆ˜áˆ†áŠ• áŠ áˆˆá‰ á‰µá¢",
   "mgr_staff_err_password_policy": "á‹¨á‹­áˆˆá á‰ƒáˆ á‰µáˆá‰… áŠá‹°áˆá£ á‰µáŠ•áˆ½ áŠá‹°áˆá£ á‰áŒ¥áˆ­ áŠ¥áŠ“ áˆáˆáŠ­á‰µ á‹«áˆµáˆáˆáŒ‹áˆá¢",
-  "mgr_staff_err_password_mismatch": "á‹¨á‹­áˆˆá á‰ƒáˆ‹á‰µ áŠ á‹­áˆµáˆ›áˆ›áˆá¢"
-,  "delivery_gps_active": "ጂፒኤስ ንቁ",
+  "mgr_staff_err_password_mismatch": "á‹¨á‹­áˆˆá á‰ƒáˆ‹á‰µ áŠ á‹­áˆµáˆ›áˆ›áˆá¢",
+  "delivery_gps_active": "ጂፒኤስ ንቁ",
   "delivery_gps_waiting": "ጂፒኤስ በመጠብ ላይ",
   "delivery_map_no_locations": "እስካሁን የሚላክ ቦታዎች የሉም። የዓለም ካርታ ንቁ።",
   "delivery_map_showing_position": "የእርስዎን ቦታ በዓለም ካርታ ላይ እያሳየ ነው።",
@@ -1181,5 +1181,7 @@
   "delivery_active": "ንቁ",
   "delivery_last_update": "የመጨረሻ ዱርነት",
   "delivery_just_now": "ጠለቂያ",
-  "delivery_accuracy": "ክፍተት"
+  "delivery_accuracy": "ክፍተት",
+  "Manager Profile": "የካፌቴሪያ አስተዳዳሪ መገለጫ",
+  "Manager Profile - Smart Cafeteria": "የካፌቴሪያ አስተዳዳሪ መገለጫ - Smart Cafeteria"
 }

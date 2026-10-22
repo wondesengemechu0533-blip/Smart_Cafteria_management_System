@@ -31,9 +31,11 @@ function __registerLangChange(fn) {
   var pendingToggleUser = null;
   var pendingDeleteUser = null;
   var isCafeteriaAdmin = (window.ScosRoles && typeof window.ScosRoles.getCurrentRole === "function" && window.ScosRoles.getCurrentRole() === "cafeteria_admin");
+  var isManager = (window.ScosRoles && typeof window.ScosRoles.getCurrentRole === "function" && window.ScosRoles.getCurrentRole() === "manager");
+  var isCafeteriaScoped = isCafeteriaAdmin || isManager;
 
   function applyCafeteriaAdminRestrictions() {
-    if (!isCafeteriaAdmin) return;
+    if (!isCafeteriaScoped) return;
     var allowedRoles = ["kitchen", "delivery", "cashier"];
     var roleFilter = document.getElementById("roleFilter");
     if (roleFilter) {

@@ -21,7 +21,6 @@ router.use(
     'admin',
     'ADMIN',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'staff',
     'kitchen_staff',
@@ -37,7 +36,7 @@ router.use(
  * Frontend: admin/dashboard.html
  */
 router.get('/dashboard', getDashboardStats);
-router.get('/dashboard/analytics', authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'), getSystemAnalytics);
+router.get('/dashboard/analytics', authorize('admin', 'ADMIN', 'system_admin'), getSystemAnalytics);
 
 /**
  * @route   GET /api/admin/dashboard/recent-orders
@@ -58,21 +57,21 @@ router.get('/dashboard/recent-payments', getRecentPayments);
  * @desc    Get activity logs
  * @access  Private/Admin
  */
-router.get('/activity-logs', authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'), getActivityLogs);
+router.get('/activity-logs', authorize('admin', 'ADMIN', 'system_admin'), getActivityLogs);
 
 /**
  * @route   GET /api/admin/settings
  * @desc    Get all settings
  * @access  Private/Admin
  */
-router.get('/settings', authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'), getSettings);
+router.get('/settings', authorize('admin', 'ADMIN', 'system_admin', 'manager'), getSettings);
 
 /**
  * @route   PUT /api/admin/settings/:key
  * @desc    Update a setting by key
  * @access  Private/Admin
  */
-router.put('/settings/:key', authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin'), updateSetting);
+router.put('/settings/:key', authorize('admin', 'ADMIN', 'system_admin', 'manager'), updateSetting);
 
 /**
  * @route   PUT /api/admin/password

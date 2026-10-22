@@ -37,6 +37,27 @@
         .btn-gradient:hover { background: linear-gradient(135deg, #059669 0%, #047857 100%); }
         .alert-slide { animation: slideDown 0.4s ease-out; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .restricted-badge {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 1px 8px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            background: #fef3c7;
+            color: #b45309;
+            border: 1px solid #fcd34d;
+            vertical-align: middle;
+        }
+        .restricted-badge.hidden { display: none; }
+        [data-restricted-field].is-restricted input,
+        [data-restricted-field].is-restricted select {
+            opacity: 0.55;
+            cursor: not-allowed;
+            background: #f3f4f6;
+        }
     </style>
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
@@ -75,7 +96,7 @@
                             <i class="fa-solid fa-user-shield text-blue-600"></i>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Admin Profile</h2>
+                            <h2 id="profileSectionTitle" class="text-lg font-semibold text-gray-900">Admin Profile</h2>
                             <p class="text-xs text-gray-500">Manage your personal account details</p>
                         </div>
                     </div>
@@ -123,7 +144,7 @@
                 </div>
             </section>
 
-            <!-- ===== SECTION 2: SECURITY SETTINGS ===== -->
+            <!-- ===== SECTION 2: SECURITY SETTINGS (OWN ACCOUNT) ===== -->
             <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
                 <div class="px-6 py-5 border-b border-gray-100">
                     <div class="flex items-center gap-3">
@@ -131,8 +152,8 @@
                             <i class="fa-solid fa-shield-halved text-red-600"></i>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Security Settings</h2>
-                            <p class="text-xs text-gray-500">Protect your account with password and 2FA</p>
+                            <h2 class="text-lg font-semibold text-gray-900">My Security</h2>
+                            <p class="text-xs text-gray-500">Protect your own account with a password and 2FA</p>
                         </div>
                     </div>
                 </div>
@@ -164,6 +185,10 @@
                             </div>
                         </div>
                     </div>
+                    <p class="text-xs text-gray-500 mb-4">
+                        <i class="fa-solid fa-circle-info text-gray-400 mr-1"></i>
+                        Your current password is verified on the server before the change is accepted.
+                    </p>
                     <div class="flex justify-start mb-6">
                         <button type="button" id="changePasswordBtn" class="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold shadow-sm transition-all flex items-center gap-2">
                             <i class="fa-solid fa-key"></i> Update Security
@@ -172,14 +197,14 @@
 
                     <hr class="border-gray-100 my-6">
 
-                    <!-- 2FA Toggle -->
+                    <!-- 2FA Toggle - PER ACCOUNT -->
                     <h3 class="text-sm font-semibold text-gray-900 mb-4 flex items-center gap-2">
                         <i class="fa-solid fa-lock text-emerald-500"></i> Two-Factor Authentication
                     </h3>
                     <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                         <div>
                             <p class="text-sm font-medium text-gray-900">Two-Factor Authentication (2FA)</p>
-                            <p class="text-xs text-gray-500 mt-0.5">Add an extra layer of security to your account</p>
+                            <p class="text-xs text-gray-500 mt-0.5">Add an extra layer of security to <strong>your</strong> account</p>
                         </div>
                         <div class="relative inline-block w-12 align-middle select-none">
                             <input type="checkbox" id="twoFactorEnabled" class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
@@ -189,7 +214,7 @@
                 </div>
             </section>
 
-            <!-- ===== SECTION 3: SYSTEM CONFIGURATION ===== -->
+            <!-- ===== SECTION 3: CAFETERIA OPERATIONS ===== -->
             <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
                 <div class="px-6 py-5 border-b border-gray-100">
                     <div class="flex items-center gap-3">
@@ -197,8 +222,8 @@
                             <i class="fa-solid fa-sliders text-purple-600"></i>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">System Configuration</h2>
-                            <p class="text-xs text-gray-500">Cafeteria operating rules and order limits</p>
+                            <h2 class="text-lg font-semibold text-gray-900">Cafeteria Operations</h2>
+                            <p class="text-xs text-gray-500">Opening hours and the rules of this cafeteria</p>
                         </div>
                     </div>
                 </div>
@@ -209,32 +234,34 @@
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                 <i class="fa-regular fa-clock text-gray-400 mr-1"></i> Start Time
                             </label>
-                            <input type="time" id="cafeteriaOpeningTime" value="07:00" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                            <input type="time" id="cafeteriaOpeningTime" data-setting-key="cafeteria_opening_time" value="07:00" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                 <i class="fa-regular fa-clock text-gray-400 mr-1"></i> End Time
                             </label>
-                            <input type="time" id="cafeteriaClosingTime" value="22:00" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                            <input type="time" id="cafeteriaClosingTime" data-setting-key="cafeteria_closing_time" value="22:00" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
                         </div>
 
-                        <!-- Currency -->
-                        <div>
+                        <!-- Currency (System Admin only) -->
+                        <div data-restricted-field="currency">
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                 <i class="fa-solid fa-coins text-gray-400 mr-1"></i> Default Currency
+                                <span class="restricted-badge hidden" data-restricted-badge>System Admin only</span>
                             </label>
-                            <select id="paymentCurrency" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all appearance-none">
+                            <select id="paymentCurrency" data-setting-key="currency" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all appearance-none">
                                 <option value="ETB">ETB - Ethiopian Birr</option>
                                 <option value="USD">USD - US Dollar</option>
                             </select>
                         </div>
 
-                        <!-- Max Daily Orders -->
-                        <div>
+                        <!-- Max Daily Orders (System Admin only) -->
+                        <div data-restricted-field="max_daily_orders">
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">
                                 <i class="fa-solid fa-list-ol text-gray-400 mr-1"></i> Max Daily Order Limit
+                                <span class="restricted-badge hidden" data-restricted-badge>System Admin only</span>
                             </label>
-                            <input type="number" id="maxDailyOrders" value="100" min="1" max="9999" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                            <input type="number" id="maxDailyOrders" data-setting-key="max_daily_orders" value="100" min="1" max="9999" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
                         </div>
                     </div>
 
@@ -245,41 +272,56 @@
                             <p class="text-xs text-gray-500 mt-0.5">Allow customers to place orders through the system</p>
                         </div>
                         <div class="relative inline-block w-12 align-middle select-none">
-                            <input type="checkbox" id="orderAvailability" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                            <input type="checkbox" id="orderAvailability" data-setting-key="order_availability" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
                             <label for="orderAvailability" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                         </div>
                     </div>
 
                     <div class="flex justify-end mt-5">
                         <button type="button" id="saveSystemConfigBtn" class="px-6 py-2.5 btn-gradient text-white rounded-xl text-sm font-semibold shadow-sm hover:shadow-md transition-all flex items-center gap-2">
-                            <i class="fa-solid fa-check"></i> Save System Config
+                            <i class="fa-solid fa-check"></i> Save Cafeteria Operations
                         </button>
                     </div>
                 </div>
             </section>
 
-            <!-- ===== SECTION 3.5: DELIVERY SETTINGS ===== -->
-            <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
+            <!-- ===== SECTION 3.5: FEES & DELIVERY (system admin only) ===== -->
+            <section id="feesDeliverySection" class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
                 <div class="px-6 py-5 border-b border-gray-100">
                     <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center">
                             <i class="fa-solid fa-truck-fast text-orange-600"></i>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Delivery Settings</h2>
-                            <p class="text-xs text-gray-500">Configure delivery orders and the delivery fee</p>
+                            <h2 class="text-lg font-semibold text-gray-900">Fees &amp; Delivery</h2>
+                            <p class="text-xs text-gray-500">Service fee and delivery fee are configured separately</p>
                         </div>
                     </div>
                 </div>
                 <div class="p-6">
+                    <p id="feeAuthorizationNote" class="hidden mb-4 p-3 rounded-xl text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                        <i class="fa-solid fa-lock mr-1"></i>
+                        The system administrator has not authorized cafeteria managers to change the fees. You can still view them.
+                    </p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <!-- Delivery Fee -->
-                        <div>
+                        <div data-restricted-field="delivery_fee">
                             <label class="block text-sm font-medium text-gray-700 mb-1.5">
-                                <i class="fa-solid fa-money-bill-wave text-gray-400 mr-1"></i> Delivery Fee (ETB)
+                                <i class="fa-solid fa-truck text-gray-400 mr-1"></i> Delivery Fee
+                                <span class="restricted-badge hidden" data-restricted-badge>Not authorized</span>
                             </label>
-                            <input type="number" id="deliveryFee" value="30" min="0" max="500" step="1" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
-                            <p class="text-xs text-gray-500 mt-1">Charged on every delivery order</p>
+                            <input type="number" id="deliveryFee" data-setting-key="delivery_fee" value="30" min="0" step="0.01" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                            <p class="text-xs text-gray-500 mt-1">Charged once on every delivery order</p>
+                        </div>
+
+                        <!-- Service Fee -->
+                        <div data-restricted-field="service_fee">
+                            <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                <i class="fa-solid fa-money-bill-wave text-gray-400 mr-1"></i> Service Fee
+                                <span class="restricted-badge hidden" data-restricted-badge>Not authorized</span>
+                            </label>
+                            <input type="number" id="serviceFee" data-setting-key="service_fee" value="20" min="0" step="0.01" class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                            <p class="text-xs text-gray-500 mt-1">Platform service fee, applied on every order with items</p>
                         </div>
                     </div>
 
@@ -290,33 +332,73 @@
                             <p class="text-xs text-gray-500 mt-0.5">Allow customers to choose delivery at checkout</p>
                         </div>
                         <div class="relative inline-block w-12 align-middle select-none">
-                            <input type="checkbox" id="deliveryEnabled" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                            <input type="checkbox" id="deliveryEnabled" data-setting-key="delivery_enabled" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
                             <label for="deliveryEnabled" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
                         </div>
                     </div>
 
                     <div class="flex justify-end mt-5">
                         <button type="button" id="saveDeliveryConfigBtn" class="px-6 py-2.5 btn-gradient text-white rounded-xl text-sm font-semibold shadow-sm hover:shadow-md transition-all flex items-center gap-2">
-                            <i class="fa-solid fa-check"></i> Save Delivery Settings
+                            <i class="fa-solid fa-check"></i> Save Fees &amp; Delivery
                         </button>
                     </div>
                 </div>
             </section>
 
-            <!-- ===== SECTION 4: NOTIFICATION PREFERENCES ===== -->
-            <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
+            <!-- ===== SECTION 3.6: PLATFORM PERMISSIONS (SYSTEM ADMIN) ===== -->
+            <section id="platformPermissionsSection" class="hidden bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
+                <div class="px-6 py-5 border-b border-gray-100">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+                            <i class="fa-solid fa-user-shield text-indigo-600"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">Platform Permissions</h2>
+                            <p class="text-xs text-gray-500">System-wide access rules - system administrator only</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-6">
+                    <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                        <div>
+                            <p class="text-sm font-medium text-gray-900">Allow Cafeteria Managers to manage fees</p>
+                            <p class="text-xs text-gray-500 mt-0.5">
+                                When on, a cafeteria manager may change the delivery fee and the service fee. When off, both fees
+                                can only be changed by the system administrator.
+                            </p>
+                        </div>
+                        <div class="relative inline-block w-12 align-middle select-none">
+                            <input type="checkbox" id="managerFeeManagement" data-setting-key="manager_fee_management_enabled" checked class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                            <label for="managerFeeManagement" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end mt-5">
+                        <button type="button" id="savePermissionsBtn" class="px-6 py-2.5 btn-gradient text-white rounded-xl text-sm font-semibold shadow-sm hover:shadow-md transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-check"></i> Save Permissions
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===== SECTION 4: NOTIFICATION PREFERENCES (system admin only) ===== -->
+            <section id="notificationPreferencesSection" class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 card-hover">
                 <div class="px-6 py-5 border-b border-gray-100">
                     <div class="flex items-center gap-3">
                         <div class="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center">
                             <i class="fa-solid fa-bell text-amber-600"></i>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-gray-900">Notification Preferences</h2>
-                            <p class="text-xs text-gray-500">Choose which alerts you want to receive</p>
+                            <h2 class="text-lg font-semibold text-gray-900">My Notification Preferences</h2>
+                            <p class="text-xs text-gray-500">Choose which alerts <strong>you</strong> want to receive</p>
                         </div>
                     </div>
                 </div>
                 <div class="p-6">
+                    <p class="mb-4 p-3 rounded-xl text-xs bg-blue-50 text-blue-700 border border-blue-200">
+                        <i class="fa-solid fa-user-check mr-1"></i>
+                        These preferences belong to your own account only. They never change anybody else's alerts.
+                    </p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <!-- New Order Alerts -->
                         <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">

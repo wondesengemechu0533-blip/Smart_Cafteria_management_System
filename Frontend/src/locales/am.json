@@ -796,6 +796,8 @@
   "admin_users_page_title": "የተጠቃሚ አስተዳደር - ስማርት ካፌቴሪያ",
   "admin_users_subtitle": "በስርዓቱ ውስጥ ያሉትን ሁሉ ተጠቃሚዎች ያስተዳድሩ",
   "admin_users_title": "የተጠቃሚ አስተዳደር",
+  "manager_staff_management_title": "የሠራተኛ አስተዳደር",
+  "manager_staff_management_subtitle": "የካፌቴሪያ ሠራተኞችን ያስተዳድሩ",
   "admin_view_all": "ሁሉንም ይመልከቱ",
   "admin_view_menu_item": "View Menu Item",
   "all": "ሁሉም",
@@ -2059,5 +2061,7 @@
   "🇬🇧 English": "🇬🇧 English",
   "🍔 Food Availability": "🍔 ምግብ አቅርቦት",
   "🔍 Filter": "🔍 ማጣሪያ",
-  "🚨 Stock Alerts": "🚨 Stock Alerts"
+  "🚨 Stock Alerts": "🚨 Stock Alerts",
+  "Manager Profile": "የካፌቴሪያ አስተዳዳሪ መገለጫ",
+  "Manager Profile - Smart Cafeteria": "የካፌቴሪያ አስተዳዳሪ መገለጫ - Smart Cafeteria"
 }

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Smart Cafeteria</title>
+    <!--
+        The Cafeteria Manager uses the SAME settings page as the System Admin.
+        That page is role-aware: it loads the caller's permission matrix from
+        GET /admin/settings and only enables the fields this role may change
+        (opening hours, cafeteria operations, and the fees when the System
+        Admin has authorized them).
+
+        This file only exists so the old /src/pages/manager/settings.html URL
+        keeps working - it redirects to the single real page instead of
+        maintaining a second copy that could drift out of sync.
+    -->
+    <script>
+        window.location.replace('../admin/settings.html');
+    </script>
+    <meta http-equiv="refresh" content="0; url=../admin/settings.html">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="flex items-center justify-center min-h-screen">
+        <p class="text-sm text-gray-500">Redirecting to Settings&hellip;</p>
+    </div>
+</body>
+</html>

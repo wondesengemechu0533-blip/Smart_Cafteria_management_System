@@ -1,10 +1,10 @@
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
-const Refund = require('../models/Refund');
-const Cancellation = require('../models/Cancellation');
 const MenuItem = require('../models/MenuItem');
 const Category = require('../models/Category');
 const { PAYMENT_STATUS } = require('../config/constants');
+const { canonicalOrderStatus } = require('../utils/order-status');
+const { loadRefundRows } = require('../utils/refunds');
 
 const STATUS_FLOW = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'COMPLETED'];
 const DAY_MS = 86400000;
@@ -21,24 +21,13 @@ function normalizeStatus(value) {
   if (!value) return null;
   return String(value).toUpperCase();
 }
-
 /**
- * Reconcile the two order-status fields (uppercase orderStatus vs lowercase
- * status) into one canonical uppercase status.
+ * Reconcile the two order-status fields into one canonical uppercase status.
+ * Shared with every other report so the counts cannot drift apart.
  */
 function effectiveOrderStatus(order) {
-  const up = normalizeStatus(order.orderStatus);
-  const low = normalizeStatus(order.status);
-  const indexOf = (s) => STATUS_FLOW.indexOf(s);
-  const upIndex = indexOf(up);
-  const lowIndex = indexOf(low);
-  if (up === 'CANCELLED' || low === 'CANCELLED') return 'CANCELLED';
-  if (upIndex === -1 && lowIndex === -1) return up || low || 'PENDING';
-  if (upIndex === -1) return low;
-  if (lowIndex === -1) return up;
-  return upIndex >= lowIndex ? up : low;
+  return canonicalOrderStatus(order);
 }
-
 function dayKey(date) {
   const d = new Date(date);
   if (isNaN(d.getTime())) return null;
@@ -78,61 +67,6 @@ async function sumPaidPayments(scope, start, end) {
   ]);
   const row = rows[0] || { total: 0, count: 0 };
   return { total: round2(row.total), count: row.count };
-}
-
-async function sumRefunds(scope, start, end) {
-  const rows = await loadRefundRows(scope, { start, end, period: 'custom' }, 'ALL');
-  return {
-    total: round2(rows.reduce((s, r) => s + num(r.amount), 0)),
-    count: rows.length,
-  };
-}
-
-/**
- * Dashboard summary cards for the selected period (all values scoped).
- */
-async function getSummary(scope, range) {
-  const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(todayStart.getTime() + DAY_MS);
-
-  const [period, today, paid, refunds, paymentCounts] = await Promise.all([
-    sumOrders(scope, range.start, range.end),
-    sumOrders(scope, todayStart, tomorrow),
-    sumPaidPayments(scope, range.start, range.end),
-    sumRefunds(scope, range.start, range.end),
-    Payment.aggregate([
-      { $match: { ...scopeMatch(scope), paymentDate: { $gte: range.start, $lt: range.end } } },
-      { $group: { _id: '$status', count: { $sum: 1 } } },
-    ]),
-  ]);
-
-  const paymentCount = (status) => {
-    const row = paymentCounts.find((r) => normalizeStatus(r._id) === status);
-    return row ? row.count : 0;
-  };
-
-  return {
-    period: range.period,
-    range: { startDate: range.start, endDate: new Date(range.end.getTime() - DAY_MS) },
-    currency: 'ETB',
-    cards: {
-      totalSales: period.gross,
-      totalOrders: period.orders,
-      totalPayments: paymentCounts.reduce((s, r) => s + r.count, 0),
-      totalRefunds: refunds.total,
-      averageOrderValue: period.orders > 0 ? round2(period.gross / period.orders) : 0,
-    },
-    todaySales: today.gross,
-    paidRevenue: paid.total,
-    refundCount: refunds.count,
-    paymentStatusCounts: {
-      paid: paymentCount('PAID'),
-      pending: paymentCount('PENDING'),
-      failed: paymentCount('FAILED'),
-      refunded: paymentCount('REFUNDED'),
-    },
-  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -322,140 +256,11 @@ async function getPayments(scope, range, query = {}) {
 /* Refunds report                                                      */
 /* ------------------------------------------------------------------ */
 
-const CANCELLATION_REFUND_STATUSES = [
-  'REFUND_REQUESTED',
-  'REFUND_APPROVED',
-  'REFUND_PROCESSING',
-  'REFUNDED',
-  'REFUND_FAILED',
-];
-
-function expandStatusFilter(statusFilter) {
-  if (!statusFilter || statusFilter === 'ALL') return null;
-  if (statusFilter === 'APPROVED') return ['APPROVED', 'REFUND_APPROVED', 'REFUND_PROCESSING'];
-  return [statusFilter];
-}
-
-function reportStatus(raw) {
-  const s = normalizeStatus(raw);
-  if (s === 'REFUND_APPROVED' || s === 'REFUND_PROCESSING') return 'APPROVED';
-  return s;
-}
-
-async function loadRefundRows(scope, range, statusFilter) {
-  const dateMatch = { $gte: range.start, $lt: range.end };
-  const expanded = expandStatusFilter(statusFilter);
-
-  const refundMatch = {
-    ...scopeMatch(scope),
-    $and: [{ createdAt: dateMatch }],
-  };
-  if (expanded) refundMatch.status = { $in: expanded };
-
-  const standalone = await Refund.find(refundMatch)
-    .select(
-      'refundNumber orderId paymentId amount reason status requestedBy processedBy requestedAt approvedAt refundedAt createdAt cafeteriaId'
-    )
-    .populate('orderId', 'orderId customerName paymentMethod totalAmount cafeteriaId')
-    .populate('paymentId', 'method')
-    .populate('requestedBy', 'name role')
-    .lean();
-
-  const standaloneRows = standalone
-    .filter((r) => {
-      if (scope && !scope.global && r.cafeteriaId) {
-        return String(r.cafeteriaId) === String(scope.cafeteriaId);
-      }
-      if (scope && !scope.global && r.orderId && r.orderId.cafeteriaId) {
-        return String(r.orderId.cafeteriaId) === String(scope.cafeteriaId);
-      }
-      return true;
-    })
-    .map((r) => ({
-      source: 'refund',
-      refundNumber: r.refundNumber || '-',
-      orderRef: r.orderId && r.orderId.orderId ? r.orderId.orderId : '-',
-      customerName: r.orderId && r.orderId.customerName ? r.orderId.customerName : '-',
-      amount: num(r.amount),
-      reason: r.reason || '-',
-      status: reportStatus(r.status),
-      rawStatus: normalizeStatus(r.status),
-      paymentMethod:
-        r.paymentId && r.paymentId.method ? r.paymentId.method : (r.orderId && r.orderId.paymentMethod) || '-',
-      requestedBy: r.requestedBy && r.requestedBy.name ? r.requestedBy.name : '-',
-      requestedAt: r.requestedAt || r.createdAt,
-      createdAt: r.createdAt,
-    }));
-
-  const cancelMatch = {
-    refundStatus: { $in: CANCELLATION_REFUND_STATUSES },
-    createdAt: dateMatch,
-  };
-  if (expanded) {
-    const cancelStatuses = [];
-    for (const s of expanded) {
-      if (s === 'APPROVED') cancelStatuses.push('REFUND_APPROVED', 'REFUND_PROCESSING');
-      else if (CANCELLATION_REFUND_STATUSES.includes(s)) cancelStatuses.push(s);
-    }
-    cancelMatch.refundStatus = { $in: cancelStatuses };
-  }
-
-  const cancellations = await Cancellation.aggregate([
-    { $match: cancelMatch },
-    {
-      $lookup: {
-        from: 'orders',
-        localField: 'orderId',
-        foreignField: '_id',
-        as: 'order',
-      },
-    },
-    { $unwind: { path: '$order', preserveNullAndEmptyArrays: false } },
-    ...(scope && !scope.global
-      ? [{ $match: { 'order.cafeteriaId': scope.cafeteriaId } }]
-      : []),
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'customerId',
-        foreignField: '_id',
-        as: 'customer',
-      },
-    },
-    { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
-    {
-      $lookup: {
-        from: 'users',
-        localField: 'processedBy',
-        foreignField: '_id',
-        as: 'processor',
-      },
-    },
-    { $unwind: { path: '$processor', preserveNullAndEmptyArrays: true } },
-    { $sort: { createdAt: -1 } },
-  ]);
-
-  const cancellationRows = cancellations.map((c) => ({
-    source: 'cancellation',
-    refundNumber: c.refundReference || c.cancellationNumber || '-',
-    orderRef: c.order.orderId || '-',
-    customerName: c.order.customerName || (c.customer && c.customer.name) || '-',
-    amount: num(c.refundAmount),
-    reason: c.description || c.reason || '-',
-    status: reportStatus(c.refundStatus),
-    rawStatus: normalizeStatus(c.refundStatus),
-    paymentMethod: c.order.paymentMethod || '-',
-    requestedBy:
-      (c.customer && c.customer.name) || (c.processor && c.processor.name) || '-',
-    requestedAt: c.requestedAt || c.createdAt,
-    createdAt: c.createdAt,
-  }));
-
-  const rows = standaloneRows.concat(cancellationRows);
-  rows.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  return rows;
-}
-
+/**
+ * Refund rows come from BOTH ledgers (standalone Refund + Cancellation) and
+ * are loaded by the shared helper in utils/refunds.js, so this report and the
+ * financial report always agree on what was refunded.
+ */
 async function getRefunds(scope, range, query = {}) {
   const { page, limit, skip } = parsePagination(query);
   const statusFilter = normalizeStatus(query.status);
@@ -661,7 +466,6 @@ async function getInventory(scope) {
 }
 
 module.exports = {
-  getSummary,
   getSales,
   getOrders,
   getPayments,

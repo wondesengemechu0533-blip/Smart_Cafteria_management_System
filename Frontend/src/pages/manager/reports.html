@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reports &amp; Analytics - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css" />
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css" />
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css" />
+    <script src="../../js/theme.js"></script>
+  </head>
+  <body class="admin-body">
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+      <main class="admin-main">
+        <div class="page-header">
+          <div>
+            <h1 id="reportsTitle" data-i18n="report_title">Reports &amp; Analytics</h1>
+            <p class="subtitle" id="reportsSubtitle" data-i18n="report_subtitle">
+              Operational reports: orders, payments, order mix and food popularity
+            </p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="refreshReportsBtn">
+              <i class="fa-solid fa-rotate"></i> <span data-i18n="report_refresh">Refresh</span>
+            </button>
+            <button class="btn btn-primary" id="exportCsvBtn">
+              <i class="fa-solid fa-download"></i> <span data-i18n="report_export">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ============== REPORTS & ANALYTICS (operational) ========= -->
+        <!-- ========================================================= -->
+        <div id="reportContent" class="d-none">
+          <div class="report-scope-badge" id="reportScopeBadge">
+            <i class="fa-solid fa-store"></i>
+            <span id="reportScopeName" data-i18n="report_scope_loading">Loading cafeteria...</span>
+          </div>
+
+          <!-- SHARED PERIOD FILTER -->
+          <div class="card mb-4">
+            <div class="card-body">
+              <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                  <label class="form-label" data-i18n="report_period">Period</label>
+                  <select id="reportPeriodSelect" class="form-select">
+                    <option value="today" data-i18n="report_period_today">Today</option>
+                    <option value="yesterday" data-i18n="report_period_yesterday">Yesterday</option>
+                    <option value="last7" data-i18n="report_period_last7">Last 7 Days</option>
+                    <option value="last30" data-i18n="report_period_last30">Last 30 Days</option>
+                    <option value="month" selected data-i18n="report_period_month">This Month</option>
+                    <option value="custom" data-i18n="report_period_custom">Custom Date Range</option>
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label"
+                    ><i class="fa-solid fa-calendar-days"></i>
+                    <span data-i18n="report_start_date">Start Date</span></label
+                  >
+                  <input type="date" id="reportStartDate" class="form-control" disabled />
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label"
+                    ><i class="fa-solid fa-calendar-days"></i> <span data-i18n="report_end_date">End Date</span></label
+                  >
+                  <input type="date" id="reportEndDate" class="form-control" disabled />
+                </div>
+                <div class="col-md-3">
+                  <button class="btn btn-primary w-100" id="reportApplyBtn">
+                    <i class="fa-solid fa-filter"></i> <span data-i18n="report_apply">Apply</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- REPORT TABS -->
+          <div class="btn-group mb-4 report-tabs-wrap" role="tablist" id="reportTabs">
+            <button type="button" class="btn btn-primary report-tab-btn active" data-report-tab="summary">
+              <i class="fa-solid fa-chart-pie"></i> <span data-i18n="report_tab_summary">Summary</span>
+            </button>
+            <button type="button" class="btn btn-secondary report-tab-btn" data-report-tab="orders">
+              <i class="fa-solid fa-receipt"></i> <span data-i18n="report_tab_orders">Orders</span>
+            </button>
+            <button type="button" class="btn btn-secondary report-tab-btn" data-report-tab="payments">
+              <i class="fa-solid fa-credit-card"></i> <span data-i18n="report_tab_payments">Payments</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary report-tab-btn cafeteria-only"
+              data-report-tab="sales"
+            >
+              <i class="fa-solid fa-chart-line"></i> <span data-i18n="report_tab_sales">Sales</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary report-tab-btn cafeteria-only"
+              data-report-tab="refunds"
+            >
+              <i class="fa-solid fa-rotate-left"></i> <span data-i18n="report_tab_refunds">Refunds</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary report-tab-btn cafeteria-only"
+              data-report-tab="menu"
+            >
+              <i class="fa-solid fa-utensils"></i> <span data-i18n="report_tab_menu">Menu Performance</span>
+            </button>
+            <button
+              type="button"
+              class="btn btn-secondary report-tab-btn cafeteria-only"
+              data-report-tab="inventory"
+            >
+              <i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="report_tab_inventory">Inventory</span>
+            </button>
+          </div>
+
+          <div class="report-updated-at" id="reportUpdatedAt"></div>
+
+        <!-- ========================================================= -->
+        <!-- ============= OPERATIONAL SUMMARY (Summary tab) ========== -->
+        <!-- ========================================================= -->
+        <section id="reportView-summary">
+          <!-- OPERATIONAL METRICS -->
+          <div class="metrics-grid mb-4">
+            <div class="metric-card">
+              <div class="metric-icon bg-blue"><i class="fa-solid fa-receipt"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_total_orders">Total Orders</span>
+                <h2 class="metric-value" id="opTotalOrders">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_completed_orders">Completed Orders</span>
+                <h2 class="metric-value" id="opCompletedOrders">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-red"><i class="fa-solid fa-ban"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_cancelled_orders">Cancelled Orders</span>
+                <h2 class="metric-value" id="opCancelledOrders">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-orange"><i class="fa-solid fa-hourglass-half"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_pending_orders">Pending Orders</span>
+                <h2 class="metric-value" id="opPendingOrders">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-cyan"><i class="fa-solid fa-fire-burner"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_in_progress_orders">In Progress</span>
+                <h2 class="metric-value" id="opInProgressOrders">0</h2>
+              </div>
+            </div>
+          </div>
+
+          <div class="metrics-grid mb-4">
+            <div class="metric-card">
+              <div class="metric-icon bg-green"><i class="fa-solid fa-credit-card"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_successful_payments">Successful Payments</span>
+                <h2 class="metric-value" id="opSuccessfulPayments">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-red"><i class="fa-solid fa-times-circle"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_failed_payments">Failed Payments</span>
+                <h2 class="metric-value" id="opFailedPayments">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-orange"><i class="fa-solid fa-hourglass-half"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_pending_payments">Pending Payments</span>
+                <h2 class="metric-value" id="opPendingPayments">0</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-purple"><i class="fa-solid fa-rotate-left"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="report_op_refunded_payments">Refunded Payments</span>
+                <h2 class="metric-value" id="opRefundedPayments">0</h2>
+              </div>
+            </div>
+          </div>
+
+          <!-- ORDER STATUS DISTRIBUTION -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-chart-pie"></i>
+                <span data-i18n="report_op_status_distribution">Order Status Distribution</span>
+              </h3>
+            </div>
+            <div class="card-body">
+              <div class="report-chart-wrap">
+                <canvas id="opStatusChart"></canvas>
+              </div>
+              <div class="report-empty d-none" id="opStatusChartEmpty" data-i18n="report_empty">
+                No orders in the selected period.
+              </div>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="report_col_status">Status</th>
+                    <th data-i18n="report_col_orders">Orders</th>
+                    <th data-i18n="report_col_share">Share</th>
+                  </tr>
+                </thead>
+                <tbody id="opStatusBody">
+                  <tr>
+                    <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ORDERS BY TYPE -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-list-check"></i> <span data-i18n="report_op_by_type">Orders by Type</span>
+              </h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="report_col_type">Type</th>
+                    <th data-i18n="report_col_orders">Orders</th>
+                    <th data-i18n="report_col_share">Share</th>
+                    <th data-i18n="report_col_value">Value</th>
+                  </tr>
+                </thead>
+                <tbody id="opOrderTypesBody">
+                  <tr>
+                    <td colspan="4" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- OPERATIONAL ORDER TRENDS -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-chart-line"></i>
+                <span data-i18n="report_op_trends">Operational Order Trends</span>
+              </h3>
+            </div>
+            <div class="card-body">
+              <div class="report-chart-wrap">
+                <canvas id="opTrendsChart"></canvas>
+              </div>
+              <div class="report-empty d-none" id="opTrendsChartEmpty" data-i18n="report_empty">
+                No orders in the selected period.
+              </div>
+            </div>
+          </div>
+
+          <!-- MOST ORDERED FOODS -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-trophy"></i>
+                <span data-i18n="report_op_most_ordered">Most Ordered Foods</span>
+              </h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th data-i18n="report_col_item">Item</th>
+                    <th data-i18n="report_col_category">Category</th>
+                    <th data-i18n="report_col_qty">Quantity Sold</th>
+                    <th data-i18n="report_col_orders">Times Ordered</th>
+                    <th data-i18n="report_col_value">Value</th>
+                  </tr>
+                </thead>
+                <tbody id="opMostFoodsBody">
+                  <tr>
+                    <td colspan="6" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- FOOD POPULARITY -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-fire"></i>
+                <span data-i18n="report_op_food_popularity">Food Popularity &amp; Quantity Sold</span>
+              </h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="report_col_item">Item</th>
+                    <th data-i18n="report_col_category">Category</th>
+                    <th data-i18n="report_col_qty">Quantity Sold</th>
+                    <th data-i18n="report_col_orders">Times Ordered</th>
+                    <th data-i18n="report_col_share">Share</th>
+                  </tr>
+                </thead>
+                <tbody id="opFoodPopularityBody">
+                  <tr>
+                    <td colspan="5" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+          <!-- ================= SALES ================= -->
+          <section id="reportView-sales">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-indigo"><i class="fa-solid fa-sack-dollar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_total_sales">Total Sales</span>
+                  <h2 class="metric-value" id="cfTotalSales">0.00 ETB</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-calendar-day"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_today_sales">Today's Sales</span>
+                  <h2 class="metric-value" id="cfTodaySales">0.00 ETB</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-calendar-week"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_week_sales">Last 7 Days</span>
+                  <h2 class="metric-value" id="cfWeekSales">0.00 ETB</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-purple"><i class="fa-solid fa-calendar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_month_sales">This Month</span>
+                  <h2 class="metric-value" id="cfMonthSales">0.00 ETB</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-arrow-trend-up"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_avg_order">Average Order</span>
+                  <h2 class="metric-value" id="cfAvgOrder">0.00 ETB</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_completed_orders">Completed Orders</span>
+                  <h2 class="metric-value" id="cfCompletedOrders">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-teal"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_paid_revenue">Paid Revenue</span>
+                  <h2 class="metric-value" id="cfPaidRevenue">0.00 ETB</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-chart-line"></i> <span data-i18n="report_sales_trend">Sales Trend</span>
+                </h3>
+              </div>
+              <div class="card-body">
+                <div class="report-chart-wrap">
+                  <canvas id="cfSalesChart"></canvas>
+                </div>
+                <div class="report-empty d-none" id="cfSalesChartEmpty" data-i18n="report_empty">
+                  No data available for the selected period.
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-credit-card"></i>
+                  <span data-i18n="report_sales_by_method">Sales by Payment Method</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_method">Method</th>
+                      <th data-i18n="report_col_orders">Orders</th>
+                      <th data-i18n="report_col_sales">Sales</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfSalesMethodBody">
+                    <tr>
+                      <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= ORDERS ================= -->
+          <section id="reportView-orders" class="d-none">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-receipt"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_total">Total Orders</span>
+                  <h2 class="metric-value" id="cfOrdersTotal">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-hourglass-half"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_pending">Pending</span>
+                  <h2 class="metric-value" id="cfOrdersPending">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-yellow"><i class="fa-solid fa-fire-burner"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_preparing">Preparing</span>
+                  <h2 class="metric-value" id="cfOrdersPreparing">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-cyan"><i class="fa-solid fa-bell"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_ready">Ready</span>
+                  <h2 class="metric-value" id="cfOrdersReady">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_completed">Completed</span>
+                  <h2 class="metric-value" id="cfOrdersCompleted">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-red"><i class="fa-solid fa-ban"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_cancelled">Cancelled</span>
+                  <h2 class="metric-value" id="cfOrdersCancelled">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-purple"><i class="fa-solid fa-rotate-left"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_orders_refunded">Refunded</span>
+                  <h2 class="metric-value" id="cfOrdersRefunded">0</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-body">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_order_status">Order Status</label>
+                    <select id="cfOrderStatus" class="form-select">
+                      <option value="ALL" data-i18n="report_all">All</option>
+                      <option value="PENDING">PENDING</option>
+                      <option value="PREPARING">PREPARING</option>
+                      <option value="READY">READY</option>
+                      <option value="SERVED">SERVED</option>
+                      <option value="COMPLETED">COMPLETED</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_payment_status">Payment Status</label>
+                    <select id="cfOrderPaymentStatus" class="form-select">
+                      <option value="ALL" data-i18n="report_all">All</option>
+                      <option value="PENDING">PENDING</option>
+                      <option value="PAID">PAID</option>
+                      <option value="FAILED">FAILED</option>
+                      <option value="REFUNDED">REFUNDED</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-receipt"></i> <span data-i18n="report_orders_list">Orders</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_order">Order</th>
+                      <th data-i18n="report_col_customer">Customer</th>
+                      <th data-i18n="report_col_type">Type</th>
+                      <th data-i18n="report_col_table">Table</th>
+                      <th data-i18n="report_col_amount">Amount</th>
+                      <th data-i18n="report_col_status">Status</th>
+                      <th data-i18n="report_col_method">Method</th>
+                      <th data-i18n="report_col_payment">Payment</th>
+                      <th data-i18n="report_col_date">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfOrdersBody">
+                    <tr>
+                      <td colspan="9" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="report-pager" id="cfOrdersPager"></div>
+            </div>
+          </section>
+
+          <!-- ================= PAYMENTS ================= -->
+          <section id="reportView-payments" class="d-none">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-credit-card"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_total">Transactions</span>
+                  <h2 class="metric-value" id="cfPayTotal">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_paid">Paid</span>
+                  <h2 class="metric-value" id="cfPayPaid">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-hourglass-half"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_pending">Pending</span>
+                  <h2 class="metric-value" id="cfPayPending">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-red"><i class="fa-solid fa-times-circle"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_failed">Failed</span>
+                  <h2 class="metric-value" id="cfPayFailed">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-purple"><i class="fa-solid fa-rotate-left"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_refunded">Refunded</span>
+                  <h2 class="metric-value" id="cfPayRefunded">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-teal"><i class="fa-solid fa-sack-dollar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_pay_paid_amount">Paid Amount</span>
+                  <h2 class="metric-value" id="cfPayPaidAmount">0.00 ETB</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-body">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_payment_status">Payment Status</label>
+                    <select id="cfPayStatus" class="form-select">
+                      <option value="ALL" data-i18n="report_all">All</option>
+                      <option value="PAID">PAID</option>
+                      <option value="PENDING">PENDING</option>
+                      <option value="FAILED">FAILED</option>
+                      <option value="CANCELLED">CANCELLED</option>
+                      <option value="REFUNDED">REFUNDED</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_col_method">Method</label>
+                    <select id="cfPayMethod" class="form-select">
+                      <option value="ALL" data-i18n="report_all">All</option>
+                      <option value="CHAPA">CHAPA</option>
+                      <option value="CASH">CASH</option>
+                      <option value="BANK_TRANSFER">BANK_TRANSFER</option>
+                      <option value="WALLET">WALLET</option>
+                      <option value="CARD">CARD</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-wallet"></i> <span data-i18n="report_pay_breakdown">Method Breakdown</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_method">Method</th>
+                      <th data-i18n="report_col_count">Count</th>
+                      <th data-i18n="report_col_paid_amount">Paid Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfPayMethodsBody">
+                    <tr>
+                      <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-list"></i> <span data-i18n="report_pay_transactions">Transactions</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_payment_number">Payment No</th>
+                      <th data-i18n="report_col_order">Order</th>
+                      <th data-i18n="report_col_customer">Customer</th>
+                      <th data-i18n="report_col_amount">Amount</th>
+                      <th data-i18n="report_col_method">Method</th>
+                      <th data-i18n="report_col_status">Status</th>
+                      <th data-i18n="report_col_reference">Reference</th>
+                      <th data-i18n="report_col_date">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfPaymentsBody">
+                    <tr>
+                      <td colspan="8" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="report-pager" id="cfPaymentsPager"></div>
+            </div>
+          </section>
+
+          <!-- ================= REFUNDS ================= -->
+          <section id="reportView-refunds" class="d-none">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-rotate-left"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_total">Total Refunds</span>
+                  <h2 class="metric-value" id="cfRefTotal">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-file-circle-question"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_requested">Requested</span>
+                  <h2 class="metric-value" id="cfRefRequested">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-cyan"><i class="fa-solid fa-thumbs-up"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_approved">Approved</span>
+                  <h2 class="metric-value" id="cfRefApproved">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-red"><i class="fa-solid fa-thumbs-down"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_rejected">Rejected</span>
+                  <h2 class="metric-value" id="cfRefRejected">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_completed">Refunded</span>
+                  <h2 class="metric-value" id="cfRefCompleted">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-yellow"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_failed">Failed</span>
+                  <h2 class="metric-value" id="cfRefFailed">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-teal"><i class="fa-solid fa-money-bill-transfer"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_ref_amount">Refunded Amount</span>
+                  <h2 class="metric-value" id="cfRefAmount">0.00 ETB</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-body">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_refund_status">Refund Status</label>
+                    <select id="cfRefStatus" class="form-select">
+                      <option value="ALL" data-i18n="report_all">All</option>
+                      <option value="REFUND_REQUESTED">REFUND_REQUESTED</option>
+                      <option value="APPROVED">APPROVED</option>
+                      <option value="REJECTED">REJECTED</option>
+                      <option value="REFUNDED">REFUNDED</option>
+                      <option value="REFUND_FAILED">REFUND_FAILED</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-rotate-left"></i> <span data-i18n="report_ref_list">Refunds</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_refund_number">Refund No</th>
+                      <th data-i18n="report_col_order">Order</th>
+                      <th data-i18n="report_col_customer">Customer</th>
+                      <th data-i18n="report_col_amount">Amount</th>
+                      <th data-i18n="report_col_reason">Reason</th>
+                      <th data-i18n="report_col_status">Status</th>
+                      <th data-i18n="report_col_method">Method</th>
+                      <th data-i18n="report_col_requested_by">Requested By</th>
+                      <th data-i18n="report_col_date">Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfRefundsBody">
+                    <tr>
+                      <td colspan="9" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="report-pager" id="cfRefundsPager"></div>
+            </div>
+          </section>
+
+          <!-- ================= MENU PERFORMANCE ================= -->
+          <section id="reportView-menu" class="d-none">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-utensils"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_menu_total">Menu Items</span>
+                  <h2 class="metric-value" id="cfMenuTotal">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_menu_available">Available</span>
+                  <h2 class="metric-value" id="cfMenuAvailable">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-red"><i class="fa-solid fa-circle-xmark"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_menu_unavailable">Unavailable</span>
+                  <h2 class="metric-value" id="cfMenuUnavailable">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-boxes-stacked"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_menu_qty">Items Sold</span>
+                  <h2 class="metric-value" id="cfMenuQty">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-indigo"><i class="fa-solid fa-sack-dollar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_menu_revenue">Menu Revenue</span>
+                  <h2 class="metric-value" id="cfMenuRevenue">0.00 ETB</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mb-4">
+              <div class="card-body">
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-4">
+                    <label class="form-label" data-i18n="report_menu_category">Category</label>
+                    <select id="cfMenuCategory" class="form-select">
+                      <option value="" data-i18n="report_all">All</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="report-grid-2">
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">
+                    <i class="fa-solid fa-trophy"></i> <span data-i18n="report_menu_most">Most Ordered</span>
+                  </h3>
+                </div>
+                <div class="table-wrapper">
+                  <table class="admin-table">
+                    <thead>
+                      <tr>
+                        <th data-i18n="report_col_item">Item</th>
+                        <th data-i18n="report_col_qty">Qty</th>
+                        <th data-i18n="report_col_revenue">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cfMenuMostBody">
+                      <tr>
+                        <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <h3 class="card-title">
+                    <i class="fa-solid fa-arrow-down-wide-short"></i>
+                    <span data-i18n="report_menu_least">Least Ordered</span>
+                  </h3>
+                </div>
+                <div class="table-wrapper">
+                  <table class="admin-table">
+                    <thead>
+                      <tr>
+                        <th data-i18n="report_col_item">Item</th>
+                        <th data-i18n="report_col_qty">Qty</th>
+                        <th data-i18n="report_col_revenue">Revenue</th>
+                      </tr>
+                    </thead>
+                    <tbody id="cfMenuLeastBody">
+                      <tr>
+                        <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card mt-4">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-layer-group"></i>
+                  <span data-i18n="report_menu_categories">Category Performance</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_category">Category</th>
+                      <th data-i18n="report_col_items">Items</th>
+                      <th data-i18n="report_col_qty">Qty</th>
+                      <th data-i18n="report_col_revenue">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfMenuCatsBody">
+                    <tr>
+                      <td colspan="4" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <!-- ================= INVENTORY / STOCK ================= -->
+          <section id="reportView-inventory" class="d-none">
+            <div class="metrics-grid mb-4">
+              <div class="metric-card">
+                <div class="metric-icon bg-blue"><i class="fa-solid fa-boxes-stacked"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_total">Total Items</span>
+                  <h2 class="metric-value" id="cfInvTotalItems">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_available">Available</span>
+                  <h2 class="metric-value" id="cfInvAvailable">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-orange"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_low_stock">Low Stock</span>
+                  <h2 class="metric-value" id="cfInvLowStock">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-red"><i class="fa-solid fa-circle-xmark"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_out_of_stock">Out of Stock</span>
+                  <h2 class="metric-value" id="cfInvOutOfStock">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-purple"><i class="fa-solid fa-cubes"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_total_qty">Total Quantity</span>
+                  <h2 class="metric-value" id="cfInvTotalQty">0</h2>
+                </div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-icon bg-teal"><i class="fa-solid fa-sack-dollar"></i></div>
+                <div class="metric-content">
+                  <span class="metric-label" data-i18n="report_inv_total_value">Stock Value</span>
+                  <h2 class="metric-value" id="cfInvTotalValue">0.00 ETB</h2>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-boxes-stacked"></i> <span data-i18n="report_inv_list">Inventory Items</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_item">Item</th>
+                      <th data-i18n="report_col_category">Category</th>
+                      <th data-i18n="report_col_price">Price</th>
+                      <th data-i18n="report_col_stock">Stock</th>
+                      <th data-i18n="report_col_threshold">Threshold</th>
+                      <th data-i18n="report_col_status">Status</th>
+                      <th data-i18n="report_col_value">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cfInvBody">
+                    <tr>
+                      <td colspan="7" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </div>
+
+      </main>
+main>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/utils/report-period.js"></script>
+    <script src="../../js/manager-reports.js"></script>
+
+    <script>
+      // Page-specific initialization
+      function initPageSpecific() {
+        // manager-reports.js handles initialization via its own DOMContentLoaded
+      }
+    </script>
+  </body>
+</html>

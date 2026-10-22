@@ -7,7 +7,7 @@ const { getKitchenSettings, updateKitchenSettings } = require('../controllers/ki
 // ALL ROUTES REQUIRE KITCHEN OR ADMIN ROLE
 // ============================================================
 router.use(protect);
-router.use(authorize('kitchen', 'admin', 'cafeteria_admin', 'manager'));
+router.use(authorize('kitchen', 'admin', 'manager'));
 
 /**
  * @route   GET /api/v1/kitchen/settings

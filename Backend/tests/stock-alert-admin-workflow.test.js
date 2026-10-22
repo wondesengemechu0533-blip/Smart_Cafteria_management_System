@@ -503,8 +503,12 @@ const errWith = (status, message) => Object.assign(new Error(message), { status,
     assert.strictEqual(doc.status, 'acknowledged');
   });
 
-  await check('… but manager Mark Solved is still 403 (admin-only, unchanged)', async () => {
-    const r = await call('PATCH', `/kitchen/stock-alerts/${permAlertId}/resolve`, T.manager, {
+  await check('… but a customer still cannot Mark Solved, and the alert stays open', async () => {
+    // The cafeteria MANAGER may resolve stock alerts (the resolve route allows
+    // manager/admin/system_admin, and the stock-alert page offers the action
+    // to the manager too), so the role that must still be refused here is the
+    // customer.
+    const r = await call('PATCH', `/kitchen/stock-alerts/${permAlertId}/resolve`, T.customer, {
       resolutionReason: 'Restocked Items',
       resolutionSolution: 'Restocked Items',
     });
@@ -512,6 +516,29 @@ const errWith = (status, message) => Object.assign(new Error(message), { status,
     const doc = await StockAlert.findById(permAlertId);
     assert.strictEqual(doc.status, 'acknowledged', 'rejected attempt leaves it open');
     assert.ok(!doc.resolvedBy, 'no resolution recorded');
+  });
+
+  await check('the cafeteria manager may now Mark Solved (the manager owns the alert)', async () => {
+    // A fresh alert: the permission-matrix alert above must stay OPEN for the
+    // checks that follow.
+    const created = await call('POST', '/kitchen/stock-alerts', T.kitchen, {
+      itemName: 'WfManagerSolved',
+      alertType: 'ingredient_shortage',
+      severity: 'medium',
+      reason: 'For the manager resolve check',
+    });
+    assert.strictEqual(created.status, 201);
+    const id = created.body.alert && (created.body.alert.id || created.body.alert._id);
+    await call('PATCH', `/kitchen/stock-alerts/${id}/acknowledge`, T.manager, { note: 'mine' });
+    const r = await call('PATCH', `/kitchen/stock-alerts/${id}/resolve`, T.manager, {
+      resolutionReason: 'Supplier Delay',
+      resolutionSolution: 'Ordered New Supplies',
+    });
+    assert.strictEqual(r.status, 200, `status=${r.status} ${JSON.stringify(r.body)}`);
+    assert.strictEqual(r.body.resolved, true);
+    const doc = await StockAlert.findById(id);
+    assert.strictEqual(doc.status, 'resolved');
+    assert.strictEqual(String(doc.resolvedBy), String(manager._id), 'the resolving manager is recorded');
   });
 
   await check('kitchen acknowledge still works; kitchen resolve still 403', async () => {
@@ -732,7 +759,10 @@ const errWith = (status, message) => Object.assign(new Error(message), { status,
     assert.ok(page.registry.get('stockModalContent').innerHTML.includes('stock-status-resolved'), 'Resolved badge shown');
   });
 
-  await check('manager role sees no Mark Solved button (the backend would 403 it)', async () => {
+  await check('manager role IS offered Mark Solved (the backend allows the manager to resolve)', async () => {
+    // The cafeteria manager resolves stock alerts: the backend's resolve route
+    // allows manager/admin/system_admin, so the page must offer the action
+    // instead of hiding it behind a dead-end "only an admin may do this" note.
     const page = loadStockAlertsPage({
       role: 'manager',
       listImpl: () => ({ success: true, alerts: [{ ...FE_ALERT, status: 'acknowledged', assignedTo: 'WfManager' }] }),
@@ -741,9 +771,9 @@ const errWith = (status, message) => Object.assign(new Error(message), { status,
     await tick();
     page.registry.get('stockTableBody')._ownedButtons[0].click();
     await tick();
-    assert.ok(!page.registry.get('resolveBtn'), 'manager must not be offered Mark Solved');
-    assert.ok(page.registry.get('stockModalContent').innerHTML.includes('Cafeteria Admin'),
-      'the modal explains who may resolve');
+    assert.ok(page.registry.get('resolveBtn'), 'manager must be offered Mark Solved');
+    assert.ok(!page.registry.get('stockModalContent').innerHTML.includes('Only the Cafeteria Admin can mark'),
+      'the modal must not tell the manager that only an admin may resolve');
   });
 
   await check('validation blocks an empty resolution (no request fired, no status change)', async () => {

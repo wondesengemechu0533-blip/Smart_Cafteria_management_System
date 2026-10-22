@@ -153,18 +153,30 @@ var tr = (typeof window.getText === "function" && typeof window.tr === "function
   }
 
   function tryLoadSetting() {
-    var role = String(localStorage.getItem('userRole') || localStorage.getItem('role') || '').toUpperCase();
-    if (role !== 'ADMIN' && role !== 'CAFETERIA_ADMIN') return;
+    // The idle-session window is a SYSTEM-WIDE policy (Setting
+    // `session_timeout_minutes`), enforced server-side for every staff role by
+    // middleware/idleSession.middleware.js. The UI countdown has to follow the
+    // same value, otherwise a Cafeteria Manager would be signed out by the UI
+    // after the hard-coded 10 minutes while the policy says 30.
+    //
+    // It is read from the public settings endpoint (the value is a policy, not
+    // a secret) so it applies to every staff role - the old version fetched
+    // /admin/settings and only for ADMIN / CAFETERIA_ADMIN, which meant the
+    // manager never received the configured timeout at all.
     var token = localStorage.getItem('auth_token');
-    if (!token) return;
-    fetch((window.__API_URL || 'http://localhost:5000/api/v1') + '/admin/settings', {
-      headers: { 'Authorization': 'Bearer ' + token }
+    fetch((window.__API_URL || 'http://localhost:5000/api/v1') + '/settings/public', {
+      headers: token ? { 'Authorization': 'Bearer ' + token } : {}
     }).then(function (r) { return r.ok ? r.json() : Promise.reject(); })
       .then(function (data) {
-        var arr = Array.isArray(data) ? data : (data.data || data.settings || []);
         var found = null;
-        if (Array.isArray(arr)) {
-          found = arr.find(function (s) { return s.key === 'session_timeout_minutes'; });
+        var settings = (data && data.settings) || {};
+        if (typeof settings.sessionTimeoutMinutes === 'number') {
+          found = { value: settings.sessionTimeoutMinutes };
+        } else {
+          var arr = Array.isArray(data) ? data : (data.data || data.settings || []);
+          if (Array.isArray(arr)) {
+            found = arr.find(function (s) { return s.key === 'session_timeout_minutes'; });
+          }
         }
         if (found && found.value) {
           var m = parseInt(found.value, 10);
@@ -174,7 +186,7 @@ var tr = (typeof window.getText === "function" && typeof window.tr === "function
             startIdleTimer();
           }
         }
-      }).catch(function () { /* non-admin roles default to 10 minutes */ });
+      }).catch(function () { /* keep the default when the policy cannot be read */ });
   }
 
   function init() {

@@ -7,9 +7,9 @@
         threshold alerts + kitchen issue reports; backend enforces)
        - PATCH /kitchen/stock-alerts/:id/acknowledge → active → acknowledged
        - PATCH /kitchen/stock-alerts/:id/resolve     → record actual resolution
-         (Cafeteria Admin / System Admin only - the manager role is shown the
-         alert without any Resolve action and gets 403 from the backend;
-         optional newStockQuantity records the real received amount)
+         (Cafeteria Manager / Cafeteria Admin / System Admin may resolve - the
+         backend allows all three; optional newStockQuantity records the real
+         received amount)
       - POST  /kitchen/menu/:itemId/availability    → mark item unavailable
 
    Requires window.AdminAPI (admin-api.js) + admin-layout.js loaded first.
@@ -50,10 +50,9 @@
   var COLS = 8; // Item | Type | Current | Min | Severity | Status | Reported At | Actions
 
   // ------------------------------------------------------------------
-  // Resolution permission: only Cafeteria Admin / System Admin may mark a
-  // stock alert as resolved (backend answers 403 to everyone else).
-  // ------------------------------------------------------------------
-  var RESOLVER_ROLES = ['cafeteria_admin', 'admin', 'system_admin'];
+  // Resolution permission: Cafeteria Manager, Cafeteria Admin, and System Admin may mark a
+  // stock alert as resolved.
+  var RESOLVER_ROLES = ['manager', 'cafeteria_admin', 'admin', 'system_admin'];
 
   function currentRole() {
     if (window.ScosRoles && window.ScosRoles.getCurrentRole) return window.ScosRoles.getCurrentRole();
@@ -429,11 +428,12 @@
         '<i class="fa-solid fa-check"></i> ' + esc(tr('manager_stock_mark_resolved', 'Mark as Resolved')) + '</button>' +
         '</div>';
     } else if (isAcknowledged) {
-      // Manager view of an acknowledged alert: no Resolve / Mark as Resolved
-      // action - resolution belongs to the Cafeteria Admin.
+      // View-only branch for roles that may NOT resolve (kitchen, cashier,
+      // ...). The cafeteria manager, cafeteria admin and system admin all fall
+      // into the branch above, because the backend lets all three resolve.
       html += '<div class="detail-block"><div class="quality-hold-warning">' +
         esc(tr('stock_resolution_admin_hint',
-          'Only the Cafeteria Admin can mark this stock alert as resolved. You can mark the item unavailable.')) +
+          'Only a manager or administrator can mark this stock alert as resolved. You can mark the item unavailable.')) +
         '</div></div>';
       html += '<div class="modal-actions">' +
         '<button type="button" class="btn btn-secondary" id="closeModalBtn2">' +

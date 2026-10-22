@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title data-i18n="manager_staff_management_title">Staff Management - Smart Cafeteria</title>
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+    <link rel="stylesheet" href="/src/css/admin.css">
+    <style>
+        /* ===== ID BADGE CARD ===== */
+        .id-badge {
+            width: 340px;
+            margin: 0 auto;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #f8fafc;
+        }
+        .id-badge-header {
+            background: linear-gradient(135deg, #f97316 0%, #ea580c 100%);
+            padding: 18px 20px 14px;
+            text-align: center;
+        }
+        .id-badge-header .org-name {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            color: #fff;
+        }
+        .id-badge-header .org-sub {
+            font-size: 10px;
+            color: rgba(255,255,255,0.8);
+            margin-top: 2px;
+            letter-spacing: 0.08em;
+        }
+        .id-badge-body {
+            padding: 20px 24px 16px;
+            text-align: center;
+        }
+        .id-badge-avatar {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: #334155;
+            border: 3px solid #f97316;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 28px;
+            font-weight: 800;
+            color: #f97316;
+        }
+        .id-badge-name {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .id-badge-role {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 14px;
+        }
+        .id-badge-role.role-admin { background: rgba(239,68,68,0.2); color: #f87171; }
+        .id-badge-role.role-kitchen { background: rgba(59,130,246,0.2); color: #60a5fa; }
+        .id-badge-details {
+            text-align: left;
+            border-top: 1px solid #334155;
+            padding-top: 12px;
+        }
+        .id-badge-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 12px;
+        }
+        .id-badge-row .label { color: #94a3b8; }
+        .id-badge-row .value { font-weight: 600; color: #e2e8f0; text-align: right; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .id-badge-footer {
+            background: #1a2332;
+            padding: 8px 20px;
+            text-align: center;
+            font-size: 9px;
+            color: #64748b;
+            letter-spacing: 0.04em;
+        }
+
+        /* ===== DELETE CONFIRM DIALOG ===== */
+        .delete-dialog {
+            text-align: center;
+            padding: 12px 0;
+        }
+        .delete-dialog .warning-icon {
+            font-size: 48px;
+            color: #ef4444;
+            margin-bottom: 12px;
+        }
+        .delete-dialog .warning-text {
+            font-size: 15px;
+            color: #334155;
+            line-height: 1.5;
+        }
+        .delete-dialog .warning-text strong { color: #ef4444; }
+
+        /* ===== STATUS TOGGLE DIALOG ===== */
+        .status-dialog { text-align: center; padding: 12px 0; }
+        .status-dialog .status-icon { font-size: 48px; margin-bottom: 12px; }
+        .status-dialog .status-icon.block { color: #ef4444; }
+        .status-dialog .status-icon.unblock { color: #10b981; }
+        .status-dialog .status-text { font-size: 15px; color: #334155; line-height: 1.5; }
+        .status-dialog .status-text strong { font-weight: 700; }
+
+        /* ===== RESET PASSWORD RESULT ===== */
+        .pwd-result {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-top: 12px;
+            text-align: center;
+        }
+        .pwd-result .generated-pwd {
+            font-size: 18px;
+            font-weight: 800;
+            font-family: 'Courier New', monospace;
+            color: #166534;
+            letter-spacing: 0.05em;
+            user-select: all;
+        }
+        .pwd-result .pwd-label { font-size: 11px; color: #16a34a; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+    </style>
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+</head>
+<body class="admin-body">
+
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1 data-i18n="manager_staff_management_title">Staff Management</h1>
+                    <p class="subtitle" data-i18n="manager_staff_management_subtitle">Manage cafeteria staff members</p>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-primary" id="openAddUserModalBtn" data-i18n="add_user">
+                        <i class="fa-solid fa-plus"></i> Add Staff
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATS CARDS -->
+            <div class="metrics-grid mb-4">
+                <div class="metric-card">
+                    <div class="metric-icon bg-indigo"><i class="fa-solid fa-users"></i></div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-label-key="total_users" data-i18n="total_users">Total Users</span>
+                        <h2 class="metric-value" id="metricTotalUsers">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon bg-blue"><i class="fa-solid fa-user"></i></div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-label-key="active_customers" data-i18n="active_customers">Active Customers</span>
+                        <h2 class="metric-value" id="metricActiveCustomers">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon bg-orange"><i class="fa-solid fa-kitchen-set"></i></div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-label-key="staff" data-i18n="staff">Staff</span>
+                        <h2 class="metric-value" id="metricStaff">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-icon bg-red"><i class="fa-solid fa-user-slash"></i></div>
+                    <div class="metric-content">
+                        <span class="metric-label" data-label-key="blocked_users" data-i18n="blocked_users">Blocked Users</span>
+                        <h2 class="metric-value" id="metricBlockedUsers">0</h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTERS -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <input type="text" id="userSearchInput" class="form-control" placeholder="Search by name, email, phone...">
+                        </div>
+                        <div class="col-md-3">
+                            <select id="roleFilter" class="form-select">
+                                <option value="" data-i18n="admin_all_roles">All Roles</option>
+                                <option value="customer" data-i18n="role_customer">Customer</option>
+                                <option value="kitchen" data-i18n="admin_user_role_kitchen">Kitchen Staff</option>
+                                <option value="delivery" data-i18n="role_delivery">Delivery Staff</option>
+                                <option value="cashier" data-i18n="role_cashier">Cashier</option>
+                                <option value="cafeteria_manager" data-i18n="role_cafeteria_manager">Cafeteria Manager</option>
+                                <option value="cafeteria_admin" data-i18n="role_cafeteria_admin">Cafeteria Admin</option>
+                                <option value="admin,system_admin" data-i18n="role_system_admin">System Admin</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select id="statusFilter" class="form-select">
+                                <option value="">All Status</option>
+                                <option value="ACTIVE">Active</option>
+                                <option value="BLOCKED">Blocked</option>
+                                <option value="SUSPENDED">Suspended</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-secondary w-100" id="resetFiltersBtn">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USERS TABLE -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title"><i class="fa-solid fa-list"></i> All Users</h3>
+                    <span class="badge bg-secondary" id="paginationInfo">Page 1 of 1 (0 users)</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Joined</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr><td colspan="5" class="table-empty">Loading users...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <div class="d-flex gap-2" id="paginationControls">
+                        <button class="btn btn-sm btn-outline-secondary" id="prevPageBtn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" id="nextPageBtn" disabled><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 1: VIEW USER DETAILS
+         ==================================================================== -->
+    <div class="modal-overlay" id="viewUserModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">User Details</h3>
+                <button class="modal-close" data-close-modal="viewUserModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-hero">
+                    <div class="avatar detail-avatar" id="detailAvatar">U</div>
+                    <div>
+                        <h4 id="detailName">&mdash;</h4>
+                        <div id="detailRoleWrap">&mdash;</div>
+                    </div>
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-item"><span>User ID</span><strong id="detailId">&mdash;</strong></div>
+                    <div class="detail-item"><span>Username</span><strong id="detailUsername">&mdash;</strong></div>
+                    <div class="detail-item"><span>Email</span><strong id="detailEmail">&mdash;</strong></div>
+                    <div class="detail-item"><span>Phone</span><strong id="detailPhone">&mdash;</strong></div>
+                    <div class="detail-item"><span>Status</span><strong id="detailStatus">&mdash;</strong></div>
+                    <div class="detail-item"><span>Joined</span><strong id="detailJoined">&mdash;</strong></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="viewUserModal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 2: ADD / EDIT USER
+         ==================================================================== -->
+    <div class="modal-overlay" id="userModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Add New Staff</h3>
+                <button class="modal-close" data-close-modal="userModal">&times;</button>
+            </div>
+            <form id="userForm">
+                <input type="hidden" name="id" id="userId">
+                <div class="modal-body">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="userName" class="form-label">Full Name <span class="required">*</span></label>
+                            <input type="text" name="name" id="userName" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="userEmail" class="form-label">Email Address <span class="required">*</span></label>
+                            <input type="email" name="email" id="userEmail" class="form-control" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="userPhone" class="form-label">Phone (09XXXXXXXX) <span class="required">*</span></label>
+                            <input type="tel" name="phone" id="userPhone" class="form-control" pattern="(\+251[0-9]{9}|(09|07)[0-9]{8})" placeholder="09XXXXXXXX or +2519XXXXXXXX" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="userUsername" class="form-label">Username</label>
+                            <input type="text" name="username" id="userUsername" class="form-control">
+                        </div>
+                        <div class="form-group">
+                            <label for="userRole" class="form-label">Role <span class="required">*</span></label>
+                            <select name="role" id="userRole" class="form-select" required>
+                                <option value="kitchen">Kitchen Staff</option>
+                                <option value="delivery">Delivery Staff</option>
+                                <option value="cashier">Cashier</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="userStatus" class="form-label">Account Status <span class="required">*</span></label>
+                            <select name="status" id="userStatus" class="form-select" required>
+                                <option value="ACTIVE">Active</option>
+                                <option value="INACTIVE">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="userPassword" id="passwordLabel" class="form-label">Password <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <input type="password" name="password" id="userPassword" class="form-control password-input" autocomplete="new-password">
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="userPassword" title="Show password"></i>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="userConfirmPassword" class="form-label">Confirm Password <span class="required">*</span></label>
+                            <div class="input-wrapper">
+                                <input type="password" name="confirmPassword" id="userConfirmPassword" class="form-control password-input" autocomplete="new-password">
+                                <i class="fa-solid fa-eye toggle-password-icon" data-target="userConfirmPassword" title="Show password"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal="userModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveUserBtn">Save Staff</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 3: ID CARD BADGE
+         ==================================================================== -->
+    <div class="modal-overlay" id="idCardModal">
+        <div class="modal" style="max-width: 400px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Digital ID Badge</h3>
+                <button class="modal-close" data-close-modal="idCardModal">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 24px 16px; background: #f1f5f9;">
+                <div class="id-badge">
+                    <div class="id-badge-header">
+                        <div class="org-name">Smart Cafeteria</div>
+                        <div class="org-sub">Staff Identification Card</div>
+                    </div>
+                    <div class="id-badge-body">
+                        <div class="id-badge-avatar" id="idBadgeAvatar">U</div>
+                        <div class="id-badge-name" id="idBadgeName">&mdash;</div>
+                        <div class="id-badge-role" id="idBadgeRole">&mdash;</div>
+                        <div class="id-badge-details">
+                            <div class="id-badge-row"><span class="label">ID</span><span class="value" id="idBadgeId">&mdash;</span></div>
+                            <div class="id-badge-row"><span class="label">Email</span><span class="value" id="idBadgeEmail">&mdash;</span></div>
+                            <div class="id-badge-row"><span class="label">Phone</span><span class="value" id="idBadgePhone">&mdash;</span></div>
+                            <div class="id-badge-row"><span class="label">Status</span><span class="value" id="idBadgeStatus">&mdash;</span></div>
+                            <div class="id-badge-row"><span class="label">Joined</span><span class="value" id="idBadgeJoined">&mdash;</span></div>
+                        </div>
+                    </div>
+                    <div class="id-badge-footer">Smart Cafeteria Ordering System &bull; Authorized Personnel Only</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="idCardModal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 4: RESET PASSWORD
+         ==================================================================== -->
+    <div class="modal-overlay" id="resetPasswordModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Reset Password</h3>
+                <button class="modal-close" data-close-modal="resetPasswordModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="form-text mb-3">Reset password for <strong id="resetPwdUserName">&mdash;</strong></p>
+                <input type="hidden" id="resetPwdUserId">
+                <div id="resetPwdFormFields">
+                    <div class="form-group mb-3">
+                        <label for="resetPwdNewPassword" class="form-label">New Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" id="resetPwdNewPassword" class="form-control password-input" autocomplete="new-password" required>
+                            <i class="fa-solid fa-eye toggle-password-icon" data-target="resetPwdNewPassword" title="Show password"></i>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="resetPwdConfirmPassword" class="form-label">Confirm Password</label>
+                        <div class="input-wrapper">
+                            <input type="password" id="resetPwdConfirmPassword" class="form-control password-input" autocomplete="new-password" required>
+                            <i class="fa-solid fa-eye toggle-password-icon" data-target="resetPwdConfirmPassword" title="Show password"></i>
+                        </div>
+                    </div>
+                </div>
+                <div id="resetPwdResult" style="display:none;">
+                    <div class="pwd-result">
+                        <div class="pwd-label">New Password Generated</div>
+                        <div class="generated-pwd" id="resetPwdGenerated">&mdash;</div>
+                    </div>
+                    <p style="font-size:12px;color:#64748b;text-align:center;margin-top:8px;">Share this password securely with the user.</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="resetPasswordModal">Close</button>
+                <button type="button" class="btn btn-primary" id="confirmResetPwdBtn">Reset Password</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 5: BLOCK / UNBLOCK CONFIRM
+         ==================================================================== -->
+    <div class="modal-overlay" id="toggleStatusModal">
+        <div class="modal" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 class="modal-title" id="toggleStatusTitle">Confirm</h3>
+                <button class="modal-close" data-close-modal="toggleStatusModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="status-dialog">
+                    <div class="status-icon" id="toggleStatusIcon"><i class="fa-solid fa-user-shield"></i></div>
+                    <div class="status-text" id="toggleStatusText">Are you sure?</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="toggleStatusModal">Cancel</button>
+                <button type="button" class="btn" id="confirmToggleStatusBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ====================================================================
+         MODAL 6: DELETE CONFIRM
+         ==================================================================== -->
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal" style="max-width: 420px;">
+            <div class="modal-header">
+                <h3 class="modal-title">Delete Staff</h3>
+                <button class="modal-close" data-close-modal="deleteModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="delete-dialog">
+                    <div class="warning-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                    <div class="warning-text" id="deleteText">Are you sure you want to delete this user?</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="deleteModal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">Delete Staff</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/users.js"></script>
+
+    <script>
+        function initPageSpecific() {}
+    </script>
+</body>
+</html>

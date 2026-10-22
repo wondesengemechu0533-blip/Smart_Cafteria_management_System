@@ -297,7 +297,10 @@ async function fetchCurrentShift() {
             renderCurrentShift();
         }
     } catch (err) {
-        // 404 is this endpoint's way of saying "no shift", not a failure.
+        // The backend answers "no shift for this account" with 200 and
+        // `shift: null`, so the branch above already handles it. The 404 guard
+        // is kept only for talking to an older backend that still sent 404 -
+        // it was never a failure, so it must not call handleAuthError().
         currentShift = null;
         dayShifts = [];
         dayShiftsDay = null;

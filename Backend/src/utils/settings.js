@@ -114,6 +114,18 @@ const DEFAULT_SETTINGS = [
   { key: 'service_fee', value: 20, type: 'number', group: 'payments', label: 'Platform Service Fee (ETB)' },
   { key: 'platform_fee_rate', value: 0, type: 'number', group: 'payments', label: 'Platform Revenue Share (%)' },
 
+  // permissions
+  // System Admin switch that authorizes (or revokes) Cafeteria Manager
+  // control over the delivery fee and the service fee. Without it a manager
+  // may run the cafeteria but may not re-price it.
+  {
+    key: 'manager_fee_management_enabled',
+    value: true,
+    type: 'boolean',
+    group: 'permissions',
+    label: 'Allow Cafeteria Managers to Manage Delivery & Service Fees',
+  },
+
   // tax
   { key: 'vat_enabled', value: true, type: 'boolean', group: 'tax', label: 'Apply VAT / Tax' },
   { key: 'vat_rate', value: 15, type: 'number', group: 'tax', label: 'VAT / Tax Rate (%)' },
@@ -248,6 +260,102 @@ function coerceValue(key, value) {
   return String(value);
 }
 
+// Fees are money: they must be finite and never negative. A NaN or Infinity
+// that reaches the order maths silently poisons every total derived from it,
+// and a negative fee turns into a discount nobody authorized.
+const FEE_SETTING_KEYS = new Set([
+  'delivery_fee',
+  'service_fee',
+  'delivery_fee_per_km',
+  'delivery_free_over_amount',
+]);
+
+const ALLOWED_CURRENCIES = ['ETB', 'USD'];
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+/**
+ * Validate a setting value BEFORE it is written.
+ *
+ * @param {string} key
+ * @param {*} value
+ * @returns {{valid: boolean, value?: *, error?: string}}
+ */
+function validateSettingValue(key, value) {
+  const def = DEFAULT_SETTINGS.find((s) => s.key === key);
+  if (!def) return { valid: true, value };
+
+  const label = def.label || key;
+
+  if (FEE_SETTING_KEYS.has(key)) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return { valid: false, error: `${label} must be a finite number` };
+    }
+    if (n < 0) {
+      return { valid: false, error: `${label} cannot be negative` };
+    }
+    return { valid: true, value: Math.round(n * 100) / 100 };
+  }
+
+  if (key === 'currency') {
+    const code = String(value || '').trim().toUpperCase();
+    if (!ALLOWED_CURRENCIES.includes(code)) {
+      return { valid: false, error: `Currency must be one of: ${ALLOWED_CURRENCIES.join(', ')}` };
+    }
+    return { valid: true, value: code };
+  }
+
+  if (key === 'max_daily_orders' || key === 'max_order_quantity') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+      return { valid: false, error: `${label} must be a whole number of at least 1` };
+    }
+    return { valid: true, value: n };
+  }
+
+  if (key === 'vat_rate' || key === 'platform_fee_rate') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || n > 100) {
+      return { valid: false, error: `${label} must be between 0 and 100` };
+    }
+    return { valid: true, value: n };
+  }
+
+  if (key === 'session_timeout_minutes') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 1 || n > 1440) {
+      return { valid: false, error: `${label} must be between 1 and 1440 minutes` };
+    }
+    return { valid: true, value: n };
+  }
+
+  if (key === 'login_max_attempts') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 1 || n > 20) {
+      return { valid: false, error: `${label} must be between 1 and 20` };
+    }
+    return { valid: true, value: n };
+  }
+
+  if (key === 'otp_expiry_minutes') {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 1 || n > 120) {
+      return { valid: false, error: `${label} must be between 1 and 120 minutes` };
+    }
+    return { valid: true, value: n };
+  }
+
+  if (key === 'cafeteria_opening_time' || key === 'cafeteria_closing_time') {
+    const time = String(value || '').trim();
+    if (!TIME_PATTERN.test(time)) {
+      return { valid: false, error: `${label} must be a valid time in HH:MM format` };
+    }
+    return { valid: true, value: time };
+  }
+
+  return { valid: true, value: coerceValue(key, value) };
+}
+
 async function getSettingsMap({ includeProtected = false } = {}) {
   const filter = includeProtected ? {} : { protected: { $ne: true } };
   const settings = await Setting.find(filter).lean();
@@ -281,6 +389,12 @@ async function getPublicSettings() {
     vatEnabled: map.vat_enabled,
     vatRate: Number(map.vat_rate) || 0,
     serviceFee: Number(map.service_fee) || 0,
+    // The idle-session policy. It is not secret (the System Admin configures it
+    // on the Security page), and every staff surface needs it so the UI
+    // countdown matches the server-side enforcement in
+    // middleware/idleSession.middleware.js - otherwise a manager is signed out
+    // after the hard-coded 10 minutes while the policy says 30.
+    sessionTimeoutMinutes: Math.max(1, Number(map.session_timeout_minutes) || 10),
   };
 }
 
@@ -288,6 +402,7 @@ module.exports = {
   DEFAULT_SETTINGS,
   ensureDefaultSettings,
   coerceValue,
+  validateSettingValue,
   getSettingsMap,
   getPublicSettings,
 };

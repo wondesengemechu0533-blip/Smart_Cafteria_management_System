@@ -24,7 +24,7 @@ router.get('/', getAllMenuItems);
 router.get(
   '/stats',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   getMenuStats
 );
 
@@ -36,27 +36,27 @@ router.get('/:id/related', getRelatedItems);
 router.post(
   '/',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateCreateMenuItem),
   createMenuItem
 );
 router.put(
   '/:id',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateUpdateMenuItem),
   updateMenuItem
 );
 router.delete(
   '/:id',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   deleteMenuItem
 );
 router.patch(
   '/:id/availability',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateToggleAvailability),
   toggleAvailability
 );

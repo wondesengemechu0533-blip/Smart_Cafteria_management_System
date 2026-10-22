@@ -107,6 +107,25 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // --- Per-user notification preferences --------------------------------
+    // Each staff member owns their own notification preferences. The platform
+    // wide notify_* SETTINGs are only the default policy; the value that
+    // actually decides whether THIS person gets a notification lives here, so
+    // one manager can never mute (or spam) another account.
+    notificationPreferences: {
+      newOrders: { type: Boolean, default: true },
+      lowStock: { type: Boolean, default: true },
+      dailySales: { type: Boolean, default: false },
+      securityLogin: { type: Boolean, default: true },
+    },
+    // --- Two-factor authentication for THIS account -----------------------
+    // Per user, not global: the System Admin may REQUIRE 2FA system-wide
+    // (Setting `two_factor_enabled`), but whether an individual account has
+    // it enabled is the account owner's decision.
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
     // --- Delivery courier availability ---------------------------------
     // Manual on-duty toggle set by the courier from the delivery dashboard.
     // The manager's assignment dropdown reads this together with the live
@@ -169,6 +188,15 @@ UserSchema.methods.getPublicProfile = function () {
     balance: this.balance,
     status: this.status,
     avatar: this.avatar,
+    // Own security + own notification state only. A caller never receives
+    // another account's preferences.
+    twoFactorEnabled: this.twoFactorEnabled === true,
+    notificationPreferences: {
+      newOrders: this.notificationPreferences?.newOrders !== false,
+      lowStock: this.notificationPreferences?.lowStock !== false,
+      dailySales: this.notificationPreferences?.dailySales === true,
+      securityLogin: this.notificationPreferences?.securityLogin !== false,
+    },
     createdAt: this.createdAt,
   };
 };

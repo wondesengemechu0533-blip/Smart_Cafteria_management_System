@@ -109,8 +109,12 @@ function tr(key, fallback, vars) {
         clearAuthAndRedirect();
         break;
       case 403:
-        message = localize('error_access_denied') || 'Access denied. Insufficient permissions.';
-        clearAuthAndRedirect();
+        // 403 is an AUTHORIZATION answer, not an expired session. Signing the
+        // user out here was wrong: a cafeteria manager who opened a
+        // system-admin-only setting lost their whole session and was told
+        // "Session expired". The caller keeps working; only the token of a
+        // genuinely expired session (401) is dropped.
+        message = data?.error || localize('error_access_denied') || 'Access denied. Insufficient permissions.';
         break;
       case 404:
         message = localize(message, code);
@@ -129,6 +133,35 @@ function tr(key, fallback, vars) {
         if (status >= 500) message = localize('error_server') || 'Server error. Please try again later.';
     }
     return message;
+  }
+
+  // HTTP statuses worth repeating for a read-only request. The backend answers
+  // 503 with { retryable: true } when MongoDB is momentarily unreachable (an
+  // Atlas replica-set failover, a brief network drop) - that is a transient
+  // condition, not a broken endpoint.
+  var RETRYABLE_STATUS = { 502: true, 503: true, 504: true };
+  var MAX_RETRY_ATTEMPTS = 3;
+  var RETRY_BASE_DELAY_MS = 600;
+
+  function delay(ms) {
+    return new Promise(function (resolve) {
+      setTimeout(resolve, ms);
+    });
+  }
+
+  function shouldRetry(status, data, method, attempt) {
+    // Never loop forever: the attempt counter is the hard stop. Without it a
+    // persistently failing endpoint would keep the request alive indefinitely.
+    if (!attempt || attempt >= MAX_RETRY_ATTEMPTS) return false;
+    // Only safe, side-effect-free verbs are replayed: a write must never be
+    // sent twice because of a timeout.
+    var m = String(method || 'GET').toUpperCase();
+    if (m !== 'GET' && m !== 'HEAD') return false;
+    if (!RETRYABLE_STATUS[status]) return false;
+    // The backend explicitly told us whether this failure is worth repeating;
+    // an explicit false wins over the generic status heuristic.
+    if (data && data.retryable === false) return false;
+    return true;
   }
 
   function clearAuthAndRedirect() {
@@ -151,7 +184,8 @@ function tr(key, fallback, vars) {
     }, 4000);
   }
 
-  function request(method, path, body, query) {
+  function request(method, path, body, query, attempt) {
+    attempt = attempt || 1;
     var url = API_BASE + path + (query ? qs(query) : '');
     var init = {
       method: method,
@@ -172,6 +206,17 @@ function tr(key, fallback, vars) {
           if (!res.ok) {
             var raw = data.error || data.message || (typeof tr==='function'?tr('request_failed','Request failed'):'Request failed');
             var status = res.status;
+            // Transient backend failures (a MongoDB Atlas failover, a brief
+            // network drop) come back as 503 with { retryable: true }. The
+            // backend has been flagging those for a while, but nothing ever
+            // read the flag, so a single blip turned the whole dashboard into
+            // a wall of failed requests. Read-only requests are now retried
+            // automatically with a short backoff before the failure surfaces.
+            if (shouldRetry(status, data, method, attempt)) {
+              return delay(RETRY_BASE_DELAY_MS * attempt).then(function () {
+                return request(method, path, body, query, attempt + 1);
+              });
+            }
             var errorMessage = handleErrorStatus(res.status, data) || localize(raw, data.code);
             var err = new Error(errorMessage);
             err.status = status;

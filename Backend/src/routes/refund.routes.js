@@ -20,19 +20,19 @@ router.post('/', validateBody(validateRefundInput), requestRefund);
 router.get('/', getRefunds);
 router.get('/:id', getRefundById);
 
-// Decision endpoints: cashier, manager, cafeteria_admin or admin only.
+// Decision endpoints: cashier, manager or admin only.
 router.patch(
   '/:id/approve',
-  authorize('cashier', 'admin', 'ADMIN', 'cafeteria_admin', 'manager'),
+  authorize('cashier', 'admin', 'ADMIN', 'manager'),
   validateBody(validateRefundDecision),
   approveRefund
 );
 router.patch(
   '/:id/reject',
-  authorize('cashier', 'admin', 'ADMIN', 'cafeteria_admin', 'manager'),
+  authorize('cashier', 'admin', 'ADMIN', 'manager'),
   validateBody(validateRefundDecision),
   rejectRefund
 );
-router.patch('/:id/complete', authorize('cashier', 'admin', 'ADMIN', 'cafeteria_admin', 'manager'), completeRefund);
+router.patch('/:id/complete', authorize('cashier', 'admin', 'ADMIN', 'manager'), completeRefund);
 
 module.exports = router;

@@ -50,7 +50,6 @@ router.get(
     'admin',
     'ADMIN',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'staff',
     'kitchen_staff',
@@ -72,7 +71,6 @@ router.get(
     'admin',
     'ADMIN',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'staff',
     'kitchen_staff',
@@ -94,7 +92,6 @@ router.get(
     'admin',
     'ADMIN',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'staff',
     'kitchen_staff',
@@ -110,7 +107,7 @@ router.get(
  * @access  Private/Admin
  * Body: { adminNote, allowServed }
  */
-router.patch('/:id/approve', protect, authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager'), approveCancellation);
+router.patch('/:id/approve', protect, authorize('admin', 'ADMIN', 'system_admin', 'manager'), approveCancellation);
 
 /**
  * @route   PATCH /api/v1/cancellations/:id/reject
@@ -118,14 +115,14 @@ router.patch('/:id/approve', protect, authorize('admin', 'ADMIN', 'system_admin'
  * @access  Private/Admin
  * Body: { adminNote }
  */
-router.patch('/:id/reject', protect, authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager'), rejectCancellation);
+router.patch('/:id/reject', protect, authorize('admin', 'ADMIN', 'system_admin', 'manager'), rejectCancellation);
 
 /**
  * @route   POST /api/v1/cancellations/:id/refund/request
  * @desc    Request a refund for an approved cancellation
  * @access  Private/Admin
  */
-router.post('/:id/refund/request', protect, authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager'), requestRefund);
+router.post('/:id/refund/request', protect, authorize('admin', 'ADMIN', 'system_admin', 'manager'), requestRefund);
 
 /**
  * @route   POST /api/v1/cancellations/:id/refund/confirm
@@ -133,7 +130,7 @@ router.post('/:id/refund/request', protect, authorize('admin', 'ADMIN', 'system_
  * @access  Private/Admin (provider webhook when integrated)
  * Body: { providerReference }
  */
-router.post('/:id/refund/confirm', protect, authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager'), confirmRefund);
+router.post('/:id/refund/confirm', protect, authorize('admin', 'ADMIN', 'system_admin', 'manager'), confirmRefund);
 
 /**
  * @route   POST /api/v1/cancellations/:id/refund/fail
@@ -141,6 +138,6 @@ router.post('/:id/refund/confirm', protect, authorize('admin', 'ADMIN', 'system_
  * @access  Private/Admin
  * Body: { error }
  */
-router.post('/:id/refund/fail', protect, authorize('admin', 'ADMIN', 'system_admin', 'cafeteria_admin', 'manager'), failRefund);
+router.post('/:id/refund/fail', protect, authorize('admin', 'ADMIN', 'system_admin', 'manager'), failRefund);
 
 module.exports = router;

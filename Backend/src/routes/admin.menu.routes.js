@@ -15,7 +15,7 @@ const {
 
 // All routes require admin, staff, or kitchen role
 router.use(protect);
-router.use(authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
+router.use(authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
 
 /**
  * @route   GET /api/v1/admin/menu

@@ -16,9 +16,9 @@ const {
 router.use(protect);
 
 // Roles that may view resolution requests.
-const VIEW_ROLES = ['manager', 'cafeteria_manager', 'cafeteria_admin', 'admin', 'system_admin'];
+const VIEW_ROLES = ['manager', 'cafeteria_manager', 'admin', 'system_admin'];
 // Admin-only actions (accept / reject / resolve).
-const ADMIN_ROLES = ['cafeteria_admin', 'admin', 'system_admin'];
+const ADMIN_ROLES = ['admin', 'system_admin'];
 // Manager actions (cancel own PENDING request).
 const MANAGER_ROLES = ['manager', 'cafeteria_manager'];
 

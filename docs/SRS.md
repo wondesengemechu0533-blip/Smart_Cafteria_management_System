@@ -126,7 +126,7 @@ reporting on the existing architecture without any rebuild.
 
 ### FR-7 Financial Settings Admin-Only
 - **FR-7.1** `vat_enabled`, `vat_rate`, `vat_number`, `tax_authority_name`,
-  `platform_fee_rate`, `service_fee` can only be changed by the system `admin`.
+  `platform_fee_rate` can only be changed by the system `admin`.
 
 ### FR-8 Feedback
 - **FR-8.1** Replying to feedback is optional (bug fix: a mandatory reply field
@@ -137,6 +137,44 @@ reporting on the existing architecture without any rebuild.
 - **FR-9.1** `Frontend/src/js/notification-sound.js` plays a short chime on
   `order:new`, `delivery:new`, `delivery:assigned` and `notification:new`
   (WebAudio, respects `scos_notify_sound` toggle, no autoplay errors).
+
+### FR-10 Role Responsibilities (Cafeteria Manager vs System Admin)
+The permission matrix below is enforced on the BACKEND
+(`Backend/src/config/setting-permissions.js` → `admin.controller.js`
+`updateSetting`); the frontend only mirrors it so it never offers a control
+that is guaranteed to be refused. An unauthorized write answers **403**, an
+invalid value answers **400**.
+
+| Setting | Cafeteria Manager | System Admin |
+|---|---|---|
+| Personal profile | own account only | own account only |
+| Password & 2FA | own account only (current password verified) | own account only |
+| Cafeteria opening hours | manage | configure / override |
+| Delivery fee | manage **if authorized** | configure / override |
+| Service fee | manage **if authorized** | configure / override |
+| Menu, inventory & stock operations | manage | system-wide oversight |
+| Currency & global order limits | restricted (403) | manage |
+| Notification preferences | own preferences only | own preferences only |
+| System-wide security & access | restricted (403) | manage |
+
+- **FR-10.1** Delivery fee and service fee remain **separate** settings
+  (`delivery_fee`, `service_fee`); neither is derived from the other and each
+  is stored in exactly one `Setting` record.
+- **FR-10.2** A Cafeteria Manager may change the fees only while
+  `manager_fee_management_enabled` is on. The System Admin owns that switch
+  (`Platform Permissions` card in Settings); a manager may never change it.
+- **FR-10.3** Fees are validated as finite, non-negative numbers.
+- **FR-10.4** Order money is computed on the backend
+  (`services/finance.service.js`) and **snapshotted** onto the order
+  (`serviceFee`, `deliveryFee`, `vatRate`, `vatAmount`); changing the settings
+  afterwards never rewrites an existing order, its invoice or its payment.
+- **FR-10.5** 2FA and the notification preferences are **per user**
+  (`User.twoFactorEnabled`, `User.notificationPreferences`). The global
+  `two_factor_enabled` setting is the System Admin's *policy* (2FA required),
+  never another account's personal state.
+- **FR-10.6** `GET /api/v1/admin/settings` returns the caller's permission map
+  (`permissions.editable` / `permissions.restricted`) so the UI can grey out
+  restricted fields instead of failing at submit time.
 
 ---
 

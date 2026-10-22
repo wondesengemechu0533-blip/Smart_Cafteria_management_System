@@ -30,13 +30,58 @@ function tr(key, fallback, vars) {
       btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
     } else {
       btn.disabled = false;
-      btn.innerHTML = btn.dataset.originalText || 'Update Password';
-      delete btn.dataset.originalText;
+      if (btn.dataset.originalText) {
+        btn.innerHTML = btn.dataset.originalText;
+        delete btn.dataset.originalText;
+      }
     }
   }
 
-  function loadProfile() {
-    const profile = window.AdminAPI.getProfile();
+  /**
+   * Role-aware page title.
+   *
+   * The page is shared by the Cafeteria Manager and the System Admin, so it is
+   * named after the role that is signed in: "Manager Profile" for a cafeteria
+   * manager, "Admin Profile" for a system administrator.
+   */
+  function applyRoleLabels() {
+    let role = '';
+    try {
+      if (window.ScosRoles && typeof window.ScosRoles.getCurrentRole === 'function') {
+        role = window.ScosRoles.getCurrentRole();
+      }
+    } catch (e) { /* ignore */ }
+    if (!role) {
+      role = String(localStorage.getItem('userRole') || localStorage.getItem('role') || '').toLowerCase();
+    }
+    const isManager = role === 'manager';
+    const title = document.getElementById('profilePageTitle');
+    if (title) {
+      title.textContent = isManager ? 'Manager Profile' : 'Admin Profile';
+      title.setAttribute('data-i18n', isManager ? 'manager_profile_title' : 'admin_profile_title');
+    }
+    document.title = isManager ? 'Manager Profile - Smart Cafeteria' : 'Admin Profile - Smart Cafeteria';
+    if (typeof window.applyTranslations === 'function') {
+      setTimeout(() => window.applyTranslations(), 0);
+    }
+  }
+
+  /**
+   * Load the OWN profile from the backend.
+   *
+   * It used to be read from localStorage only, which meant the page could
+   * show a stale name/email/avatar after the account had been changed
+   * elsewhere (for example in Settings). GET /auth/me always answers with
+   * the caller's own account - never anybody else's.
+   */
+  async function loadProfile() {
+    let profile = window.AdminAPI.getProfile();
+    try {
+      const data = await window.AdminAPI.get('/auth/me');
+      if (data && data.user) profile = Object.assign({}, profile || {}, data.user);
+    } catch (e) {
+      // Fall back to the cached profile so the page still renders.
+    }
     if (profile) {
       document.getElementById('profileName').textContent = profile.name || 'Admin User';
       document.getElementById('profileEmail').textContent = profile.email || 'admin@example.com';
@@ -59,6 +104,64 @@ function tr(key, fallback, vars) {
         }
       }
       if (nameNav) nameNav.textContent = profile.name || 'Admin User';
+
+      // Editable fields - the caller's own account only.
+      const name = document.getElementById('accountName');
+      const email = document.getElementById('accountEmail');
+      const phone = document.getElementById('accountPhone');
+      const avatarUrl = document.getElementById('accountAvatar');
+      const twoFa = document.getElementById('accountTwoFactor');
+      if (name) name.value = profile.name || '';
+      if (email) email.value = profile.email || '';
+      if (phone) phone.value = profile.phone || '';
+      if (avatarUrl) avatarUrl.value = profile.avatar || '';
+      if (twoFa) twoFa.checked = profile.twoFactorEnabled === true;
+    }
+  }
+
+  /**
+   * Save the caller's own account details.
+   * The backend writes only the authenticated user's document.
+   */
+  async function saveAccount() {
+    const btn = document.getElementById('saveAccountBtn');
+    const name = document.getElementById('accountName');
+    const email = document.getElementById('accountEmail');
+    const phone = document.getElementById('accountPhone');
+    const avatarUrl = document.getElementById('accountAvatar');
+    const twoFa = document.getElementById('accountTwoFactor');
+    if (!name || !name.value.trim()) {
+      showAlert(tr('all_fields_required', 'All fields are required'), 'error');
+      return;
+    }
+    setLoading(btn, true);
+    try {
+      const data = await window.AdminAPI.put('/auth/me', {
+        name: name.value.trim(),
+        email: email ? email.value.trim() : undefined,
+        phone: phone ? phone.value.trim() : undefined,
+        avatar: avatarUrl ? avatarUrl.value.trim() : undefined,
+        twoFactorEnabled: twoFa ? twoFa.checked : undefined,
+      });
+      const updated = Object.assign({}, window.AdminAPI.getProfile() || {}, (data && data.user) || {});
+      localStorage.setItem('userProfile', JSON.stringify(updated));
+      try {
+        const cur = JSON.parse(localStorage.getItem('current_user') || '{}');
+        Object.assign(cur, {
+          name: updated.name,
+          email: updated.email,
+          phone: updated.phone,
+          avatar: updated.avatar,
+        });
+        localStorage.setItem('current_user', JSON.stringify(cur));
+        localStorage.setItem('userName', updated.name || '');
+      } catch (_) {}
+      showAlert(tr('profile_saved', 'Profile saved successfully'));
+      await loadProfile();
+    } catch (error) {
+      showAlert(tr('failed_save_profile', 'Failed to save profile: ') + (error.message || error), 'error');
+    } finally {
+      setLoading(btn, false);
     }
   }
 
@@ -102,6 +205,9 @@ function tr(key, fallback, vars) {
     const form = document.getElementById('passwordForm');
     if (form) form.addEventListener('submit', changePassword);
 
+    const saveBtn = document.getElementById('saveAccountBtn');
+    if (saveBtn) saveBtn.addEventListener('click', saveAccount);
+
     // Password show/hide toggle
     document.querySelectorAll('.toggle-password-icon').forEach(function (icon) {
       icon.addEventListener('click', function () {
@@ -119,6 +225,7 @@ function tr(key, fallback, vars) {
 
   function init() {
     bindEvents();
+    applyRoleLabels();
     loadProfile();
   }
 

@@ -29,13 +29,7 @@ const SHIFT_WINDOWS = [
 async function ensureDefaultKitchenShifts() {
   const now = new Date();
 
-  // 1. Roll stale scheduled shifts into cancelled.
-  await KitchenShift.updateMany(
-    { status: 'scheduled', startTime: { $lt: now } },
-    { $set: { status: 'cancelled' } }
-  );
-
-  // 2. Active kitchen staff (role is stored canonicalised as 'kitchen').
+  // Active kitchen staff (role is stored canonicalised as 'kitchen').
   const activeStaff = await User.find({
     role: { $regex: '^kitchen', $options: 'i' },
     status: 'ACTIVE',
@@ -44,7 +38,7 @@ async function ensureDefaultKitchenShifts() {
 
   if (!activeStaff.length) return;
 
-  // 3. Existing shifts inside the rolling 7-day window - key them so we only
+  // 2. Existing shifts inside the rolling 7-day window - key them so we only
   //    insert what is missing (never duplicate, never overwrite worked shifts).
   const windowStart = new Date(now);
   windowStart.setHours(0, 0, 0, 0);

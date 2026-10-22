@@ -2,6 +2,7 @@ const { resolveCafeteriaScope } = require('../utils/cafeteria');
 const { resolveRange } = require('../utils/reportRange');
 const { HTTP_STATUS, MESSAGES } = require('../config/constants');
 const service = require('../services/cafeteriaReports.service');
+const { getOperationalReport } = require('../services/operationsReports.service');
 
 /**
  * Shared wrapper: resolve the TRUSTED cafeteria scope and the requested period,
@@ -34,10 +35,13 @@ async function run(req, res, fn) {
 
 /**
  * @route   GET /api/v1/cafeteria/reports/summary
- * @desc    Cafeteria dashboard summary cards for the selected period
- * @access  Private/Cafeteria admin + manager (+ system admin sees all)
+ * @desc    Operational report for the assigned cafeteria (orders, payments,
+ *          status distribution, order types, food popularity, trends).
+ *
+ *          System admins receive the same report across every cafeteria -
+ *          the scope is resolved from the authenticated user either way.
  */
-exports.getSummary = (req, res) => run(req, res, (scope, range) => service.getSummary(scope, range));
+exports.getSummary = (req, res) => run(req, res, (scope, range) => getOperationalReport(scope, range));
 
 /**
  * @route   GET /api/v1/cafeteria/reports/sales

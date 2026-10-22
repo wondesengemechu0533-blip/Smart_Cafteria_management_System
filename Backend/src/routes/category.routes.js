@@ -18,27 +18,27 @@ router.get('/:id', getCategoryById);
 router.post(
   '/',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateCreateCategory),
   createCategory
 );
 router.put(
   '/:id',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateUpdateCategory),
   updateCategory
 );
 router.patch(
   '/:id/status',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   toggleCategoryStatus
 );
 router.delete(
   '/:id',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   deleteCategory
 );
 

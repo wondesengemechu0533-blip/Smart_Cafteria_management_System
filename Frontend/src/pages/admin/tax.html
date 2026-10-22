@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tax/VAT - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css" />
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css" />
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css" />
+    <script src="../../js/theme.js"></script>
+  </head>
+  <body class="admin-body">
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+      <main class="admin-main">
+        <div class="page-header">
+          <div>
+            <h1 id="taxTitle" data-i18n="tax_page_title">Tax/VAT</h1>
+            <p class="subtitle" id="taxSubtitle" data-i18n="tax_page_subtitle">
+              View VAT calculations, taxable sales, and tax compliance reports.
+            </p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="refreshTaxBtn">
+              <i class="fa-solid fa-rotate"></i> <span data-i18n="report_refresh">Refresh</span>
+            </button>
+            <button class="btn btn-primary" id="exportTaxBtn">
+              <i class="fa-solid fa-download"></i> <span data-i18n="report_export">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ================== PERIOD FILTER ========================== -->
+        <!-- ========================================================= -->
+        <div class="card mb-4">
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label" data-i18n="report_period">Period</label>
+                <select id="taxPeriodSelect" class="form-select">
+                  <option value="today" data-i18n="report_period_today">Today</option>
+                  <option value="yesterday" data-i18n="report_period_yesterday">Yesterday</option>
+                  <option value="last7" data-i18n="report_period_last7">Last 7 Days</option>
+                  <option value="last30" data-i18n="report_period_last30">Last 30 Days</option>
+                  <option value="last90" data-i18n="report_period_last90">Last 90 Days</option>
+                  <option value="month" selected data-i18n="report_period_month">This Month</option>
+                  <option value="year" data-i18n="report_period_year">This Year</option>
+                  <option value="custom" data-i18n="report_period_custom">Custom Date Range</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label"
+                  ><i class="fa-solid fa-calendar-days"></i>
+                  <span data-i18n="report_start_date">Start Date</span></label
+                >
+                <input type="date" id="taxStartDate" class="form-control" disabled />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label"
+                  ><i class="fa-solid fa-calendar-days"></i> <span data-i18n="report_end_date">End Date</span></label
+                >
+                <input type="date" id="taxEndDate" class="form-control" disabled />
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-primary w-100" id="taxApplyBtn">
+                  <i class="fa-solid fa-filter"></i> <span data-i18n="report_apply">Apply</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="report-updated-at" id="taxUpdatedAt"></div>
+
+        <!-- ========================================================= -->
+        <!-- ==================== VAT METRICS ========================== -->
+        <!-- ========================================================= -->
+        <div class="metrics-grid mb-4">
+          <div class="metric-card">
+            <div class="metric-icon bg-indigo"><i class="fa-solid fa-percent"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_configured_vat_rate">Configured VAT Rate</span>
+              <h2 class="metric-value" id="taxConfiguredRate">0%</h2>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon bg-blue"><i class="fa-solid fa-file-invoice"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_taxable_sales">Taxable Sales</span>
+              <h2 class="metric-value" id="taxTaxableSales">0.00 ETB</h2>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon bg-green"><i class="fa-solid fa-sack-dollar"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_vat_collected">VAT Collected</span>
+              <h2 class="metric-value" id="taxVatCollected">0.00 ETB</h2>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon bg-orange"><i class="fa-solid fa-rotate-left"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_vat_refunded">VAT Refunded</span>
+              <h2 class="metric-value" id="taxVatRefunded">0.00 ETB</h2>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon bg-teal"><i class="fa-solid fa-landmark"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_net_vat_retained">Net VAT Retained</span>
+              <h2 class="metric-value" id="taxNetVatRetained">0.00 ETB</h2>
+            </div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-icon bg-purple"><i class="fa-solid fa-receipt"></i></div>
+            <div class="metric-content">
+              <span class="metric-label" data-i18n="tax_taxable_transactions">Taxable Transactions</span>
+              <h2 class="metric-value" id="taxTransactionCount">0</h2>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ================= TAXABLE SALES / VAT TRENDS ============== -->
+        <!-- ========================================================= -->
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title">
+              <i class="fa-solid fa-chart-line"></i>
+              <span data-i18n="tax_trends">Taxable Sales &amp; VAT Trends</span>
+            </h3>
+            <div class="btn-group btn-group-sm" role="group" id="taxTrendGranularity">
+              <button type="button" class="btn btn-primary" data-granularity="daily">
+                <span data-i18n="tax_by_day">Day</span>
+              </button>
+              <button type="button" class="btn btn-secondary" data-granularity="weekly">
+                <span data-i18n="tax_by_week">Week</span>
+              </button>
+              <button type="button" class="btn btn-secondary" data-granularity="monthly">
+                <span data-i18n="tax_by_month">Month</span>
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="report-chart-wrap">
+              <canvas id="taxTrendChart"></canvas>
+            </div>
+            <div class="report-empty d-none" id="taxTrendChartEmpty" data-i18n="report_empty">
+              No taxable sales in the selected period.
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ================= MONTHLY VAT BREAKDOWN ================== -->
+        <!-- ========================================================= -->
+        <div class="card mb-4">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title">
+              <i class="fa-solid fa-calendar-week"></i>
+              <span data-i18n="tax_monthly_breakdown">Monthly VAT Breakdown</span>
+            </h3>
+            <small class="text-muted" id="taxAuthorityName"></small>
+          </div>
+          <div class="table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th data-i18n="tax_col_month">Month</th>
+                  <th data-i18n="tax_taxable_sales">Taxable Sales</th>
+                  <th data-i18n="tax_vat_collected">VAT Collected</th>
+                  <th data-i18n="tax_vat_refunded">VAT Refunded</th>
+                  <th data-i18n="tax_net_vat_retained">Net VAT Retained</th>
+                  <th data-i18n="tax_col_transactions">Transactions</th>
+                </tr>
+              </thead>
+              <tbody id="taxMonthlyBody">
+                <tr>
+                  <td colspan="6" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- =============== TRANSACTION-LEVEL VAT RECORDS ============== -->
+        <!-- ========================================================= -->
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h3 class="card-title">
+              <i class="fa-solid fa-list-ol"></i>
+              <span data-i18n="tax_transactions_table">VAT Transaction Details</span>
+            </h3>
+            <button class="btn btn-secondary btn-sm" id="exportTaxCsvBtn">
+              <i class="fa-solid fa-download"></i> <span data-i18n="tax_export_report">Export Tax Report</span>
+            </button>
+          </div>
+          <div class="table-wrapper">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th data-i18n="report_col_order">Order</th>
+                  <th data-i18n="report_col_date">Date</th>
+                  <th data-i18n="report_col_type">Type</th>
+                  <th data-i18n="tax_col_taxable">Taxable Amount</th>
+                  <th data-i18n="tax_col_vat_rate">VAT Rate</th>
+                  <th data-i18n="tax_col_vat">VAT Amount</th>
+                  <th data-i18n="tax_col_payment_status">Payment Status</th>
+                  <th data-i18n="tax_col_refund_status">Refund Status</th>
+                </tr>
+              </thead>
+              <tbody id="taxTransactionsBody">
+                <tr>
+                  <td colspan="8" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="card-footer">
+            <small class="text-muted" id="taxTransactionsNote"></small>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/utils/report-period.js"></script>
+    <script src="../../js/admin-tax.js"></script>
+  </body>
+</html>

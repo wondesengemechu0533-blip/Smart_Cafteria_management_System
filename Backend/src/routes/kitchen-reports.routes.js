@@ -21,14 +21,14 @@ const {
  * Query Params: startDate, endDate, reportType
  */
 router.use(protect);
-router.get('/reports', authorize('admin', 'cafeteria_admin', 'manager', 'kitchen'), getKitchenReport);
+router.get('/reports', authorize('admin', 'manager', 'kitchen'), getKitchenReport);
 
 /**
  * @route   GET /api/kitchen/stats/detailed
  * @desc    Get kitchen dashboard stats with real-time metrics
  * @access  Private/Kitchen or Admin
  */
-router.get('/stats/detailed', authorize('admin', 'cafeteria_admin', 'manager', 'kitchen'), getDetailedKitchenStats);
+router.get('/stats/detailed', authorize('admin', 'manager', 'kitchen'), getDetailedKitchenStats);
 
 /**
  * @route   GET /api/kitchen/reports/orders
@@ -37,14 +37,14 @@ router.get('/stats/detailed', authorize('admin', 'cafeteria_admin', 'manager', '
  *
  * Query Params: startDate, endDate, status
  */
-router.get('/reports/orders', authorize('admin', 'cafeteria_admin', 'manager', 'kitchen'), getOrderPreparationReport);
+router.get('/reports/orders', authorize('admin', 'manager', 'kitchen'), getOrderPreparationReport);
 
 /**
  * @route   POST /api/kitchen/reports/generate
  * @desc    Generate today's kitchen performance report
  * @access  Private/Admin
  */
-router.post('/reports/generate', authorize('admin', 'cafeteria_admin', 'manager'), generateDailyReport);
+router.post('/reports/generate', authorize('admin'), generateDailyReport);
 
 /**
  * @route   GET /api/kitchen/staff/:staffId/performance
@@ -55,7 +55,7 @@ router.post('/reports/generate', authorize('admin', 'cafeteria_admin', 'manager'
  */
 router.get(
   '/staff/:staffId/performance',
-  authorize('admin', 'cafeteria_admin', 'manager', 'kitchen'),
+  authorize('admin', 'manager', 'kitchen'),
   getStaffPerformance
 );
 

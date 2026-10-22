@@ -1173,7 +1173,6 @@
   "mgr_staff_err_password_short": "Password must be at least 8 characters.",
   "mgr_staff_err_password_policy": "Password needs an uppercase letter, a lowercase letter, a number and a symbol.",
   "mgr_staff_err_password_mismatch": "Passwords do not match.",
-
   "delivery_gps_active": "GPS Active",
   "delivery_gps_waiting": "Waiting for GPS",
   "delivery_map_no_locations": "No delivery locations yet. World map ready.",
@@ -1182,5 +1181,7 @@
   "delivery_active": "Active",
   "delivery_last_update": "Last update",
   "delivery_just_now": "just now",
-  "delivery_accuracy": "Accuracy"
+  "delivery_accuracy": "Accuracy",
+  "Manager Profile": "Manager Profile",
+  "Manager Profile - Smart Cafeteria": "Manager Profile - Smart Cafeteria"
 }

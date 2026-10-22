@@ -15,14 +15,14 @@
  * step again.
  */
 
-const { normalizeRole, SYSTEM_ADMIN_ROLES, CAFETERIA_ADMIN_ROLES } = require('../config/roles');
+const { normalizeRole, SYSTEM_ADMIN_ROLES, MANAGEMENT_ROLES } = require('../config/roles');
 
 /**
  * Roles that may cancel ANY order.
  *
  * This is exactly the audience of the staff-side cancel route
  * (`POST /api/v1/admin/orders/:id/cancel`, see routes/admin.order.routes.js):
- * admin, cafeteria_admin, manager, kitchen (+ the system_admin role group).
+ * admin, manager, kitchen (+ the system_admin role group).
  * Those roles already had a legitimate way to cancel a customer's order; the
  * customer-facing cancellation endpoint simply did not know about it, which is
  * what produced "You can only cancel your own orders" for a manager.
@@ -31,10 +31,10 @@ const { normalizeRole, SYSTEM_ADMIN_ROLES, CAFETERIA_ADMIN_ROLES } = require('..
  * already cancel there today, and leaving it out would reproduce the exact
  * dead-button state this file exists to prevent.
  */
-const ORDER_CANCEL_ROLES = [...SYSTEM_ADMIN_ROLES, ...CAFETERIA_ADMIN_ROLES, 'manager', 'kitchen'];
+const ORDER_CANCEL_ROLES = [...SYSTEM_ADMIN_ROLES, ...MANAGEMENT_ROLES, 'manager', 'kitchen'];
 
 /** Roles that may read any order (the existing GET /orders/:id policy). */
-const OPERATIONS_ROLES = [...SYSTEM_ADMIN_ROLES, ...CAFETERIA_ADMIN_ROLES, 'manager', 'kitchen'];
+const OPERATIONS_ROLES = [...SYSTEM_ADMIN_ROLES, ...MANAGEMENT_ROLES, 'manager', 'kitchen'];
 
 const idOf = (value) => {
   if (!value) return null;

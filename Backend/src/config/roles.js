@@ -2,9 +2,9 @@
  * Single source of truth for user roles, role aliases, role groups,
  * and role-assignment (privilege) rules.
  *
- * Canonical roles stored in MongoDB (User.role? enum):
-  *   customer, kitchen, admin, system_admin, cafeteria_admin, manager, cashier,
-  *   delivery
+* Canonical roles stored in MongoDB (User.role? enum):
+ *   customer, kitchen, admin, system_admin, manager, cashier,
+ *   delivery
  *
  * Aliases are normalized to canonical values so that legacy/alternate
  * spellings (e.g. system_admin, cafeteria_manager, kitchen_staff,
@@ -16,7 +16,6 @@ const ROLES = [
   'kitchen',
   'admin',
   'system_admin',
-  'cafeteria_admin',
   'manager',
   'cashier',
   'delivery',
@@ -34,11 +33,24 @@ const ROLE_ALIASES = {
   systemadmin: 'admin',
   'system admin': 'admin',
   system_admin: 'system_admin',
-  cafeteria_admin: 'cafeteria_admin',
-  'cafeteria admin': 'cafeteria_admin',
   manager: 'manager',
   'cafeteria manager': 'manager',
   cafeteria_manager: 'manager',
+  // Legacy spelling of the cafeteria ADMINISTRATOR role. It resolves to the
+  // canonical 'manager' role: the cafeteria administrator's remaining duties
+  // (reviewing reports, resolving stock alerts, approving restocks) were
+  // folded into the cafeteria manager when the two roles were consolidated.
+  //
+  // It is kept as an ALIAS rather than a second stored role so no new
+  // database field or user type is introduced - User.role still stores only
+  // the canonical values above. Without it, every account, token and role
+  // check that still spoke the old name was stranded: the User.role enum
+  // rejected it outright, the backend's order-access check refused it, and
+  // the frontend still compares against it in users.js, admin-activity.js,
+  // manager-inventory.js, manager-issues.js, cashier-layout.js and
+  // government-dashboard.js.
+  cafeteria_admin: 'manager',
+  'cafeteria admin': 'manager',
   cashier: 'cashier',
   delivery: 'delivery',
   delivery_staff: 'delivery',
@@ -71,15 +83,12 @@ const isAdminRole = (role) => {
 
 // Role groups for route-gating (RBAC), single source of truth.
 const SYSTEM_ADMIN_ROLES = ['admin', 'system_admin'];
-const CAFETERIA_ADMIN_ROLES = ['cafeteria_admin'];
-const MANAGEMENT_ROLES = ['cafeteria_admin', 'manager'];
-const CASHIER_ROLES = ['cafeteria_admin', 'manager', 'cashier'];
-const OPERATIONS_ROLES = ['cafeteria_admin', 'manager', 'kitchen'];
-const TAX_AUTHORITY_ROLES = ['cafeteria_admin'];
+const MANAGEMENT_ROLES = ['manager'];
+const CASHIER_ROLES = ['manager', 'cashier'];
+const OPERATIONS_ROLES = ['manager', 'kitchen'];
 const ALL_STAFF_ROLES = [
   'admin',
   'system_admin',
-  'cafeteria_admin',
   'manager',
   'cashier',
   'kitchen',
@@ -88,27 +97,23 @@ const ALL_STAFF_ROLES = [
 
 const ROLE_GROUPS = {
   SYSTEM_ADMIN: SYSTEM_ADMIN_ROLES,
-  CAFETERIA_ADMIN: CAFETERIA_ADMIN_ROLES,
   MANAGEMENT: MANAGEMENT_ROLES,
   CASHIER: CASHIER_ROLES,
   OPERATIONS: OPERATIONS_ROLES,
-  TAX_AUTHORITY: TAX_AUTHORITY_ROLES,
   ALL_STAFF: ALL_STAFF_ROLES,
 };
 
 const ALL_ROLES_IGNORING_ACTOR = ROLES;
 
 // What each actor may create/assign. System Admin manages everything,
-// including cafeteria admins and tax authorities. A cafeteria admin manages
-// cafeteria floor staff (manager, cashier, kitchen, delivery) and customers.
-// A cafeteria manager manages ONLY delivery staff: the manager owns dispatch
+// including managers and tax authorities. A manager manages
+// ONLY delivery staff: the manager owns dispatch
 // (delivery.routes.js MANAGER_ROLES) and the manager dashboard's delivery
 // assignment board, so hiring a rider belongs to the same responsibility. This
 // stays inside the single role system - there is no second user type.
 const ASSIGNMENT_MATRIX = {
   admin: ALL_ROLES_IGNORING_ACTOR,
   system_admin: ALL_ROLES_IGNORING_ACTOR,
-  cafeteria_admin: ['kitchen', 'delivery', 'cashier'],
   manager: ['delivery'],
   cashier: [],
   kitchen: [],
@@ -150,11 +155,9 @@ module.exports = {
   ROLE_VALUES,
   ROLE_GROUPS,
   SYSTEM_ADMIN_ROLES,
-  CAFETERIA_ADMIN_ROLES,
   MANAGEMENT_ROLES,
   CASHIER_ROLES,
   OPERATIONS_ROLES,
-  TAX_AUTHORITY_ROLES,
   ALL_STAFF_ROLES,
   ASSIGNMENT_MATRIX,
   normalizeRole,

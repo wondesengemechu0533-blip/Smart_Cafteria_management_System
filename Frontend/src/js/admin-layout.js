@@ -30,7 +30,8 @@ function tr(key, fallback, vars) {
     { id: 'roles', path: 'roles.html', icon: 'fa-user-shield', label: 'Roles & Permissions', group: 'system' },
     { id: 'monitoring', path: 'monitoring.html', icon: 'fa-server', label: 'System Monitoring', group: 'system' },
     { id: 'system-logs', path: 'system-logs.html', icon: 'fa-list-ol', label: 'System Logs', group: 'system' },
-    { id: 'reports', path: 'reports.html', icon: 'fa-file-invoice-dollar', label: 'Reports', group: 'analytics' },
+    { id: 'reports', path: 'reports.html', icon: 'fa-chart-pie', label: 'Reports & Analytics', group: 'analytics' },
+    { id: 'manager-reports', path: '../manager/reports.html', icon: 'fa-chart-pie', label: 'Reports & Analytics', group: 'analytics' },
     { id: 'activity', path: 'activity.html', icon: 'fa-list-check', label: 'Audit Activity', group: 'analytics' },
     {
       id: 'api-integrations',
@@ -46,6 +47,7 @@ function tr(key, fallback, vars) {
     { id: 'profile', path: 'profile.html', icon: 'fa-user', label: 'My Profile', group: 'system' },
     { id: 'users', path: 'users.html', icon: 'fa-users', label: 'Users', group: 'system' },
     { id: 'staff-management', path: 'users.html', icon: 'fa-user-plus', label: 'Staff Management', group: 'cafeteria' },
+    { id: 'manager-staff-management', path: '../manager/staff-management.html', icon: 'fa-user-plus', label: 'Staff Management', group: 'cafeteria' },
     { id: 'categories', path: 'categories.html', icon: 'fa-list', label: 'Categories', group: 'cafeteria' },
     { id: 'payments', path: 'payments.html', icon: 'fa-wallet', label: 'Payments', group: 'cafeteria' },
     { id: 'menu', path: 'menu.html', icon: 'fa-bowl-food', label: 'Menu / Foods', group: 'cafeteria' },
@@ -53,6 +55,9 @@ function tr(key, fallback, vars) {
     { id: 'orders', path: 'orders.html', icon: 'fa-receipt', label: 'Orders', group: 'cafeteria' },
     { id: 'deliveries', path: 'deliveries.html', icon: 'fa-truck-fast', label: 'Deliveries', group: 'cafeteria' },
     { id: 'delivery-staff', path: '../manager/delivery-staff.html', icon: 'fa-solid fa-users', label: 'Delivery Staff', group: 'cafeteria' },
+    { id: 'manager-menu', path: '../manager/menu.html', icon: 'fa-bowl-food', label: 'Menu / Foods', group: 'cafeteria' },
+    { id: 'manager-categories', path: '../manager/categories.html', icon: 'fa-list', label: 'Categories', group: 'cafeteria' },
+    { id: 'manager-tables', path: '../manager/tables.html', icon: 'fa-table-cells-large', label: 'Tables', group: 'cafeteria' },
     {
       id: 'cancellations',
       path: 'cancellations.html',
@@ -61,15 +66,17 @@ function tr(key, fallback, vars) {
       group: 'cafeteria',
     },
     { id: 'feedback', path: 'feedback.html', icon: 'fa-comment-dots', label: 'Feedback', group: 'cafeteria' },
-    { id: 'sales-report', path: 'reports.html#cf-sales', icon: 'fa-chart-line', label: 'Sales Report', group: 'analytics' },
-    { id: 'order-report', path: 'reports.html#cf-orders', icon: 'fa-receipt', label: 'Order Report', group: 'analytics' },
-    { id: 'payment-report', path: 'reports.html#cf-payments', icon: 'fa-credit-card', label: 'Payment Report', group: 'analytics' },
-    { id: 'inventory-report', path: 'reports.html#cf-inventory', icon: 'fa-boxes-stacked', label: 'Inventory / Stock Report', group: 'analytics' },
-    { id: 'tax-report', path: 'reports.html#tax', icon: 'fa-file-invoice', label: 'Tax / VAT', group: 'analytics' },
+    { id: 'sales-report', path: 'reports.html#sales', icon: 'fa-chart-line', label: 'Sales Report', group: 'analytics' },
+    { id: 'order-report', path: 'reports.html#orders', icon: 'fa-receipt', label: 'Order Report', group: 'analytics' },
+    { id: 'payment-report', path: 'reports.html#payments', icon: 'fa-credit-card', label: 'Payment Report', group: 'analytics' },
+    { id: 'inventory-report', path: 'reports.html#inventory', icon: 'fa-boxes-stacked', label: 'Inventory / Stock Report', group: 'analytics' },
+    // Tax / VAT is a page of its own (tax.html), not a tab of the financial
+    // page - the two dashboards are completely separate.
+    { id: 'tax-report', path: 'tax.html', icon: 'fa-file-invoice', label: 'Tax / VAT', group: 'analytics' },
     {
       id: 'revenue-report',
-      path: 'reports.html#revenue',
-      icon: 'fa-chart-pie',
+      path: 'revenue.html',
+      icon: 'fa-sack-dollar',
       label: 'Revenue / System Analytics',
       group: 'analytics',
     },
@@ -87,21 +94,13 @@ function tr(key, fallback, vars) {
         'users',
         'cafeterias',
         'settings',
+        'profile',
+        'security',
         'reports',
         'activity',
         'tax-report',
         'revenue-report',
       ],
-    },
-  ];
-
-  var CAFETERIA_ADMIN_GROUPS = [
-    { id: 'main', label: 'MAIN', labelKey: 'admin_main', pages: ['dashboard', 'notifications'] },
-    {
-      id: 'cafeteria',
-      label: 'CAFETERIA ADMIN',
-      labelKey: 'admin_cafeteria_admin',
-      pages: ['staff-management', 'menu', 'categories', 'tables', 'settings', 'stock-alerts'],
     },
   ];
 
@@ -117,9 +116,16 @@ function tr(key, fallback, vars) {
         'deliveries',
         'cancellations',
         'feedback',
-        'reports',
+        'manager-reports',
         'inventory',
+        'stock-alerts',
+        'manager-menu',
+        'manager-categories',
+        'manager-tables',
+        'manager-staff-management',
         'delivery-staff',
+        'settings',
+        'profile',
       ],
     },
   ];
@@ -127,23 +133,37 @@ function tr(key, fallback, vars) {
   // Current page detection
   function getCurrentPageId() {
     var path = window.location.pathname.split('/').pop().replace('.html', '');
+    var isManager = window.location.pathname.indexOf('/manager/') !== -1;
+    if (isManager) {
+      var managerPageMap = {
+        'dashboard': 'manager-overview',
+        'reports': 'manager-reports',
+        'staff-management': 'manager-staff-management',
+        'menu': 'manager-menu',
+        'categories': 'manager-categories',
+        'tables': 'manager-tables',
+      };
+      return managerPageMap[path] || path;
+    }
     if (path === 'users') {
       var r = (localStorage.getItem('userRole') || localStorage.getItem('role') || '').toLowerCase();
-      if (r.indexOf('cafeteria') !== -1 && r.indexOf('admin') !== -1) return 'staff-management';
+      if (r.indexOf('manager') !== -1) return 'staff-management';
     }
+    // The financial dashboard lives on its own page (revenue.html) and the tax
+    // compliance dashboard on another one (tax.html).
+    if (path === 'revenue') return 'revenue-report';
+    if (path === 'tax') return 'tax-report';
     return path || 'dashboard';
   }
 
-  // Detect the active report sub-page from URL hash (e.g. #cf-sales → sales-report)
+  // Detect the active report sub-page from the URL hash (e.g. #orders -> order-report)
   function getActiveReportPageId() {
     var hash = window.location.hash.replace('#', '');
     var hashToPage = {
-      'cf-sales': 'sales-report',
-      'cf-orders': 'order-report',
-      'cf-payments': 'payment-report',
-      'cf-inventory': 'inventory-report',
-      tax: 'tax-report',
-      revenue: 'revenue-report',
+      sales: 'sales-report',
+      orders: 'order-report',
+      payments: 'payment-report',
+      inventory: 'inventory-report',
     };
     return hashToPage[hash] || null;
   }
@@ -257,17 +277,18 @@ function tr(key, fallback, vars) {
     }
 
     var groups =
-      currentRole === 'cafeteria_admin'
-        ? CAFETERIA_ADMIN_GROUPS
-        : currentRole === 'manager'
-          ? MANAGER_GROUPS
-          : SYSTEM_ADMIN_GROUPS;
+      currentRole === 'manager'
+        ? MANAGER_GROUPS
+        : SYSTEM_ADMIN_GROUPS;
 
     groups.forEach(function (group) {
       var pages = group.pages.filter(function (pageId) {
-        return visible.length === 0 || visible.indexOf(pageId) !== -1;
+        return visible.indexOf(pageId) !== -1;
       });
       if (pages.length === 0) return;
+
+      // Which report (if any) the URL hash points at, e.g. #tax -> Tax / VAT.
+      var reportPageId = getActiveReportPageId();
 
       var groupTitle = t(group.labelKey, group.label);
       html += '<div class="sidebar-group">';
@@ -290,12 +311,17 @@ function tr(key, fallback, vars) {
           payments: 'admin_payments',
           cancellations: 'admin_cancellations',
           feedback: 'admin_feedback',
-          reports: 'admin_reports',
+          reports: 'admin_reports_analytics',
+          'manager-reports': 'admin_reports_analytics',
           'sales-report': 'admin_sales_report',
           'order-report': 'admin_order_report',
           'payment-report': 'admin_payment_report',
           'inventory-report': 'admin_inventory_report',
           'manager-overview': 'admin_manager_overview',
+          'manager-staff-management': 'admin_staff_management',
+          'manager-menu': 'admin_menu',
+          'manager-categories': 'admin_categories',
+          'manager-tables': 'admin_tables',
           issues: 'admin_issue_reports',
           'stock-alerts': 'kitchen_nav_stock_alerts',
           inventory: 'admin_inventory',
@@ -320,8 +346,13 @@ function tr(key, fallback, vars) {
           labelKey = 'admin_system_settings';
         }
         var translatedLabel = t(labelKey, page.label);
-        var reportPageId = getActiveReportPageId();
-        var isActive = pageId === currentPageId || (reportPageId && pageId === reportPageId);
+        // A hash-selected report wins over the page itself, so opening
+        // reports.html#orders highlights the matching report entry and not the
+        // page entry too.
+        // A hash that maps to a report which is NOT part of this sidebar
+        // (e.g. #orders -> "Order Report") leaves the page entry highlighted.
+        var reportPageRendered = !!(reportPageId && group.pages.indexOf(reportPageId) !== -1);
+        var isActive = reportPageRendered ? pageId === reportPageId : pageId === currentPageId;
         html += '<a href="' + base + page.path + '" class="sidebar-link' + (isActive ? ' active' : '') + '"';
         if (pageId === 'cancellations') {
           html += ' id="sidebarCancellationLink"';
@@ -620,7 +651,6 @@ function tr(key, fallback, vars) {
       if (window.ScosRoles) {
         var brandRole = ScosRoles.getCurrentRole();
         if (brandRole === 'manager') brandHref = '../manager/dashboard.html';
-        else if (brandRole === 'cafeteria_admin') brandHref = '../admin/admin-dashboard.html';
       }
     } catch (e) {}
     try {
@@ -832,8 +862,6 @@ function tr(key, fallback, vars) {
         'kitchen',
         'foodmaker',
         'cashier',
-        'cafeteria_admin',
-        'cafeteria admin',
         'manager',
       ];
       allowed = allowedRoles.includes(userRole) || allowedRoles.includes(role);
@@ -856,7 +884,12 @@ function tr(key, fallback, vars) {
       if (canonical === 'manager' && currentPage === 'dashboard') {
         checkPage = 'manager-overview';
       }
-      if (allowedPages.length > 0 && allowedPages.indexOf(checkPage) === -1) {
+      // Page-level access check: redirect if role cannot access this page.
+      // An EMPTY allowedPages list means the role has no admin page at all
+      // (kitchen / delivery / customer), so it is a redirect too - the old
+      // `allowedPages.length > 0` guard let those roles walk straight into the
+      // system-admin dashboard.
+      if (allowedPages.indexOf(checkPage) === -1) {
         window.location.href = ScosRoles.dashboardForRole(canonical);
         return false;
       }
@@ -995,7 +1028,7 @@ function tr(key, fallback, vars) {
     }
 
     // Keep sidebar active state in sync with report hash tabs
-    // (e.g. reports.html#tax ↔ Tax / VAT).
+    // (e.g. reports.html#orders ↔ Order Report).
     window.addEventListener('hashchange', function () {
       renderSidebar(getCurrentPageId());
     });

@@ -17,8 +17,6 @@
     admin: 'admin',
     systemadmin: 'admin',
     'system admin': 'system_admin',
-    cafeteria_admin: 'cafeteria_admin',
-    'cafeteria admin': 'cafeteria_admin',
     manager: 'manager',
     cafeteria_manager: 'manager',
     'cafeteria manager': 'manager',
@@ -42,7 +40,6 @@
     'kitchen',
     'admin',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'cashier',
     'delivery',
@@ -51,7 +48,6 @@
   var STAFF_ROLES = [
     'admin',
     'system_admin',
-    'cafeteria_admin',
     'manager',
     'cashier',
     'kitchen',
@@ -63,7 +59,6 @@
   var DASHBOARD_REDIRECTS = {
     admin: '../admin/dashboard.html',
     system_admin: '../admin/dashboard.html',
-    cafeteria_admin: '../admin/admin-dashboard.html',
     manager: '../manager/dashboard.html',
     cashier: '../cashier/dashboard.html',
     kitchen: '../kitchen/dashboard.html',
@@ -74,7 +69,6 @@
   // Admin-chrome sidebar page ids visible per staff role, matching backend
   // route guards (see Backend/src/routes/*.js).
   // System Admin (admin/system_admin): system-level management only.
-  // Cafeteria Admin (cafeteria_admin): cafeteria administration only.
   var PAGE_ACCESS = {
     admin: [
       'dashboard',
@@ -82,6 +76,8 @@
       'users',
       'cafeterias',
       'settings',
+      'profile',
+      'security',
       'reports',
       'activity',
       'tax-report',
@@ -93,22 +89,12 @@
       'users',
       'cafeterias',
       'settings',
+      'profile',
+      'security',
       'reports',
       'activity',
       'tax-report',
       'revenue-report',
-    ],
-    cafeteria_admin: [
-      'dashboard',
-      'admin-dashboard',
-      'notifications',
-      'staff-management',
-      'menu',
-      'categories',
-      'tables',
-      'payments',
-      'settings',
-      'stock-alerts',
     ],
     manager: [
       'manager-overview',
@@ -117,10 +103,23 @@
       'deliveries',
       'cancellations',
       'feedback',
-      'reports',
+      'manager-reports',
       'inventory',
+      'stock-alerts',
+      'manager-menu',
+      'manager-categories',
+      'manager-tables',
+      'manager-staff-management',
+      'settings',
+      'profile',
     ],
     cashier: ['dashboard', 'notifications', 'orders', 'payments', 'sales', 'receipts'],
+    // Roles that never use the admin chrome. An empty list means "no admin
+    // page at all" - it must NOT fall back to the admin list, which used to
+    // hand a kitchen or delivery account the full system-admin sidebar.
+    kitchen: [],
+    delivery: [],
+    customer: [],
   };
 
   function normalizeRole(role) {
@@ -152,7 +151,10 @@
 
   function visiblePages(role) {
     var r = normalizeRole(role);
-    return (PAGE_ACCESS[r] || PAGE_ACCESS.admin).slice();
+    // NO fallback to the admin list: an unknown role has no admin page.
+    // (It used to fall back to PAGE_ACCESS.admin, which handed kitchen and
+    // delivery accounts the full system-admin sidebar.)
+    return (PAGE_ACCESS[r] || []).slice();
   }
 
   global.ScosRoles = {

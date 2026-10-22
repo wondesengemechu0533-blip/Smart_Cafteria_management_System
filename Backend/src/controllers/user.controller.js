@@ -77,7 +77,8 @@ exports.getAllUsers = async (req, res) => {
     let filter = {};
 
     const actorIsSystemAdmin = isSystemAdminRole(req.user.role);
-    const actorIsCafeteriaAdmin = normalizeRole(req.user.role) === 'cafeteria_admin';
+    const actorIsManager = normalizeRole(req.user.role) === 'manager';
+    const actorIsCafeteriaScoped = actorIsManager;
 
     if (search) {
       filter.$or = [
@@ -96,8 +97,8 @@ exports.getAllUsers = async (req, res) => {
     }
     if (status && status !== 'all') filter.status = status.toUpperCase();
 
-    if (actorIsCafeteriaAdmin) {
-      // Cafeteria admins may only see operational staff in their own cafeteria.
+    if (actorIsCafeteriaScoped) {
+      // Cafeteria admins and managers may only see operational staff in their own cafeteria.
       if (filter.role) {
         const requested = Array.isArray(filter.role.$in) ? filter.role.$in : [filter.role];
         const allowed = requested.filter((r) => CAFETERIA_OPERATIONAL_ROLES.includes(r));
@@ -146,7 +147,8 @@ exports.getUserById = async (req, res) => {
     if (!user) {
       return res.status(HTTP_STATUS.NOT_FOUND).json({ success: false, error: 'User not found' });
     }
-    if (normalizeRole(req.user.role) === 'cafeteria_admin') {
+    const actorRole = normalizeRole(req.user.role);
+    if (actorRole === 'manager') {
       if (!CAFETERIA_OPERATIONAL_ROLES.includes(normalizeRole(user.role))) {
         return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: 'You do not have permission to view this user' });
       }
@@ -723,16 +725,18 @@ exports.toggleUserStatus = async (req, res) => {
  */
 exports.getUserStats = async (req, res) => {
   try {
-    const actorIsCafeteriaAdmin = normalizeRole(req.user.role) === 'cafeteria_admin';
-    const baseFilter = actorIsCafeteriaAdmin
+    const actorRole = normalizeRole(req.user.role);
+    const actorIsManager = actorRole === 'manager';
+    const actorIsCafeteriaScoped = actorIsManager;
+    const baseFilter = actorIsCafeteriaScoped
       ? { role: { $in: CAFETERIA_OPERATIONAL_ROLES }, ...(req.user.cafeteriaId ? { cafeteriaId: req.user.cafeteriaId } : {}) }
       : {};
 
     const totalUsers = await User.countDocuments(baseFilter);
-    const activeCustomers = actorIsCafeteriaAdmin
+    const activeCustomers = actorIsCafeteriaScoped
       ? 0
       : await User.countDocuments({ ...baseFilter, role: 'customer', status: 'ACTIVE', isActive: true });
-    const staffCount = await User.countDocuments({ ...baseFilter, role: { $in: ['kitchen', 'admin'] } });
+    const staffCount = await User.countDocuments({ ...baseFilter, role: { $in: ['kitchen', 'delivery', 'cashier'] } });
     const blockedCount = await User.countDocuments({ ...baseFilter, status: 'BLOCKED', isActive: false });
     const suspendedCount = await User.countDocuments({ ...baseFilter, status: 'SUSPENDED' });
 

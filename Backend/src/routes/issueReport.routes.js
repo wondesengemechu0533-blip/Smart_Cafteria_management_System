@@ -23,17 +23,16 @@ const VIEW_ROLES = [
   ...KITCHEN_ROLES,
   'manager',
   'cafeteria_manager',
-  'cafeteria_admin',
   'admin',
   'system_admin',
 ];
 // Review actions (review / investigate notes / send admin request) stay
 // available to the manager.
-const REVIEW_ROLES = ['manager', 'cafeteria_manager', 'cafeteria_admin', 'admin', 'system_admin'];
-// Resolution (REQUEST_SENT → RESOLVED) is restricted to cafeteria/system admins:
+const REVIEW_ROLES = ['manager', 'cafeteria_manager', 'admin', 'system_admin'];
+// Resolution (REQUEST_SENT → RESOLVED) is restricted to system admins:
 // the Cafeteria Manager may investigate and request fixes but never close a
 // report. Enforced here so direct API calls with a manager JWT get 403.
-const RESOLVER_ROLES = ['cafeteria_admin', 'admin', 'system_admin'];
+const RESOLVER_ROLES = ['admin', 'system_admin'];
 
 /**
  * @route   POST /api/v1/issues

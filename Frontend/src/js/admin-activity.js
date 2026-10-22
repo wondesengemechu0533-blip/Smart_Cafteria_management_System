@@ -237,7 +237,10 @@ function tr(key, fallback, vars) {
     var label;
     if (r === 'admin' || r === 'system_admin' || r === 'system') label = tr('role_system_admin', 'System Admin');
     else if (r === 'manager' || r === 'cafeteria_manager') label = tr('role_cafeteria_manager', 'Cafeteria Manager');
-    else if (r === 'cafeteria_admin') label = tr('role_cafeteria_admin', 'Cafeteria Admin');
+    // 'cafeteria_admin' is a legacy alias of 'manager' (see config/roles.js), so
+    // it renders as Cafeteria Manager instead of a separate Cafeteria Admin
+    // role that no longer exists.
+    else if (r === 'cafeteria_admin') label = tr('role_cafeteria_manager', 'Cafeteria Manager');
     else if (r === 'kitchen') label = tr('admin_user_role_kitchen', 'Kitchen Staff');
     else if (r === 'delivery') label = tr('role_delivery', 'Delivery Staff');
     else if (r === 'cashier') label = tr('role_cashier', 'Cashier');

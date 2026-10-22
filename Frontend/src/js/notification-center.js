@@ -108,6 +108,13 @@
       orderType: raw.orderType || meta.orderType || null,
       totalAmount: raw.totalAmount != null ? raw.totalAmount : meta.totalAmount != null ? meta.totalAmount : null,
       cancellationReason: raw.cancellationReason || meta.cancellationReason || null,
+      // Order details the kitchen card shows. Read from the top level first so
+      // a producer that sets them explicitly wins over the `meta` copy.
+      items: Array.isArray(raw.items) ? raw.items : Array.isArray(meta.items) ? meta.items : null,
+      paymentStatus: raw.paymentStatus || meta.paymentStatus || null,
+      orderStatus: raw.orderStatus || meta.orderStatus || null,
+      orderTypeLabel: raw.orderTypeLabel || meta.orderTypeLabel || null,
+      orderTime: raw.orderTime || meta.orderTime || null,
       // Delivery-domain tags. The backend sets them explicitly on assignment
       // notices (`assignment`/`unassigned`) and on every delivery lifecycle
       // step (`deliveryStatus`, `failureReason`), so a panel can filter on real

@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu Management - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css">
+
+    <!-- Bootstrap CSS (required for grid + components) -->
+
+    <!-- Admin CSS stylesheet -->
+<link rel="stylesheet" href="/src/css/admin.css">
+    <link rel="stylesheet" href="/src/css/image-upload.css">
+    
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css">
+    <script src="../../js/theme.js"></script>
+
+    <style>
+        .stock-hero small { display: block; color: #6b7280; font-size: 0.82rem; }
+    </style>
+</head>
+<body class="admin-body">
+
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+        <aside class="admin-sidebar" id="adminSidebar"></aside>
+        <main class="admin-main">
+            <div class="page-header">
+                <div>
+                    <h1>Menu / Foods Management</h1>
+                    <p class="subtitle">Manage menu items, categories, and availability</p>
+                </div>
+                <div class="page-actions">
+                    <button class="btn btn-primary" id="openAddMenuModalBtn">
+                        <i class="fa-solid fa-plus"></i> Add Menu Item
+                    </button>
+                </div>
+            </div>
+
+            <!-- STATS CARDS -->
+            <div class="metrics-grid mb-4">
+                <div class="metric-card" data-nav="menu.html">
+                    <div class="metric-icon bg-indigo">
+                        <i class="fa-solid fa-bowl-food"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Total Items</span>
+                        <h2 class="metric-value" id="metricTotalItems">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="menu.html">
+                    <div class="metric-icon bg-green">
+                        <i class="fa-solid fa-circle-check"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Available Items</span>
+                        <h2 class="metric-value" id="metricAvailableItems">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="menu.html">
+                    <div class="metric-icon bg-orange">
+                        <i class="fa-solid fa-circle-xmark"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Out of Stock</span>
+                        <h2 class="metric-value" id="metricOutOfStockItems">0</h2>
+                    </div>
+                </div>
+                <div class="metric-card" data-nav="categories.html">
+                    <div class="metric-icon bg-red">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <div class="metric-content">
+                        <span class="metric-label">Categories</span>
+                        <h2 class="metric-value" id="metricTotalCategories">0</h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- FILTERS & SEARCH -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <input type="text" id="menuSearchInput" class="form-control" placeholder="Search by name (EN/AM), description...">
+                        </div>
+                        <div class="col-md-3">
+                            <select id="categoryFilter" class="form-select">
+                                <option value="">All Categories</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select id="availabilityFilter" class="form-select">
+                                <option value="">All Availability</option>
+                                <option value="AVAILABLE">Available</option>
+                                <option value="OUT_OF_STOCK">Out of Stock</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select id="menuSortSelect" class="form-select">
+                                <option value="newest">Newest First</option>
+                                <option value="oldest">Oldest First</option>
+                                <option value="name">Name A-Z</option>
+                                <option value="price-asc">Price Low to High</option>
+                                <option value="price-desc">Price High to Low</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-secondary w-100" id="resetMenuFiltersBtn">
+                                <i class="fa-solid fa-rotate-left"></i> Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- MENU ITEMS TABLE -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3 class="card-title"><i class="fa-solid fa-list"></i> All Menu Items</h3>
+                    <span class="badge bg-secondary" id="menuPaginationInfo">Page 1 of 1 (0 items)</span>
+                </div>
+                <div class="table-wrapper">
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Category</th>
+                                <th>Price</th>
+                                <th>Stock</th>
+                                <th>Prep Time</th>
+                                <th>Availability</th>
+                                <th>Updated</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="menuTableBody">
+                            <tr><td colspan="8" class="table-empty">Loading menu items...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="card-footer d-flex justify-content-between align-items-center">
+                    <div class="d-flex gap-2" id="menuPaginationControls">
+                        <button class="btn btn-sm btn-outline-secondary" id="menuPrevPageBtn" disabled><i class="fa-solid fa-chevron-left"></i></button>
+                        <button class="btn btn-sm btn-outline-secondary" id="menuNextPageBtn" disabled><i class="fa-solid fa-chevron-right"></i></button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- ===== ADD / EDIT MENU ITEM MODAL ===== -->
+    <div class="modal-overlay" id="menuItemModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="menuModalTitle">Add New Menu Item</h3>
+                <button class="modal-close" data-close-modal="menuItemModal">&times;</button>
+            </div>
+            <form id="menuItemForm">
+                <input type="hidden" name="id" id="itemId">
+                <div class="modal-body">
+                    <h4 class="form-section-title"><i class="fa-solid fa-tag"></i> Basic Information</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="itemNameEn" class="form-label">English Name <span class="required">*</span></label>
+                            <input type="text" name="name_en" id="itemNameEn" class="form-control" placeholder="e.g. Special Doro Wat" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="itemNameAm" class="form-label">Amharic Name <span class="required">*</span></label>
+                            <input type="text" name="name_am" id="itemNameAm" class="form-control" placeholder="????? ??">
+                        </div>
+                        <div class="form-group">
+                            <label for="itemCategory" class="form-label">Category <span class="required">*</span></label>
+                            <select name="category" id="itemCategory" class="form-select" required>
+                                <option value="">Select category</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <h4 class="form-section-title"><i class="fa-solid fa-coins"></i> Pricing &amp; Stock</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="itemPrice" class="form-label">Price (ETB) <span class="required">*</span></label>
+                            <input type="number" name="price" id="itemPrice" class="form-control" step="0.01" min="0" placeholder="0.00" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="itemPrepTime" class="form-label">Preparation Time (min)</label>
+                            <input type="number" name="preparationTime" id="itemPrepTime" class="form-control" min="1" value="10">
+                        </div>
+                        <div class="form-group">
+                            <label for="itemStockQuantity" class="form-label">Stock Quantity</label>
+                            <input type="number" id="itemStockQuantity" class="form-control" min="0" step="1" value="0">
+                        </div>
+                        <div class="form-group">
+                            <label for="itemLowStockThreshold" class="form-label">Low-stock Threshold</label>
+                            <input type="number" id="itemLowStockThreshold" class="form-control" min="0" step="1" value="5">
+                        </div>
+                    </div>
+
+                    <h4 class="form-section-title"><i class="fa-solid fa-bell"></i> Availability &amp; Promotion</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">Availability</label>
+                            <label class="switch">
+                                <input type="checkbox" name="available" id="itemAvailable" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                            <small id="itemAvailableLabel" class="form-text">Available for ordering</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Promotion</label>
+                            <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+                                <label class="switch"><input type="checkbox" id="itemPopular"><span class="switch-slider"></span><span class="switch-caption">Popular</span></label>
+                                <label class="switch"><input type="checkbox" id="itemRecommended"><span class="switch-slider"></span><span class="switch-caption">Recommended</span></label>
+                                <label class="switch"><input type="checkbox" id="itemHomepage"><span class="switch-slider"></span><span class="switch-caption">Show on Homepage</span></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h4 class="form-section-title"><i class="fa-solid fa-align-left"></i> Description</h4>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="itemDescriptionEn" class="form-label">Description (English)</label>
+                            <textarea name="description_en" id="itemDescriptionEn" class="form-control" rows="2" placeholder="Brief description in English..."></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="itemDescriptionAm" class="form-label">Description (Amharic)</label>
+                            <textarea name="description_am" id="itemDescriptionAm" class="form-control" rows="2" placeholder="?? ???? ???..."></textarea>
+                        </div>
+                    </div>
+
+                    <h4 class="form-section-title"><i class="fa-solid fa-image"></i> Item Image</h4>
+                    <div class="form-row upload-row">
+                        <div class="form-group">
+                            <label for="itemImageFile" class="form-label">Upload Image (JPG, PNG, WEBP, max 2 MB)</label>
+                            <input type="file" name="image" id="itemImageFile" class="form-control" accept="image/jpeg,image/png,image/webp">
+                        </div>
+                        <div class="form-group">
+                            <label for="itemImageUrl" class="form-label">...or Image URL</label>
+                            <div class="upload-url-row">
+                                <input type="url" name="image_url" id="itemImageUrl" class="form-control" placeholder="https://example.com/image.jpg">
+                                <div class="url-feedback" id="urlFeedback"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="file-preview" id="imagePreviewRow" style="display:none;">
+                        <div class="image-preview-wrap">
+                            <img id="itemImagePreview" alt="Preview">
+                            <div class="img-loading" id="imageLoading" style="display:none;"><div class="spinner"></div></div>
+                            <div class="img-error" id="imageError" style="display:none;"><i class="fa-solid fa-circle-exclamation"></i> Failed</div>
+                        </div>
+                        <button type="button" class="btn-remove-file" id="removeImageBtn"><i class="fa-solid fa-trash-can"></i> Remove Image</button>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal="menuItemModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveMenuItemBtn">Save Item</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ===== VIEW MENU ITEM MODAL ===== -->
+    <div class="modal-overlay" id="viewItemModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Menu Item Details</h3>
+                <button class="modal-close" data-close-modal="viewItemModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="detail-hero">
+                    <img id="viewItemImage" class="img-thumb" alt="Item image" src="">
+                    <div>
+                        <h4 id="viewItemName">—</h4>
+                        <div id="viewItemCategory" class="form-text">—</div>
+                    </div>
+                </div>
+                <div class="detail-grid">
+                    <div class="detail-item"><span>Item ID</span><strong id="viewItemId">—</strong></div>
+                    <div class="detail-item"><span>Price</span><strong id="viewItemPrice">—</strong></div>
+                    <div class="detail-item"><span>Availability</span><strong id="viewItemAvailability">—</strong></div>
+                    <div class="detail-item"><span>Prep Time</span><strong id="viewItemPrepTime">—</strong></div>
+                    <div class="detail-item"><span>Description (EN)</span><strong id="viewItemDescEn">—</strong></div>
+                    <div class="detail-item"><span>Description (AM)</span><strong id="viewItemDescAm">—</strong></div>
+                    <div class="detail-item"><span>Created</span><strong id="viewItemCreated">—</strong></div>
+                    <div class="detail-item"><span>Last Updated</span><strong id="viewItemUpdated">—</strong></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-close-modal="viewItemModal">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TOGGLE AVAILABILITY MODAL ===== -->
+    <div class="modal-overlay" id="toggleAvailModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 class="modal-title" id="toggleAvailTitle">Toggle Availability</h3>
+                <button class="modal-close" data-close-modal="toggleAvailModal">&times;</button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="confirm-icon" id="toggleAvailIconWrap">
+                    <i class="fa-solid fa-circle-question"></i>
+                </div>
+                <p class="confirm-text" id="toggleAvailMsg">Are you sure you want to change availability?</p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary" data-close-modal="toggleAvailModal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="confirmToggleAvailBtn">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== DELETE MENU ITEM MODAL ===== -->
+    <div class="modal-overlay" id="deleteItemModal">
+        <div class="modal modal-sm">
+            <div class="modal-header modal-header-danger">
+                <h3 class="modal-title">Delete Menu Item</h3>
+                <button class="modal-close" data-close-modal="deleteItemModal">&times;</button>
+            </div>
+            <div class="modal-body text-center">
+                <div class="confirm-icon danger">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <p class="confirm-text">Are you sure you want to delete <strong id="deleteItemName">—</strong>?</p>
+                <p class="confirm-subtext">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-secondary" data-close-modal="deleteItemModal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteItemBtn">
+                    <i class="fa-solid fa-trash"></i> Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== UPDATE STOCK MODAL ===== -->
+    <div class="modal-overlay" id="stockModal">
+        <div class="modal modal-sm">
+            <div class="modal-header">
+                <h3 class="modal-title">Update Stock</h3>
+                <button class="modal-close" data-close-modal="stockModal">&times;</button>
+            </div>
+            <form id="stockForm">
+                <div class="modal-body">
+                    <div class="stock-hero">
+                        <img id="stockItemThumb" class="img-thumb-sm" src="" alt="">
+                        <div>
+                            <strong id="stockItemName">—</strong>
+                            <small id="stockItemCat">—</small>
+                        </div>
+                    </div>
+                    <input type="hidden" id="stockItemId">
+                    <div class="form-group mt-3">
+                        <label class="form-label">Current Stock</label>
+                        <input type="number" id="stockCurrentQty" class="form-control" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">New Stock Quantity <span class="required">*</span></label>
+                        <input type="number" id="stockNewQty" class="form-control" min="0" step="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Low Stock Threshold</label>
+                        <input type="number" id="stockThreshold" class="form-control" min="0" step="1" value="5">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-close-modal="stockModal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveStockBtn">Save Stock</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/image-upload-manager.js"></script>
+    <script src="../../js/admin-menu.js"></script>
+
+    <script>
+        // Page-specific initialization
+        function initPageSpecific() {
+            // admin-menu.js handles initialization via its own DOMContentLoaded
+        }
+    </script>
+</body>
+</html>
+
+

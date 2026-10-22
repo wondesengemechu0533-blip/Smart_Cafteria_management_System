@@ -4,9 +4,23 @@ function tr(key, fallback, vars) {
 }
 /**
  * ================================================================
- * SMART CAFETERIA ORDERING SYSTEM - ADMIN SETTINGS
+ * SMART CAFETERIA ORDERING SYSTEM - SETTINGS
  * ================================================================
- * Sections: Profile, Security, System Config, Notifications, Sessions
+ * Sections: My Profile, My Security, Cafeteria Operations,
+ *           Fees & Delivery, Platform Permissions, My Notifications
+ *
+ * ROLE MODEL
+ *   Cafeteria Manager : owns the cafeteria - opening hours, order flow,
+ *                       delivery operations and (only when the System Admin
+ *                       authorized it) the delivery fee + service fee.
+ *   System Admin      : owns the platform - may configure and override
+ *                       everything, including global currency, global order
+ *                       limits and system-wide security & access.
+ *
+ * The backend (PUT /admin/settings/:key) is the authority and answers 403 for
+ * a key this role may not change. This script only mirrors that matrix so the
+ * page never offers a button that is guaranteed to be refused, and it reads
+ * the authoritative matrix from GET /admin/settings (`permissions`).
  * ================================================================
  */
 (function () {
@@ -16,7 +30,7 @@ function tr(key, fallback, vars) {
 
   function $(id) { return document.getElementById(id); }
   function val(id, fb) { const el = $(id); return el ? (el.value || '').trim() : (fb || ''); }
-  function num(id, fb) { return Number(val(id, String(fb))) || fb; }
+  function num(id, fb) { const n = Number(val(id, String(fb))); return Number.isFinite(n) ? n : fb; }
   function chk(id) { const el = $(id); return el ? !!el.checked : false; }
 
   /* ---------- alert ---------- */
@@ -39,21 +53,156 @@ function tr(key, fallback, vars) {
     else { btn.disabled = false; btn.innerHTML = btn._o || btn.innerHTML; btn._o = null; }
   }
 
+  /* =============================================
+     0. ROLE + PERMISSION STATE
+     ============================================= */
+  const state = {
+    role: 'customer',
+    isSystemAdmin: false,
+    feeManagementAuthorized: true,
+    editable: {},
+    restricted: {},
+  };
+
+  function currentRole() {
+    try {
+      if (window.ScosRoles && typeof window.ScosRoles.getCurrentRole === 'function') {
+        return window.ScosRoles.getCurrentRole();
+      }
+    } catch (e) { /* ignore */ }
+    const raw = localStorage.getItem('userRole') || localStorage.getItem('role') || '';
+    return String(raw).toLowerCase();
+  }
+
+  function canEdit(key) {
+    if (state.editable && typeof state.editable[key] === 'boolean') return state.editable[key];
+    return state.isSystemAdmin;
+  }
+
   function saveSetting(key, value) {
     return API().put('/admin/settings/' + encodeURIComponent(key), { value });
   }
 
-  async function loadSettingsMap() {
+  /**
+   * Save a group of settings, skipping the keys this role may not change.
+   * Returns the number of settings actually written.
+   */
+  async function saveGroup(entries) {
+    let saved = 0;
+    const skipped = [];
+    for (const [key, value] of entries) {
+      if (!canEdit(key)) { skipped.push(key); continue; }
+      await saveSetting(key, value);
+      saved += 1;
+    }
+    return { saved, skipped };
+  }
+
+  /**
+   * Apply the server-provided permission matrix to the form:
+   * restricted fields are disabled, badged and explained.
+   */
+  function applyPermissions(permissions) {
+    state.editable = (permissions && permissions.editable) || {};
+    state.restricted = (permissions && permissions.restricted) || {};
+    state.isSystemAdmin = !!(permissions && permissions.isSystemAdmin);
+    state.feeManagementAuthorized = !(permissions && permissions.feeManagementAuthorized === false);
+
+    document.querySelectorAll('[data-setting-key]').forEach((el) => {
+      const key = el.getAttribute('data-setting-key');
+      const editable = canEdit(key);
+      el.disabled = !editable;
+      if (!editable) {
+        el.title = state.restricted[key] || 'Only the system administrator can change this setting';
+      } else {
+        el.removeAttribute('title');
+      }
+
+      const wrap = el.closest('[data-restricted-field]');
+      if (wrap) {
+        wrap.classList.toggle('is-restricted', !editable);
+        const badge = wrap.querySelector('[data-restricted-badge]');
+        if (badge) {
+          badge.classList.toggle('hidden', editable);
+          if (!editable) {
+            badge.textContent = state.isSystemAdmin
+              ? 'Read only'
+              : (key === 'delivery_fee' || key === 'service_fee' ? 'Not authorized' : 'System Admin only');
+          }
+        }
+      }
+    });
+
+    // Platform permissions (authorizing managers to manage fees) is a
+    // System-Admin-only surface - hide the whole card for everybody else.
+    const permSection = $('platformPermissionsSection');
+    if (permSection) permSection.classList.toggle('hidden', !state.isSystemAdmin);
+
+    // A manager who is not authorized to manage the fees gets an explicit
+    // explanation instead of a mysteriously disabled input.
+    const feeNote = $('feeAuthorizationNote');
+    if (feeNote) {
+      const feeBlocked = !state.isSystemAdmin && !state.feeManagementAuthorized;
+      feeNote.classList.toggle('hidden', !feeBlocked);
+    }
+
+    // "Save All" only makes sense for a role that can write several groups.
+    const saveAllBtn = $('saveAllSettingsBtn');
+    if (saveAllBtn) saveAllBtn.classList.toggle('hidden', !state.isSystemAdmin);
+  }
+
+  /**
+   * Role-aware headings.
+   *
+   * This page is shared by the Cafeteria Manager and the System Admin, so the
+   * profile card is titled after the role that is actually signed in:
+   * "Manager Profile" for a cafeteria manager, "Admin Profile" for a system
+   * administrator.
+   */
+  function applyRoleLabels() {
+    const isManager = state.role === 'manager';
+    const title = $('profileSectionTitle');
+    if (title) {
+      title.textContent = isManager ? 'Manager Profile' : 'Admin Profile';
+      // Re-apply the active language so the heading is translated, not English.
+      title.setAttribute('data-i18n', isManager ? 'manager_profile_title' : 'admin_profile_title');
+    }
+    if (typeof window.applyTranslations === 'function') {
+      setTimeout(() => window.applyTranslations(), 0);
+    }
+  }
+
+  /**
+   * Hide the sections the signed-in role must not see.
+   *
+   * The Cafeteria Manager's settings page carries the cafeteria operations
+   * only. "Fees & Delivery" (delivery fee, service fee, delivery switch) and
+   * "My Notification Preferences" belong to the System Admin's settings page
+   * and are removed from the manager's view.
+   *
+   * This is a VIEW rule only - the backend keeps enforcing the permission
+   * matrix (config/setting-permissions.js), so the API stays the authority.
+   */
+  function applyRoleSections() {
+    const isManager = state.role === 'manager';
+    const fees = $('feesDeliverySection');
+    if (fees) fees.classList.toggle('hidden', isManager);
+    const notifications = $('notificationPreferencesSection');
+    if (notifications) notifications.classList.toggle('hidden', isManager);
+  }
+
+  async function loadSettings() {
     const data = await API().get('/admin/settings');
     const map = {};
     if (data.success && Array.isArray(data.settings)) {
       for (const s of data.settings) map[s.key] = s.value;
     }
+    applyPermissions(data.permissions || {});
     return map;
   }
 
   /* =============================================
-     1. ADMIN PROFILE
+     1. MY PROFILE
      ============================================= */
   async function loadProfile() {
     try {
@@ -63,6 +212,9 @@ function tr(key, fallback, vars) {
       $('adminProfileEmail').value = u.email || '';
       $('adminProfilePhone').value = u.phone || '';
       $('adminProfileAvatar').value = u.avatar || '';
+      // Per-account 2FA - this account only.
+      const twoFa = $('twoFactorEnabled');
+      if (twoFa) twoFa.checked = u.twoFactorEnabled === true;
       // Update avatar circle
       const circle = $('profileAvatarCircle');
       if (circle && u.name) circle.textContent = u.name.charAt(0).toUpperCase();
@@ -124,7 +276,7 @@ function tr(key, fallback, vars) {
   }
 
   /* =============================================
-     2. SECURITY SETTINGS
+     2. MY SECURITY (password + per-account 2FA)
      ============================================= */
   async function changePassword() {
     const cur = val('currentPassword');
@@ -149,98 +301,170 @@ function tr(key, fallback, vars) {
     finally { setLoading(btn, false); }
   }
 
+  /**
+   * 2FA is PER ACCOUNT: it is written to the caller's own user document, not
+   * to the global `two_factor_enabled` policy setting (which only the System
+   * Admin may change, on the Security page).
+   */
   async function save2FA() {
+    const el = $('twoFactorEnabled');
+    if (!el) return;
+    const next = el.checked;
     try {
-      await saveSetting('two_factor_enabled', chk('twoFactorEnabled'));
+      const data = await API().put('/auth/me', { twoFactorEnabled: next });
+      if (data && data.user && typeof data.user.twoFactorEnabled === 'boolean') {
+        el.checked = data.user.twoFactorEnabled;
+      }
       showAlert(tr('twofa_saved', 'Two-factor authentication setting saved'));
-    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save 2FA: ') + e.message, 'error'); }
+    } catch (e) {
+      el.checked = !next;
+      showAlert(tr('failed_save_settings', 'Failed to save 2FA: ') + e.message, 'error');
+    }
   }
 
   /* =============================================
-     3. SYSTEM CONFIGURATION
+     3. CAFETERIA OPERATIONS (opening hours + order flow)
      ============================================= */
-  function populateSystemConfig(m) {
+  function populateOperations(m) {
     $('cafeteriaOpeningTime').value = m.cafeteria_opening_time || '07:00';
     $('cafeteriaClosingTime').value = m.cafeteria_closing_time || '22:00';
     $('paymentCurrency').value = m.currency || 'ETB';
     $('maxDailyOrders').value = m.max_daily_orders || 100;
     $('orderAvailability').checked = m.order_availability !== false;
-    $('deliveryFee').value = m.delivery_fee || 30;
-    $('deliveryEnabled').checked = m.delivery_enabled !== false;
   }
 
-  async function saveSystemConfig() {
+  async function saveOperations() {
     const btn = $('saveSystemConfigBtn');
     setLoading(btn, true);
     try {
-      await saveSetting('cafeteria_opening_time', val('cafeteriaOpeningTime'));
-      await saveSetting('cafeteria_closing_time', val('cafeteriaClosingTime'));
-      await saveSetting('currency', val('paymentCurrency'));
-      await saveSetting('max_daily_orders', num('maxDailyOrders', 100));
-      await saveSetting('order_availability', chk('orderAvailability'));
-      showAlert(tr('config_saved', 'System configuration saved'));
+      const { skipped } = await saveGroup([
+        ['cafeteria_opening_time', val('cafeteriaOpeningTime')],
+        ['cafeteria_closing_time', val('cafeteriaClosingTime')],
+        ['currency', val('paymentCurrency')],
+        ['max_daily_orders', num('maxDailyOrders', 100)],
+        ['order_availability', chk('orderAvailability')],
+      ]);
+      showAlert(
+        skipped.length
+          ? tr('config_saved_partial', 'Cafeteria operations saved. Some system-wide settings are managed by the system administrator.')
+          : tr('config_saved', 'Cafeteria operations saved'),
+        skipped.length ? 'warning' : undefined
+      );
     } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save config: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
-  async function saveDeliveryConfig() {
+  /* =============================================
+     4. FEES & DELIVERY (delivery fee and service fee are SEPARATE)
+     ============================================= */
+  function populateFees(m) {
+    $('deliveryFee').value = m.delivery_fee ?? 30;
+    $('serviceFee').value = m.service_fee ?? 20;
+    $('deliveryEnabled').checked = m.delivery_enabled !== false;
+  }
+
+  async function saveFees() {
     const btn = $('saveDeliveryConfigBtn');
     setLoading(btn, true);
     try {
-      await saveSetting('delivery_fee', num('deliveryFee', 30));
-      await saveSetting('delivery_enabled', chk('deliveryEnabled'));
-      showAlert(tr('delivery_settings_saved', 'Delivery settings saved'));
+      const { skipped } = await saveGroup([
+        ['delivery_fee', num('deliveryFee', 30)],
+        ['service_fee', num('serviceFee', 20)],
+        ['delivery_enabled', chk('deliveryEnabled')],
+      ]);
+      showAlert(
+        skipped.length
+          ? tr('delivery_settings_saved_partial', 'Delivery settings saved. The fees are managed by the system administrator.')
+          : tr('delivery_settings_saved', 'Fees and delivery settings saved'),
+        skipped.length ? 'warning' : undefined
+      );
     } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save delivery settings: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
   /* =============================================
-     4. NOTIFICATION PREFERENCES
+     5. PLATFORM PERMISSIONS (system admin only)
      ============================================= */
-  function populateNotifications(m) {
-    $('notifyNewOrders').checked = m.notify_new_orders !== false;
-    $('notifyLowStock').checked = m.notify_low_stock !== false;
-    $('notifyDailySales').checked = m.notify_daily_sales === true;
-    $('notifySecurityLogin').checked = m.notify_security_login !== false;
+  function populatePermissions(m) {
+    const el = $('managerFeeManagement');
+    if (el) el.checked = m.manager_fee_management_enabled !== false;
+  }
+
+  async function savePermissions() {
+    const btn = $('savePermissionsBtn');
+    setLoading(btn, true);
+    try {
+      await saveGroup([['manager_fee_management_enabled', chk('managerFeeManagement')]]);
+      showAlert(tr('permissions_saved', 'Platform permissions saved'));
+      // Re-read the authoritative matrix so the fee fields follow the new rule.
+      const map = await loadSettings();
+      populateFees(map);
+    } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save permissions: ') + e.message, 'error'); }
+    finally { setLoading(btn, false); }
+  }
+
+  /* =============================================
+     6. MY NOTIFICATION PREFERENCES (per user)
+     ============================================= */
+  function populateNotifications(prefs) {
+    $('notifyNewOrders').checked = prefs.newOrders !== false;
+    $('notifyLowStock').checked = prefs.lowStock !== false;
+    $('notifyDailySales').checked = prefs.dailySales === true;
+    $('notifySecurityLogin').checked = prefs.securityLogin !== false;
+  }
+
+  async function loadNotificationPreferences() {
+    try {
+      const data = await API().get('/notifications/preferences');
+      populateNotifications((data && data.preferences) || {});
+    } catch (e) {
+      // Fall back to the platform defaults rather than showing wrong toggles.
+      populateNotifications({});
+    }
   }
 
   async function saveNotifications() {
     const btn = $('saveNotificationsBtn');
     setLoading(btn, true);
     try {
-      await saveSetting('notify_new_orders', chk('notifyNewOrders'));
-      await saveSetting('notify_low_stock', chk('notifyLowStock'));
-      await saveSetting('notify_daily_sales', chk('notifyDailySales'));
-      await saveSetting('notify_security_login', chk('notifySecurityLogin'));
+      const data = await API().put('/notifications/preferences', {
+        newOrders: chk('notifyNewOrders'),
+        lowStock: chk('notifyLowStock'),
+        dailySales: chk('notifyDailySales'),
+        securityLogin: chk('notifySecurityLogin'),
+      });
+      if (data && data.preferences) populateNotifications(data.preferences);
       showAlert(tr('notifications_saved', 'Notification preferences saved'));
     } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save notifications: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
 
-
   /* =============================================
-     SAVE ALL
+     SAVE ALL (system admin only)
      ============================================= */
   async function saveAllSettings() {
     const btn = $('saveAllSettingsBtn');
     setLoading(btn, true);
     try {
-      const all = {
-        cafeteria_opening_time: val('cafeteriaOpeningTime'),
-        cafeteria_closing_time: val('cafeteriaClosingTime'),
-        currency: val('paymentCurrency'),
-        max_daily_orders: num('maxDailyOrders', 100),
-        order_availability: chk('orderAvailability'),
-        delivery_fee: num('deliveryFee', 30),
-        delivery_enabled: chk('deliveryEnabled'),
-        two_factor_enabled: chk('twoFactorEnabled'),
-        notify_new_orders: chk('notifyNewOrders'),
-        notify_low_stock: chk('notifyLowStock'),
-        notify_daily_sales: chk('notifyDailySales'),
-        notify_security_login: chk('notifySecurityLogin')
-      };
-      for (const [k, v] of Object.entries(all)) await saveSetting(k, v);
-      showAlert(tr('all_settings_saved', 'All settings saved successfully'));
+      const entries = [
+        ['cafeteria_opening_time', val('cafeteriaOpeningTime')],
+        ['cafeteria_closing_time', val('cafeteriaClosingTime')],
+        ['currency', val('paymentCurrency')],
+        ['max_daily_orders', num('maxDailyOrders', 100)],
+        ['order_availability', chk('orderAvailability')],
+        ['delivery_fee', num('deliveryFee', 30)],
+        ['service_fee', num('serviceFee', 20)],
+        ['delivery_enabled', chk('deliveryEnabled')],
+        ['manager_fee_management_enabled', chk('managerFeeManagement')],
+      ];
+      const { saved } = await saveGroup(entries);
+      await API().put('/notifications/preferences', {
+        newOrders: chk('notifyNewOrders'),
+        lowStock: chk('notifyLowStock'),
+        dailySales: chk('notifyDailySales'),
+        securityLogin: chk('notifySecurityLogin'),
+      });
+      showAlert(tr('all_settings_saved', 'All settings saved successfully') + ' (' + saved + ')');
     } catch (e) { showAlert(tr('failed_save_settings', 'Failed to save all: ') + e.message, 'error'); }
     finally { setLoading(btn, false); }
   }
@@ -248,12 +472,35 @@ function tr(key, fallback, vars) {
   /* =============================================
      INIT
      ============================================= */
+  function repaintToggles() {
+    document.querySelectorAll('.toggle-checkbox').forEach(cb => {
+      const label = cb.nextElementSibling;
+      if (!label) return;
+      if (cb.checked) {
+        label.classList.remove('bg-gray-300');
+        label.classList.add('bg-emerald-500');
+        cb.classList.remove('border-gray-300');
+        cb.classList.add('border-emerald-500');
+      } else {
+        label.classList.remove('bg-emerald-500');
+        label.classList.add('bg-gray-300');
+        cb.classList.remove('border-emerald-500');
+        cb.classList.add('border-gray-300');
+      }
+    });
+  }
+
   async function init() {
+    state.role = currentRole();
+    applyRoleLabels();
+    applyRoleSections();
+
     $('adminProfileForm')?.addEventListener('submit', saveProfile);
     $('changePasswordBtn')?.addEventListener('click', changePassword);
     $('twoFactorEnabled')?.addEventListener('change', save2FA);
-    $('saveSystemConfigBtn')?.addEventListener('click', saveSystemConfig);
-    $('saveDeliveryConfigBtn')?.addEventListener('click', saveDeliveryConfig);
+    $('saveSystemConfigBtn')?.addEventListener('click', saveOperations);
+    $('saveDeliveryConfigBtn')?.addEventListener('click', saveFees);
+    $('savePermissionsBtn')?.addEventListener('click', savePermissions);
     $('saveNotificationsBtn')?.addEventListener('click', saveNotifications);
     $('saveAllSettingsBtn')?.addEventListener('click', saveAllSettings);
 
@@ -272,27 +519,14 @@ function tr(key, fallback, vars) {
     // Load data
     await loadProfile();
     try {
-      const map = await loadSettingsMap();
-      populateSystemConfig(map);
-      populateNotifications(map);
+      const map = await loadSettings();
+      populateOperations(map);
+      populateFees(map);
+      populatePermissions(map);
     } catch (e) { showAlert(tr('failed_load_settings', 'Failed to load settings: ') + e.message, 'error'); }
+    await loadNotificationPreferences();
 
-    // Re-apply toggle styling after settings are loaded from backend
-    document.querySelectorAll('.toggle-checkbox').forEach(cb => {
-      const label = cb.nextElementSibling;
-      if (!label) return;
-      if (cb.checked) {
-        label.classList.remove('bg-gray-300');
-        label.classList.add('bg-emerald-500');
-        cb.classList.remove('border-gray-300');
-        cb.classList.add('border-emerald-500');
-      } else {
-        label.classList.remove('bg-emerald-500');
-        label.classList.add('bg-gray-300');
-        cb.classList.remove('border-emerald-500');
-        cb.classList.add('border-gray-300');
-      }
-    });
+    repaintToggles();
 
     // Password show/hide toggle
     document.querySelectorAll(".toggle-password-icon").forEach(function (icon) {
@@ -310,6 +544,16 @@ function tr(key, fallback, vars) {
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  // Expose the role state so other admin scripts (e.g. the security page) can
+  // reuse the same rules instead of re-deriving them.
+  window.ScosSettings = {
+    currentRole,
+    canEdit,
+    isSystemAdmin: () => state.isSystemAdmin,
+    isFeeManagementAuthorized: () => state.feeManagementAuthorized,
+  };
+
   // Fallback theme application if theme.js not loaded
   function applyThemeFallback(theme) {
     var root = document.documentElement;

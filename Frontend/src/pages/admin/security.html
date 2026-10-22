@@ -9,6 +9,14 @@
     <link rel="stylesheet" href="/src/css/admin.css">
     <link rel="stylesheet" href="../../css/themes/dark-theme.css">
     <script src="../../js/theme.js"></script>
+    <style>
+        .toggle-checkbox:checked { right: 0; border-color: #ef4444; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #ef4444; }
+        .toggle-checkbox { transition: all 0.3s ease; }
+        .toggle-label { transition: background-color 0.3s ease; }
+        .alert-slide { animation: slideDown 0.4s ease-out; }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <header class="admin-navbar"></header>
@@ -22,24 +30,155 @@
                             <i class="fa-solid fa-shield-halved text-red-600 text-lg"></i>
                         </div>
                         <div>
-                            <h1 class="text-2xl font-bold text-gray-900">Security</h1>
-                            <p class="text-sm text-gray-500">Manage system security settings and authentication</p>
+                            <h1 class="text-2xl font-bold text-gray-900">System Security &amp; Access</h1>
+                            <p class="text-sm text-gray-500">System-wide authentication policies and access restrictions</p>
                         </div>
                     </div>
                 </div>
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 p-6">
-                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Security Configuration</h2>
-                    <p class="text-sm text-gray-500">Configure authentication policies, session timeouts, and access controls.</p>
+
+                <div id="securityAlert" class="hidden mb-6 p-4 rounded-xl text-sm font-medium alert-slide"></div>
+
+                <div id="securityDenied" class="hidden bg-white rounded-2xl shadow-sm border border-red-200 mb-6 p-6">
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-lock text-red-500 mt-1"></i>
+                        <div>
+                            <h2 class="text-lg font-semibold text-gray-900">System administrator only</h2>
+                            <p class="text-sm text-gray-500 mt-1">
+                                System-wide security and access policies are managed by the system administrator.
+                                Your own password and 2FA live in
+                                <a href="settings.html" class="text-blue-600 font-semibold">My Settings</a>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="securityContent">
+                    <!-- ===== SECTION 1: SESSION POLICY ===== -->
+                    <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6">
+                        <div class="px-6 py-5 border-b border-gray-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-lg bg-red-50 flex items-center justify-center">
+                                    <i class="fa-solid fa-clock-rotate-left text-red-600"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-900">Session Policy</h2>
+                                    <p class="text-xs text-gray-500">How long a staff session may stay idle</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                        <i class="fa-solid fa-hourglass-half text-gray-400 mr-1"></i> Session Timeout (minutes)
+                                    </label>
+                                    <input type="number" id="sessionTimeoutMinutes" data-setting-key="session_timeout_minutes" min="1" max="1440" value="10"
+                                        class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                                    <p class="text-xs text-gray-500 mt-1">Staff are signed out after this many idle minutes.</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                        <i class="fa-solid fa-ban text-gray-400 mr-1"></i> Maximum Login Attempts
+                                    </label>
+                                    <input type="number" id="loginMaxAttempts" data-setting-key="login_max_attempts" min="1" max="20" value="5"
+                                        class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                                    <p class="text-xs text-gray-500 mt-1">Failed sign-ins allowed before the account is locked.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <!-- ===== SECTION 2: AUTHENTICATION POLICY ===== -->
+                    <section class="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6">
+                        <div class="px-6 py-5 border-b border-gray-100">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center">
+                                    <i class="fa-solid fa-key text-indigo-600"></i>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-semibold text-gray-900">Authentication Policy</h2>
+                                    <p class="text-xs text-gray-500">Requirements every account has to satisfy</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-6 space-y-3">
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900">Require Two-Factor Authentication</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">
+                                        Platform-wide requirement. Each account still enables its own 2FA in My Settings.
+                                    </p>
+                                </div>
+                                <div class="relative inline-block w-12 align-middle select-none">
+                                    <input type="checkbox" id="twoFactorPolicy" data-setting-key="two_factor_enabled"
+                                        class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                                    <label for="twoFactorPolicy" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900">OTP Verification on Registration</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">New customers must verify a one-time code before their account is usable.</p>
+                                </div>
+                                <div class="relative inline-block w-12 align-middle select-none">
+                                    <input type="checkbox" id="otpVerificationEnabled" data-setting-key="otp_verification_enabled"
+                                        class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                                    <label for="otpVerificationEnabled" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900">CAPTCHA on Registration</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Blocks automated sign-up attempts.</p>
+                                </div>
+                                <div class="relative inline-block w-12 align-middle select-none">
+                                    <input type="checkbox" id="registrationCaptchaEnabled" data-setting-key="registration_captcha_enabled"
+                                        class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                                    <label for="registrationCaptchaEnabled" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                <div>
+                                    <p class="text-sm font-medium text-gray-900">Administrator Account Enabled</p>
+                                    <p class="text-xs text-gray-500 mt-0.5">Master switch for administrator sign-in.</p>
+                                </div>
+                                <div class="relative inline-block w-12 align-middle select-none">
+                                    <input type="checkbox" id="adminAccountEnabled" data-setting-key="admin_account_enabled"
+                                        class="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 border-gray-300 appearance-none cursor-pointer" style="top:0;left:0;">
+                                    <label for="adminAccountEnabled" class="toggle-label block overflow-hidden h-6 rounded-full bg-gray-300 cursor-pointer"></label>
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-2">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1.5">
+                                        <i class="fa-solid fa-stopwatch text-gray-400 mr-1"></i> OTP Expiry (minutes)
+                                    </label>
+                                    <input type="number" id="otpExpiryMinutes" data-setting-key="otp_expiry_minutes" min="1" max="120" value="10"
+                                        class="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none input-focus transition-all">
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="flex justify-end mb-8">
+                        <button type="button" id="saveSecurityBtn" class="px-8 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-shield-halved"></i> Save Security Policy
+                        </button>
+                    </div>
                 </div>
             </div>
         </main>
     </div>
+
     <script src="../../js/config.js"></script>
     <script src="../../js/admin-api.js"></script>
     <script type="module" src="../../js/utils/i18n.js"></script>
     <script src="../../js/admin-layout.js"></script>
     <script src="../../js/admin-ui.js"></script>
-    <script src="../../js/admin.js"></script>
-    <script src="../../js/dashboard.js"></script>
+    <script src="../../js/admin-security.js"></script>
 </body>
 </html>

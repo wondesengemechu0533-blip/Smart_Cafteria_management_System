@@ -19,7 +19,7 @@ router.use(protect);
 // Roles that may submit / monitor / cancel restock requests.
 const REQUEST_ROLES = ['manager', 'cafeteria_manager'];
 // Roles that review requests and record the actual received stock.
-const REVIEW_ROLES = ['cafeteria_admin', 'admin', 'system_admin'];
+const REVIEW_ROLES = ['admin', 'system_admin'];
 
 /**
  * @route   POST /api/v1/restocks
@@ -61,17 +61,17 @@ router.post('/:id/cancel', authorize(...REQUEST_ROLES), cancelRestockRequest);
 
 /**
  * @route   PATCH /api/v1/restocks/:id/review
- * @desc    Cafeteria Admin approves or rejects a request (with explanation)
- * @access  Private/CafeteriaAdmin
+ * @desc    Admin approves or rejects a request (with explanation)
+ * @access  Private/Admin
  * Body:    { decision: 'APPROVED'|'REJECTED', explanation? }
  */
 router.patch('/:id/review', authorize(...REVIEW_ROLES), reviewRestockRequest);
 
 /**
  * @route   PATCH /api/v1/restocks/:id/restock
- * @desc    Cafeteria Admin records the ACTUAL quantity received and updates
+ * @desc    Admin records the ACTUAL quantity received and updates
  *          the item's authoritative stock (atomic $inc + StockTransaction)
- * @access  Private/CafeteriaAdmin
+ * @access  Private/Admin
  * Body:    { receivedQuantity, note? }
  */
 router.patch('/:id/restock', authorize(...REVIEW_ROLES), recordRestock);

@@ -7,9 +7,16 @@ const Category = require('../models/Category');
 const Feedback = require('../models/Feedback');
 const Setting = require('../models/Setting');
 const ActivityLog = require('../models/ActivityLog');
-const { HTTP_STATUS, MESSAGES } = require('../config/constants');
-const { isAdminRole, normalizeRole } = require('../config/roles');
-const { coerceValue, DEFAULT_SETTINGS } = require('../utils/settings');
+const { HTTP_STATUS, MESSAGES, FEEDBACK_STATUS } = require('../config/constants');
+const { normalizeRole } = require('../config/roles');
+const { coerceValue, validateSettingValue, getSettingsMap, DEFAULT_SETTINGS } = require('../utils/settings');
+// The audit trail is written for every settings change. This import was
+// MISSING before, so `logAction` threw a ReferenceError INSIDE the try
+// block of updateSetting: the setting was written to MongoDB, the audit call
+// threw, and the endpoint answered 500 "Server error" - which looked to the
+// frontend like the save had failed even though it had succeeded.
+const { logAction } = require('../utils/audit');
+const settingPermissions = require('../config/setting-permissions');
 
 /**
  * @desc    Get admin dashboard aggregate stats (real MongoDB data)
@@ -20,18 +27,57 @@ const { coerceValue, DEFAULT_SETTINGS } = require('../utils/settings');
 exports.getDashboardStats = async (req, res) => {
   try {
     // Chart window: the dashboard's 7D/30D/90D (and Custom) buttons send
-    // ?days=N. Bounded to 1..90 so a bogus value can never request an
+    // ?days=N or ?startDate=...&endDate=... Bounded to 1..90 so a bogus value can never request an
     // unbounded scan; anything outside that falls back to the 7-day default.
     const requestedDays = parseInt(req.query.days, 10);
-    const days = Number.isInteger(requestedDays) && requestedDays >= 1 && requestedDays <= 90 ? requestedDays : 7;
-
+    const { startDate, endDate } = req.query;
+    
+    let days;
+    let rangeStart;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const rangeStart = new Date(today);
-    rangeStart.setDate(rangeStart.getDate() - (days - 1));
+    if (startDate && endDate) {
+      // Custom date range
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      if (isNaN(start.getTime()) || isNaN(end.getTime()) || end < start) {
+        // Fall back to 7 days if invalid
+        days = 7;
+        rangeStart = new Date(today);
+        rangeStart.setDate(rangeStart.getDate() - (days - 1));
+      } else {
+        start.setHours(0, 0, 0, 0);
+        end.setHours(23, 59, 59, 999);
+        rangeStart = start;
+        // Count the CALENDAR days the range covers, inclusive of both ends.
+        // `end` is already pushed to the last millisecond of its day, so the
+        // span is (days - 1) whole days plus a sliver; floor() counts the
+        // whole days and +1 adds the final day. ceil() would add a phantom
+        // day for every custom range (a 3-day range reported 5 buckets).
+        days = Math.floor((end - start) / (1000 * 60 * 60 * 24)) + 1;
+        days = Math.min(Math.max(days, 1), 90); // Cap at 90 days
+      }
+    } else {
+      days = Number.isInteger(requestedDays) && requestedDays >= 1 && requestedDays <= 90 ? requestedDays : 7;
+      rangeStart = new Date(today);
+      rangeStart.setDate(rangeStart.getDate() - (days - 1));
+    }
 
     const FLOW = ['PENDING', 'PREPARING', 'READY', 'SERVED', 'COMPLETED'];
+
+    // The stored feedback status values are 'PENDING' / 'RESOLVED' / 'ARCHIVED'.
+    //
+    // WHY the $in list and not FEEDBACK_STATUS.RESOLVED:
+    // FEEDBACK_STATUS (config/constants.js) is keyed by the legacy approval
+    // vocabulary - { PENDING: 'PENDING', APPROVED: 'RESOLVED', REJECTED:
+    // 'ARCHIVED' } - so FEEDBACK_STATUS.RESOLVED is undefined. Querying with
+    // it produced the filter { status: undefined }, which matched nothing and
+    // reported "0 resolved" while the collection actually held 17 RESOLVED
+    // documents. Matching the constant's VALUE and the literal token keeps
+    // the count correct even if the constant's key is renamed later.
+    const RESOLVED_FEEDBACK_STATUSES = [FEEDBACK_STATUS.APPROVED, 'RESOLVED'].filter(Boolean);
+    const PENDING_FEEDBACK_STATUSES = [FEEDBACK_STATUS.PENDING, 'PENDING'].filter(Boolean);
 
     // Mirrors admin.order.controller's effectiveStatus so dashboard counts match
     // the admin orders table regardless of whether status is stored in the legacy
@@ -62,6 +108,12 @@ exports.getDashboardStats = async (req, res) => {
       pendingPayments,
       failedPayments,
       pendingCancellations,
+      // Feedback stats
+      totalFeedback,
+      pendingFeedback,
+      resolvedFeedback,
+      avgRating,
+      ratingDistribution,
     ] = await Promise.all([
       User.countDocuments(),
       User.countDocuments({ role: 'customer' }),
@@ -70,12 +122,26 @@ exports.getDashboardStats = async (req, res) => {
       User.countDocuments({ role: 'cashier' }),
       User.countDocuments({ role: { $in: ['delivery'] } }),
       MenuItem.countDocuments(),
-      MenuItem.countDocuments({ availability: true, isAvailable: true }),
-      MenuItem.countDocuments({ $or: [{ availability: false }, { isAvailable: false }] }),
+      MenuItem.countDocuments({ availability: true, isAvailable: true, stockQuantity: { $gt: 0 } }),
+      MenuItem.countDocuments({ $or: [{ availability: false }, { isAvailable: false }, { stockQuantity: { $lte: 0 } }] }),
       Payment.countDocuments({ status: 'PAID' }),
       Payment.countDocuments({ status: 'PENDING' }),
       Payment.countDocuments({ status: 'FAILED' }),
       Order.countDocuments({ cancellationRequested: true, cancellationStatus: 'pending' }),
+      Feedback.countDocuments(),
+      Feedback.countDocuments({ status: { $in: PENDING_FEEDBACK_STATUSES } }),
+      Feedback.countDocuments({ status: { $in: RESOLVED_FEEDBACK_STATUSES } }),
+      (async () => {
+        const result = await Feedback.aggregate([
+          { $match: { rating: { $gte: 1, $lte: 5 } } },
+          { $group: { _id: null, avg: { $avg: '$rating' } } },
+        ]);
+        return result.length > 0 ? Math.round(result[0].avg * 10) / 10 : 0;
+      })(),
+      Feedback.aggregate([
+        { $match: { rating: { $gte: 1, $lte: 5 } } },
+        { $group: { _id: '$rating', count: { $sum: 1 } } },
+      ]),
     ]);
 
     const orders = await Order.find({}).select('status orderStatus paymentStatus totalAmount createdAt').lean();
@@ -91,7 +157,8 @@ exports.getDashboardStats = async (req, res) => {
     // Order Status Overview doughnut: scoped to the selected 7D/30D/90D window
     // so the buttons on that card actually change what it shows.
     const rangeStartMs = rangeStart.getTime();
-    const inRange = orders.filter((o) => o.createdAt && new Date(o.createdAt).getTime() >= rangeStartMs);
+    const rangeEndMs = new Date(rangeStart).setDate(rangeStart.getDate() + days);
+    const inRange = orders.filter((o) => o.createdAt && new Date(o.createdAt).getTime() >= rangeStartMs && new Date(o.createdAt).getTime() < rangeEndMs);
     const countStatus = (list, status) => list.filter((o) => effectiveStatus(o) === status).length;
     const ordersInRange = {
       total: inRange.length,
@@ -146,6 +213,12 @@ exports.getDashboardStats = async (req, res) => {
     // Backward compat: manager-dashboard.js renders chart.last7Days.
     const last7Days = days === 7 ? chartSeries : chartSeries.slice(-7);
 
+    // Format rating distribution for chart
+    const ratingDist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    ratingDistribution.forEach((r) => {
+      if (r._id >= 1 && r._id <= 5) ratingDist[r._id] = r.count;
+    });
+
     res.status(HTTP_STATUS.OK).json({
       success: true,
       data: {
@@ -173,6 +246,22 @@ exports.getDashboardStats = async (req, res) => {
         revenue: { today: todayRevenue, total: totalRevenue },
         chart: { days, series: chartSeries, last7Days, ordersInRange },
         cancellations: { pending: pendingCancellations },
+        feedback: {
+          total: totalFeedback,
+          pending: pendingFeedback,
+          resolved: resolvedFeedback,
+          averageRating: avgRating,
+          ratingDistribution: ratingDist,
+        },
+        dateRange: {
+          days,
+          // Local calendar days, via the SAME dayKey() the chart buckets use.
+          // toISOString() would render a local-midnight start as the PREVIOUS
+          // day in a positive-offset timezone (UTC+3), so the range echoed back
+          // to the UI disagreed with the range the charts were drawn from.
+          startDate: dayKey(rangeStart),
+          endDate: chartSeries.length ? chartSeries[chartSeries.length - 1].date : dayKey(rangeStart),
+        },
       },
     });
   } catch (error) {
@@ -188,9 +277,26 @@ exports.getDashboardStats = async (req, res) => {
  */
 exports.getRecentOrders = async (req, res) => {
   try {
-    const orders = await Order.find()
+    const { limit = 10, startDate, endDate } = req.query;
+    const filter = {};
+    
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        filter.createdAt.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    const orders = await Order.find(filter)
       .sort({ createdAt: -1 })
-      .limit(parseInt(req.query.limit) || 8)
+      .limit(parseInt(limit) || 10)
       .populate('userId', 'name email');
     res.status(HTTP_STATUS.OK).json({
       success: true,
@@ -200,6 +306,7 @@ exports.getRecentOrders = async (req, res) => {
         customerName: o.customerName,
         customer: o.userId ? { name: o.userId.name, email: o.userId.email } : null,
         status: o.status,
+        orderStatus: o.orderStatus,
         paymentStatus: o.paymentStatus,
         totalAmount: o.totalAmount,
         createdAt: o.createdAt,
@@ -250,16 +357,34 @@ exports.getRecentPayments = async (req, res) => {
 };
 
 /**
- * @desc    Get settings (grouped)
+ * @desc    Get settings (grouped) + the caller's permission map
  * @route   GET /api/admin/settings
  * @access  Private/Admin
+ *
+ * The permission map tells the frontend which fields this role may change.
+ * The backend is still the authority - see `updateSetting`.
  */
 exports.getSettings = async (req, res) => {
   try {
-    const settings = await Setting.find().sort({ group: 1, key: 1 });
+    const [settings, settingsMap] = await Promise.all([
+      Setting.find().sort({ group: 1, key: 1 }),
+      getSettingsMap(),
+    ]);
+    const permissions = settingPermissions.describeSettingPermissions({
+      role: req.user.role,
+      settingsMap,
+    });
     res.status(HTTP_STATUS.OK).json({
       success: true,
-      settings: settings.map((s) => ({ key: s.key, value: s.value, type: s.type, group: s.group, label: s.label })),
+      settings: settings.map((s) => ({
+        key: s.key,
+        value: s.value,
+        type: s.type,
+        group: s.group,
+        label: s.label,
+        editable: permissions.editable[s.key] !== false,
+      })),
+      permissions,
     });
   } catch (error) {
     console.error('❌ Get Settings Error:', error);
@@ -271,6 +396,14 @@ exports.getSettings = async (req, res) => {
  * @desc    Update setting by key
  * @route   PUT /api/admin/settings/:key
  * @access  Private/Admin
+ *
+ * Authorization is enforced HERE, on the backend, for every key:
+ *   - System Admin: may configure and override everything.
+ *   - Cafeteria Manager: may change the cafeteria's own operating settings
+ *     (opening hours, order flow, delivery operations) and - only when the
+ *     System Admin authorized it - the delivery fee and the service fee.
+ *   - Everything else (global currency, global order limits, tax policy,
+ *     system-wide security & access) answers 403.
  */
 exports.updateSetting = async (req, res) => {
   try {
@@ -280,25 +413,27 @@ exports.updateSetting = async (req, res) => {
       return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: 'Value is required' });
     }
 
-    // VAT / tax configuration and the platform revenue share are System Admin
-    // concerns; cafeteria admins must not tune them.
-    const ADMIN_ONLY_SETTING_KEYS = [
-      'vat_enabled',
-      'vat_rate',
-      'vat_number',
-      'tax_authority_name',
-      'platform_fee_rate',
-      'service_fee',
-    ];
-    if (ADMIN_ONLY_SETTING_KEYS.includes(key) && !isAdminRole(req.user.role)) {
-      return res.status(HTTP_STATUS.FORBIDDEN).json({
-        success: false,
-        error: 'Only the system administrator can update this setting',
-      });
+    const settingsMap = await getSettingsMap();
+    const verdict = settingPermissions.evaluateSettingUpdate({
+      key,
+      role: req.user.role,
+      settingsMap,
+    });
+
+    if (!verdict.allowed) {
+      console.warn(
+        `⛔ 403 setting update — role="${normalizeRole(req.user.role)}" key="${key}" ` +
+          `(${verdict.reason}) (user=${req.user.email || req.user.id})`
+      );
+      return res.status(HTTP_STATUS.FORBIDDEN).json({ success: false, error: verdict.reason });
     }
 
     const def = DEFAULT_SETTINGS.find((s) => s.key === key);
-    const coerced = def ? coerceValue(key, value) : value;
+    const validation = validateSettingValue(key, value);
+    if (!validation.valid) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({ success: false, error: validation.error });
+    }
+    const coerced = validation.value !== undefined ? validation.value : coerceValue(key, value);
 
     const update = { value: coerced };
     if (def) {
@@ -315,7 +450,7 @@ exports.updateSetting = async (req, res) => {
       entityId: key,
       description: `Updated setting ${key} to ${typeof coerced === 'object' ? JSON.stringify(coerced) : coerced}`,
       result: 'SUCCESS',
-      metadata: { key, type: def ? def.type : 'unknown' },
+      metadata: { key, type: def ? def.type : 'unknown', scope: verdict.scope },
     });
     res.status(HTTP_STATUS.OK).json({ success: true, setting });
   } catch (error) {

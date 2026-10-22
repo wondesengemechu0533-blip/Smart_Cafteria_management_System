@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Revenue &amp; System Analytics - Smart Cafeteria</title>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="/public/assets/vendor/fontawesome/css/all.min.css" />
+
+    <!-- Admin CSS stylesheet -->
+    <link rel="stylesheet" href="/src/css/admin.css" />
+
+    <!-- Chart.js -->
+    <script src="/public/assets/vendor/js/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="../../css/themes/dark-theme.css" />
+    <script src="../../js/theme.js"></script>
+  </head>
+  <body class="admin-body">
+    <!-- Layout will be injected by admin-layout.js -->
+    <header class="admin-navbar"></header>
+    <div class="admin-container">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+      <main class="admin-main">
+        <div class="page-header">
+          <div>
+            <h1 id="revenueTitle" data-i18n="revenue_page_title">Revenue / System Analytics</h1>
+            <p class="subtitle" id="revenueSubtitle" data-i18n="revenue_page_subtitle">
+              Monitor cafeteria revenue, collections, refunds, and financial performance.
+            </p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" id="refreshRevenueBtn">
+              <i class="fa-solid fa-rotate"></i> <span data-i18n="report_refresh">Refresh</span>
+            </button>
+            <button class="btn btn-primary" id="exportRevenueBtn">
+              <i class="fa-solid fa-download"></i> <span data-i18n="report_export">Export CSV</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ================== PERIOD FILTER ========================== -->
+        <!-- ========================================================= -->
+        <div class="card mb-4">
+          <div class="card-body">
+            <div class="row g-3 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label" data-i18n="report_period">Period</label>
+                <select id="finPeriodSelect" class="form-select">
+                  <option value="today" data-i18n="report_period_today">Today</option>
+                  <option value="yesterday" data-i18n="report_period_yesterday">Yesterday</option>
+                  <option value="last7" data-i18n="report_period_last7">Last 7 Days</option>
+                  <option value="last30" data-i18n="report_period_last30">Last 30 Days</option>
+                  <option value="last90" data-i18n="report_period_last90">Last 90 Days</option>
+                  <option value="month" selected data-i18n="report_period_month">This Month</option>
+                  <option value="year" data-i18n="report_period_year">This Year</option>
+                  <option value="custom" data-i18n="report_period_custom">Custom Date Range</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label"
+                  ><i class="fa-solid fa-calendar-days"></i>
+                  <span data-i18n="report_start_date">Start Date</span></label
+                >
+                <input type="date" id="finStartDate" class="form-control" disabled />
+              </div>
+              <div class="col-md-3">
+                <label class="form-label"
+                  ><i class="fa-solid fa-calendar-days"></i> <span data-i18n="report_end_date">End Date</span></label
+                >
+                <input type="date" id="finEndDate" class="form-control" disabled />
+              </div>
+              <div class="col-md-3">
+                <button class="btn btn-primary w-100" id="finApplyBtn">
+                  <i class="fa-solid fa-filter"></i> <span data-i18n="report_apply">Apply</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========================================================= -->
+        <!-- ==================== REPORT TABS ========================== -->
+        <!-- ========================================================= -->
+        <div class="btn-group mb-4 report-tabs-wrap" role="tablist" id="financeTabs">
+          <button type="button" class="btn btn-primary report-tab-btn active" data-report-tab="financial">
+            <i class="fa-solid fa-sack-dollar"></i>
+            <span data-i18n="revenue_tab_financial">Financial Summary</span>
+          </button>
+          <button type="button" class="btn btn-secondary report-tab-btn" data-report-tab="analytics">
+            <i class="fa-solid fa-chart-line"></i>
+            <span data-i18n="revenue_tab_analytics">Revenue Analytics</span>
+          </button>
+        </div>
+
+        <div class="report-updated-at" id="financeUpdatedAt"></div>
+
+        <!-- ========================================================= -->
+        <!-- ================= FINANCIAL SUMMARY ======================== -->
+        <!-- ========================================================= -->
+        <section id="financeView-financial">
+          <div class="metrics-grid mb-4">
+            <div class="metric-card">
+              <div class="metric-icon bg-indigo"><i class="fa-solid fa-sack-dollar"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_gross_sales">Gross Sales</span>
+                <h2 class="metric-value" id="finGrossSales">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-blue"><i class="fa-solid fa-bowl-food"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_food_subtotal">Food Subtotal</span>
+                <h2 class="metric-value" id="finFoodSubtotal">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-pink"><i class="fa-solid fa-tags"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_discounts">Discounts</span>
+                <h2 class="metric-value" id="finDiscounts">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-orange"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_service_fees">Service Fees</span>
+                <h2 class="metric-value" id="finServiceFees">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-cyan"><i class="fa-solid fa-truck-fast"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_delivery_fees">Delivery Fees</span>
+                <h2 class="metric-value" id="finDeliveryFees">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-teal"><i class="fa-solid fa-cash-register"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_collections">Successful Payment Collections</span>
+                <h2 class="metric-value" id="finCollections">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-purple"><i class="fa-solid fa-rotate-left"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_successful_refunds">Successful Refunds</span>
+                <h2 class="metric-value" id="finRefunds">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-yellow"><i class="fa-solid fa-scale-balanced"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_net_collected">Net Collected Revenue</span>
+                <h2 class="metric-value" id="finNetCollected">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-red"><i class="fa-solid fa-arrow-trend-up"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_avg_order_value">Average Order Value</span>
+                <h2 class="metric-value" id="finAvgOrder">0.00 ETB</h2>
+              </div>
+            </div>
+          </div>
+
+          <!-- VAT SUMMARY (short pointer - the full tax compliance report lives on
+               its own Tax/VAT page, so it is not duplicated here) -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h3 class="card-title">
+                <i class="fa-solid fa-percent"></i> <span data-i18n="revenue_vat_summary">VAT Summary</span>
+              </h3>
+              <a class="btn btn-secondary btn-sm" href="tax.html">
+                <i class="fa-solid fa-file-invoice"></i>
+                <span data-i18n="revenue_open_tax_page">Open Tax/VAT report</span>
+              </a>
+            </div>
+            <div class="card-body">
+              <div class="metrics-grid mb-0">
+                <div class="metric-card">
+                  <div class="metric-icon bg-indigo"><i class="fa-solid fa-percent"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="tax_configured_vat_rate">Configured VAT Rate</span>
+                    <h2 class="metric-value" id="finVatRate">0%</h2>
+                  </div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-icon bg-green"><i class="fa-solid fa-sack-dollar"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="tax_vat_collected">VAT Collected</span>
+                    <h2 class="metric-value" id="finVatCollected">0.00 ETB</h2>
+                  </div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-icon bg-teal"><i class="fa-solid fa-landmark"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="tax_net_vat_retained">Net VAT Retained</span>
+                    <h2 class="metric-value" id="finNetVatRetained">0.00 ETB</h2>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RECONCILIATION -->
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h3 class="card-title">
+                <i class="fa-solid fa-scale-balanced"></i>
+                <span data-i18n="revenue_reconciliation">Revenue &amp; Collection Reconciliation</span>
+              </h3>
+              <small class="text-muted" id="reconciliationStatus"></small>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="revenue_col_line">Line</th>
+                    <th data-i18n="revenue_col_amount">Amount (ETB)</th>
+                    <th data-i18n="revenue_col_source">Source</th>
+                  </tr>
+                </thead>
+                <tbody id="finReconciliationBody">
+                  <tr>
+                    <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- ================== REVENUE ANALYTICS ====================== -->
+        <!-- ========================================================= -->
+        <section id="financeView-analytics" class="d-none">
+          <!-- COMPARISON WITH THE PREVIOUS PERIOD -->
+          <div class="metrics-grid mb-4">
+            <div class="metric-card">
+              <div class="metric-icon bg-indigo"><i class="fa-solid fa-sack-dollar"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_current_gross">Gross Sales (this period)</span>
+                <h2 class="metric-value" id="finCurrentGross">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-blue"><i class="fa-solid fa-clock-rotate-left"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_previous_gross">Gross Sales (previous period)</span>
+                <h2 class="metric-value" id="finPreviousGross">0.00 ETB</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-green"><i class="fa-solid fa-arrow-trend-up"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_gross_change">Gross sales change</span>
+                <h2 class="metric-value" id="finGrossChange">0%</h2>
+              </div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-icon bg-teal"><i class="fa-solid fa-scale-balanced"></i></div>
+              <div class="metric-content">
+                <span class="metric-label" data-i18n="revenue_net_change">Net collected change</span>
+                <h2 class="metric-value" id="finNetChange">0%</h2>
+              </div>
+            </div>
+          </div>
+
+          <!-- REVENUE TREND -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h3 class="card-title">
+                <i class="fa-solid fa-chart-line"></i> <span data-i18n="revenue_trends">Revenue Trends</span>
+              </h3>
+               <div class="btn-group btn-group-sm" role="group" id="finTrendGranularity">
+                 <button type="button" class="btn btn-primary" data-granularity="daily">
+                   <span data-i18n="revenue_by_day">Day</span>
+                 </button>
+                 <button type="button" class="btn btn-secondary" data-granularity="weekly">
+                   <span data-i18n="revenue_by_week">Week</span>
+                 </button>
+                 <button type="button" class="btn btn-secondary" data-granularity="monthly">
+                   <span data-i18n="revenue_by_month">Month</span>
+                 </button>
+                 <button type="button" class="btn btn-secondary" data-granularity="yearly">
+                   <span data-i18n="revenue_by_year">Year</span>
+                 </button>
+               </div>
+            </div>
+            <div class="card-body">
+              <div class="report-chart-wrap">
+                <canvas id="finTrendChart"></canvas>
+              </div>
+              <div class="report-empty d-none" id="finTrendChartEmpty" data-i18n="report_empty">
+                No revenue recorded in the selected period.
+              </div>
+            </div>
+          </div>
+
+
+          <div class="report-grid-2 mb-4">
+            <!-- REVENUE BY FOOD ITEM -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-utensils"></i> <span data-i18n="revenue_by_food">Revenue by Food Item</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_item">Item</th>
+                      <th data-i18n="report_col_qty">Qty</th>
+                      <th data-i18n="report_col_revenue">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="finFoodRevenueBody">
+                    <tr>
+                      <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- REVENUE BY ORDER TYPE -->
+            <div class="card">
+              <div class="card-header">
+                <h3 class="card-title">
+                  <i class="fa-solid fa-list-check"></i>
+                  <span data-i18n="revenue_by_order_type">Revenue by Order Type</span>
+                </h3>
+              </div>
+              <div class="table-wrapper">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th data-i18n="report_col_type">Type</th>
+                      <th data-i18n="report_col_orders">Orders</th>
+                      <th data-i18n="report_col_revenue">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody id="finOrderTypeRevenueBody">
+                    <tr>
+                      <td colspan="3" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- PAYMENT METHOD BREAKDOWN -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-wallet"></i>
+                <span data-i18n="revenue_payment_methods">Payment Method Breakdown</span>
+              </h3>
+            </div>
+            <div class="table-wrapper">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th data-i18n="report_col_method">Method</th>
+                    <th data-i18n="report_col_count">Count</th>
+                    <th data-i18n="report_col_amount">Amount</th>
+                    <th data-i18n="report_col_share">Share</th>
+                  </tr>
+                </thead>
+                <tbody id="finPaymentMethodsBody">
+                  <tr>
+                    <td colspan="4" class="table-empty" data-i18n="report_loading">Loading report...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- PAYMENT TOTALS -->
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">
+                <i class="fa-solid fa-credit-card"></i>
+                <span data-i18n="revenue_payment_totals">Payment Totals</span>
+              </h3>
+            </div>
+            <div class="card-body">
+              <div class="metrics-grid mb-0">
+                <div class="metric-card">
+                  <div class="metric-icon bg-green"><i class="fa-solid fa-circle-check"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="revenue_pay_successful">Successful</span>
+                    <h2 class="metric-value" id="finPaySuccessful">0</h2>
+                  </div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-icon bg-orange"><i class="fa-solid fa-hourglass-half"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="revenue_pay_pending">Pending</span>
+                    <h2 class="metric-value" id="finPayPending">0</h2>
+                  </div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-icon bg-red"><i class="fa-solid fa-times-circle"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="revenue_pay_failed">Failed</span>
+                    <h2 class="metric-value" id="finPayFailed">0</h2>
+                  </div>
+                </div>
+                <div class="metric-card">
+                  <div class="metric-icon bg-purple"><i class="fa-solid fa-rotate-left"></i></div>
+                  <div class="metric-content">
+                    <span class="metric-label" data-i18n="revenue_pay_refunded">Refunded</span>
+                    <h2 class="metric-value" id="finPayRefunded">0</h2>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ========================================================= -->
+        <!-- ================== VAT & TAX COMPLIANCE =================== -->
+        <!-- ========================================================= -->
+      </main>
+    </div>
+
+    <!-- JavaScript Files -->
+    <script src="../../js/config.js"></script>
+    <script src="../../js/admin-api.js"></script>
+    <script type="module" src="../../js/utils/i18n.js"></script>
+    <script src="../../js/admin-layout.js"></script>
+    <script src="../../js/admin-ui.js"></script>
+    <script src="../../js/utils/report-period.js"></script>
+    <script src="../../js/admin-revenue.js"></script>
+  </body>
+</html>

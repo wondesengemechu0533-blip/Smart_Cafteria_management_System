@@ -6,7 +6,6 @@ const { validateBody } = require('../middleware/validation.middleware');
 const { validateCreateDeliveryStaff } = require('../validators/admin.validator');
 const {
   SYSTEM_ADMIN_ROLES,
-  CAFETERIA_ADMIN_ROLES,
   MANAGEMENT_ROLES,
 } = require('../config/roles');
 const deliveryController = require('../controllers/delivery.controller');
@@ -17,7 +16,7 @@ const deliveryController = require('../controllers/delivery.controller');
  * Two audiences share this router:
  *   - Delivery staff  (canonical role `delivery`): their own queue, accept /
  *     decline, the pickup -> delivered chain, and their own GPS reporting.
- *   - Management      (admin / system_admin / cafeteria_admin / manager):
+ *   - Management      (admin / system_admin / manager):
  *     dispatch, reassignment, failed/cancelled handling, reports.
  *
  * Ownership is enforced inside the controller against the JWT identity, never
@@ -25,7 +24,7 @@ const deliveryController = require('../controllers/delivery.controller');
  */
 
 const DELIVERY_ROLES = ['delivery', 'DELIVERY_STAFF', 'delivery_staff', 'delivery_person'];
-const MANAGER_ROLES = [...new Set([...SYSTEM_ADMIN_ROLES, ...CAFETERIA_ADMIN_ROLES, ...MANAGEMENT_ROLES])];
+const MANAGER_ROLES = [...new Set([...SYSTEM_ADMIN_ROLES, ...MANAGEMENT_ROLES])];
 // Management may also drive the courier-facing endpoints (used by the admin
 // deliveries page), and couriers are allowed on the manager read endpoints
 // because the courier dashboard shows totals.

@@ -76,4 +76,8 @@ KitchenShiftSchema.index({ staffId: 1, status: 1 });
 KitchenShiftSchema.index({ startTime: 1 });
 KitchenShiftSchema.index({ status: 1 });
 
-module.exports = mongoose.model('KitchenShift', KitchenShiftSchema);
+// In this DB the collection was created as 'kitchenshifts' (lowercase plural)
+// while Mongoose defaults to 'kitchenshifts' too, but sometimes connections
+// point to a different naming; we explicitly pin it to avoid reading an
+// empty collection.
+module.exports = mongoose.model('KitchenShift', KitchenShiftSchema, 'kitchenshifts');

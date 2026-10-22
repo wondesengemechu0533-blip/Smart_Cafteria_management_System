@@ -12,7 +12,7 @@ const {
 } = require('../controllers/admin.category.controller');
 
 router.use(protect);
-router.use(authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
+router.use(authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'));
 
 router.get('/', getAllCategories);
 router.get('/stats', getCategoryStats);

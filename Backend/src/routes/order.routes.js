@@ -26,7 +26,7 @@ router.post('/:id/cancel', protect, validateBody(validateCancelOrder), cancelOrd
 router.patch(
   '/:id/status',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   validateBody(validateUpdateOrderStatus),
   updateOrderStatus
 );
@@ -34,19 +34,19 @@ router.patch(
 router.get(
   '/',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   getAllOrders
 );
 router.get(
   '/stats',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   getOrderStats
 );
 router.get(
   '/kitchen',
   protect,
-  authorize('admin', 'ADMIN', 'cafeteria_admin', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
+  authorize('admin', 'ADMIN', 'manager', 'staff', 'kitchen_staff', 'kitchen', 'foodmaker'),
   getKitchenOrders
 );
 router.get('/:id', protect, getOrderById);

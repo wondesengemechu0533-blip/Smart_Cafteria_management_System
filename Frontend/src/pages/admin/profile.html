@@ -24,7 +24,7 @@
         <main class="admin-main">
             <div class="page-header">
                 <div>
-                    <h1>Admin Profile</h1>
+                    <h1 id="profilePageTitle">Admin Profile</h1>
                     <p class="subtitle">View your account details and update your password.</p>
                 </div>
             </div>
@@ -44,6 +44,47 @@
                 </div>
                 <div class="col-xl-8">
                     <section class="card">
+                        <div class="card-header">
+                            <h3 class="section-title"><i class="fa-solid fa-user-pen"></i> My Account Details</h3>
+                        </div>
+                        <div class="card-body">
+                            <p class="form-text mb-3">
+                                You can only view and change <strong>your own</strong> account. Other accounts are managed by the system administrator.
+                            </p>
+                            <form id="accountForm">
+                                <div class="form-group">
+                                    <label for="accountName" class="form-label">Full Name</label>
+                                    <input type="text" id="accountName" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="accountEmail" class="form-label">Email Address</label>
+                                    <input type="email" id="accountEmail" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="accountPhone" class="form-label">Phone Number</label>
+                                    <input type="tel" id="accountPhone" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="accountAvatar" class="form-label">Profile Image URL</label>
+                                    <input type="url" id="accountAvatar" class="form-control" placeholder="https://example.com/avatar.jpg">
+                                </div>
+                                <div class="d-flex align-items-center justify-content-between p-3 mb-3" style="background:#f8fafc;border-radius:12px;">
+                                    <div>
+                                        <p class="mb-1" style="font-weight:600;color:#0f172a;">Two-Factor Authentication (2FA)</p>
+                                        <p class="form-text mb-0">Add an extra layer of security to your account</p>
+                                    </div>
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" id="accountTwoFactor">
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                        <div class="card-footer d-flex justify-content-between">
+                            <button type="button" class="btn btn-primary" id="saveAccountBtn"><i class="fa-solid fa-check"></i> Save Account</button>
+                        </div>
+                    </section>
+
+                    <section class="card mt-4">
                         <div class="card-header">
                             <h3 class="section-title"><i class="fa-solid fa-key"></i> Change Password</h3>
                         </div>

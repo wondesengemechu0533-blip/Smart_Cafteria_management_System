@@ -286,7 +286,7 @@ function frontendGetImpl(p, query) {
     });
 
   const customer = await mkUser('DashCust', 'customer');
-  const cafAdmin = await mkUser('DashCafAdmin', 'cafeteria_admin');
+  const cafAdmin = await mkUser('DashCafAdmin', 'manager');
   const tok = jwt.sign({ id: cafAdmin._id, role: cafAdmin.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
   const call = async (p) => {
@@ -568,20 +568,20 @@ function frontendGetImpl(p, query) {
   // removal would leave the wiring intact but unreachable - the harness above
   // builds its own buttons, so it can't catch a page that lost its own).
   console.log('\nC. Both dashboards keep the Date Range controls');
-  await check('caf admin page has 7d/30d/90d buttons and loads dashboard.js', async () => {
+  await check('manager dashboard page has 7d/30d/90d buttons and loads manager-dashboard.js', async () => {
     const fs = require('fs');
     const path = require('path');
     const html = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'Frontend', 'src', 'pages', 'admin', 'admin-dashboard.html'),
+      path.join(__dirname, '..', '..', 'Frontend', 'src', 'pages', 'manager', 'dashboard.html'),
       'utf8'
     );
-    for (const range of ['7d', '30d', '90d']) {
+    for (const range of ['7', '30', '90']) {
       assert.ok(
-        new RegExp(`date-range-btn[^>]*data-range="${range}"|data-range="${range}"[^>]*date-range-btn`).test(html),
-        `admin-dashboard.html has a .date-range-btn[data-range="${range}"] button`
+        new RegExp(`data-days="${range}"`).test(html),
+        `manager/dashboard.html has a button[data-days="${range}"] button`
       );
     }
-    assert.ok(/dashboard\.js/.test(html), 'admin-dashboard.html loads dashboard.js');
+    assert.ok(/manager-dashboard\.js/.test(html), 'manager/dashboard.html loads manager-dashboard.js');
   });
 
   await check('system admin page has 7d/30d/90d buttons and loads dashboard.js', async () => {

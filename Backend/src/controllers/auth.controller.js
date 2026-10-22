@@ -488,6 +488,14 @@ exports.getMe = async (req, res) => {
         avatar: user.avatar,
         status: user.status,
         balance: user.balance,
+        // Own security + own notification state (never anybody else's).
+        twoFactorEnabled: user.twoFactorEnabled === true,
+        notificationPreferences: {
+          newOrders: user.notificationPreferences?.newOrders !== false,
+          lowStock: user.notificationPreferences?.lowStock !== false,
+          dailySales: user.notificationPreferences?.dailySales === true,
+          securityLogin: user.notificationPreferences?.securityLogin !== false,
+        },
         createdAt: user.createdAt,
       },
     });
@@ -511,7 +519,7 @@ exports.getMe = async (req, res) => {
  */
 exports.updateMe = async (req, res) => {
   try {
-    const { name, phone, email, avatar, language, diningType, tableNumber } = req.body;
+    const { name, phone, email, avatar, language, diningType, tableNumber, twoFactorEnabled } = req.body;
 
     const user = await User.findById(req.user.id);
     if (!user) {
@@ -574,6 +582,13 @@ exports.updateMe = async (req, res) => {
     if (diningType) user.diningType = diningType;
     if (tableNumber) user.tableNumber = tableNumber;
 
+    // Two-factor authentication is PER ACCOUNT. The System Admin may require
+    // 2FA system-wide (Setting `two_factor_enabled`), but the toggle for
+    // THIS account belongs to its owner - and only to it.
+    if (twoFactorEnabled !== undefined) {
+      user.twoFactorEnabled = twoFactorEnabled === true || twoFactorEnabled === 'true';
+    }
+
     await user.save();
 
     res.status(HTTP_STATUS.OK).json({
@@ -588,6 +603,7 @@ exports.updateMe = async (req, res) => {
         avatar: user.avatar,
         status: user.status,
         balance: user.balance,
+        twoFactorEnabled: user.twoFactorEnabled === true,
       },
     });
   } catch (error) {

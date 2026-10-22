@@ -77,7 +77,12 @@ function check(name, fn) {
   const kitchen = await mkUser('Kitchen', 'kitchen', cafeteriaId);
   const manager = await mkUser('Manager', 'manager', cafeteriaId);
   const manager2 = await mkUser('ManagerTwo', 'manager', cafeteriaId);
-  const cafAdmin = await mkUser('CafAdmin', 'cafeteria_admin', cafeteriaId);
+  // Accepting / rejecting / resolving a resolution request is an ADMIN action
+  // (ADMIN_ROLES in routes/resolutionRequest.routes.js). The cafeteria_admin
+  // role that used to hold it was folded into the admin role, so this user now
+  // carries that role. It keeps the 'CafAdmin' name, which the assertions
+  // below read back from the API payload.
+  const cafAdmin = await mkUser('CafAdmin', 'admin', cafeteriaId);
   const sysAdmin = await mkUser('SysAdmin', 'admin');
 
   const tok = (u) => jwt.sign({ id: u._id, role: u.role }, process.env.JWT_SECRET, { expiresIn: '1h' });

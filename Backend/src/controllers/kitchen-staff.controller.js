@@ -169,14 +169,23 @@ exports.clockInShift = async (req, res) => {
       });
     }
 
-    shift.clockInTime = new Date();
-    shift.status = 'active';
-    await shift.save();
+    const updated = await KitchenShift.findOneAndUpdate(
+      { _id: shiftId, staffId: shift.staffId, status: 'scheduled' },
+      { $set: { clockInTime: new Date(), status: 'active' } },
+      { new: true }
+    );
+    if (!updated) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Shift is no longer available for clock-in',
+      });
+    }
+    await updated.populate('staffId', 'name email phone');
 
     res.status(HTTP_STATUS.OK).json({
       success: true,
       message: 'Clocked in successfully',
-      shift: formatShift(shift),
+      shift: formatShift(updated),
     });
   } catch (error) {
     console.error('❌ Clock In Shift Error:', error);
@@ -222,7 +231,19 @@ exports.clockOutShift = async (req, res) => {
       });
     }
 
-    shift.clockOutTime = new Date();
+    const updatedOut = await KitchenShift.findOneAndUpdate(
+      { _id: shiftId, staffId: shift.staffId, status: 'active' },
+      { $set: { clockOutTime: new Date(), status: 'completed' } },
+      { new: true }
+    );
+    if (!updatedOut) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        error: 'Shift is no longer active',
+      });
+    }
+    // reuse shift variable for subsequent metric calculations
+    shift.clockOutTime = updatedOut.clockOutTime;
     shift.status = 'completed';
 
     // Calculate performance metrics
@@ -435,10 +456,28 @@ exports.getCurrentShift = async (req, res) => {
       : 'none';
 
     if (!shift) {
-      return res.status(HTTP_STATUS.NOT_FOUND).json({
+      // WHY 200 and not 404:
+      //
+      // "You are not on a shift right now" is a NORMAL answer, not a missing
+      // resource - the request was understood and the lookup succeeded. It used
+      // to be sent as 404 with a `success: true` body, which was a contract
+      // smell with real costs:
+      //   - every client had to special-case 404 to avoid treating it as a
+      //     failure (the schedule page grew a `err.status !== 404` guard),
+      //   - the browser logs every 4xx in the console as a red network error
+      //     even though the page rendered correctly, so a healthy page looked
+      //     broken in devtools,
+      //   - a monitoring/alerting rule on 4xx fired on every manager and every
+      //     cook with no shift of their own.
+      //
+      // The shift simply resolves to null. The shape of the payload is
+      // unchanged, so every existing client keeps working - they all read
+      // `shift` and already handle it being null.
+      return res.status(HTTP_STATUS.OK).json({
         success: true,
         shift: null,
         dayShifts: [],
+        day: null,
         reason,
         message: 'No shift scheduled',
       });
